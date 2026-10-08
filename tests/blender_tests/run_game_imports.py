@@ -1,20 +1,27 @@
-"""Import assets straight from an installed Source 1 game and report what each importer produced.
+"""Import assets straight from an installed Source 1 or Source 2 game and report what each importer produced.
 
 Usage:
     blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- \
         --game "<steam>/common/Team Fortress 2/tf" [--model models/player/heavy.mdl ...] [--map ctf_2fort ...] \
-        [--json FILE]
+        [--include-animations] [--load-placeholders] [--json FILE]
+    blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- \
+        --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--model models/chicken/chicken.vmdl_c ...] \
+        [--map de_dust2 ...]
 
-With no --model/--map, a default TF2 set is used. Models are read through the game's own search paths
-(VPKs included), copied with their companion files into a temporary folder, and imported from there
-with the game still mounted, so materials and include models resolve the way they do for a user.
-Maps are imported from the game's maps folder. Results use the same PASS/WARN/FAIL rules as
-run_sample_imports.py; exit code is 1 if anything failed.
+The game folder holds gameinfo.txt (Source 1) or gameinfo.gi (Source 2). With no --model/--map, a default
+TF2 or CS2 set is used. Models are read through the game's own search paths (VPKs included), copied with
+their companion files into a temporary folder, and imported from there with the game still mounted, so
+materials and include models resolve the way they do for a user. Maps are imported from the game's maps
+folder (.bsp, or a Source 2 map .vpk). --include-animations imports the animations of Source 1 include
+models, or turns on *Import animations* for Source 2 models. --load-placeholders then runs *Load Entity* on
+every prop placeholder a map import leaves (Source 2 maps place all their geometry that way). Results use
+the same PASS/WARN/FAIL rules as run_sample_imports.py; exit code is 1 if anything failed.
 """
 import argparse
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import bpy
@@ -34,14 +41,30 @@ TF2_MODELS = [
     "models/dog.mdl",  # HL2 content, v44 with v48 include models and .ani blocks
 ]
 TF2_MAPS = ["ctf_2fort", "cp_badlands", "koth_harvest_final", "pl_upward"]
+CS2_MODELS = [
+    "agents/models/ctm_sas/ctm_sas.vmdl_c",  # characters/models/ holds placeholder stubs
+    "agents/models/tm_phoenix/tm_phoenix.vmdl_c",
+    "agents/models/shared/arms/glove_hardknuckle/glove_hardknuckle.vmdl_c",
+    "weapons/models/ak47/weapon_rif_ak47.vmdl_c",
+    "weapons/models/glock18/weapon_pist_glock18.vmdl_c",
+    "weapons/models/knife/knife_karambit/weapon_knife_karambit.vmdl_c",
+    "models/chicken/chicken.vmdl_c",
+    "models/hostage/hostage.vmdl_c",
+    "models/props/de_dust/hr_dust/dust_crates/dust_crate_assembly_100x100_01.vmdl_c",
+]
+CS2_MAPS = ["de_dust2", "de_inferno", "cs_office"]
 COMPANIONS = (".vvd", ".dx90.vtx", ".dx80.vtx", ".sw.vtx", ".vtx", ".phy", ".ani")
+
+
+def is_source2(game: Path) -> bool:
+    return (game / "gameinfo.gi").is_file()
 
 
 def mount(game: Path):
     from SourceIO.library.shared.content_manager import ContentManager
     from SourceIO.library.utils.tiny_path import TinyPath
     content_manager = ContentManager()
-    content_manager.scan_for_content(TinyPath(game / "gameinfo.txt"))
+    content_manager.scan_for_content(TinyPath(game / ("gameinfo.gi" if is_source2(game) else "gameinfo.txt")))
     return content_manager
 
 
@@ -56,16 +79,18 @@ def extract_model(game: Path, model: str, out_dir: Path) -> Path | None:
     data = buffer.read()
     paths = [mdl_path]
     buffer.seek(0)
-    try:
-        mdl = MdlV49.from_buffer(buffer)
-        anim_block = getattr(mdl.header, "anim_block_name", "")
-        paths += [TinyPath(include) for include in mdl.include_models]
-        if anim_block:
-            paths.append(TinyPath(anim_block))
-    except Exception:
-        pass  # older versions: the importer itself reports what it cannot read
-    stem = mdl_path.with_suffix("")
-    paths += [TinyPath(str(stem) + suffix) for suffix in COMPANIONS]
+    # A compiled Source 2 model has no companion files: what it references resolves through the mounted game.
+    if mdl_path.suffix != ".vmdl_c":
+        try:
+            mdl = MdlV49.from_buffer(buffer)
+            anim_block = getattr(mdl.header, "anim_block_name", "")
+            paths += [TinyPath(include) for include in mdl.include_models]
+            if anim_block:
+                paths.append(TinyPath(anim_block))
+        except Exception:
+            pass  # older versions: the importer itself reports what it cannot read
+        stem = mdl_path.with_suffix("")
+        paths += [TinyPath(str(stem) + suffix) for suffix in COMPANIONS]
 
     target = out_dir / model
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +117,37 @@ def summarize_model() -> dict:
             "bone_collections": bone_collections}
 
 
+def load_placeholders(result: dict):
+    """Run *Load Entity* on every prop placeholder the map import left, and add what it made to ``result``."""
+    placeholders = [obj for obj in bpy.data.objects
+                    if obj.get("entity_data") and obj["entity_data"].get("prop_path")]
+    view_layer = bpy.context.view_layer
+    for obj in view_layer.objects:
+        obj.select_set(obj in placeholders)
+    before = samples.snapshot()
+    samples.captured_errors.clear()
+    started = time.perf_counter()
+    try:
+        bpy.ops.sourceio.load_placeholder('EXEC_DEFAULT')
+    except Exception as ex:
+        result["status"], result["message"] = "FAIL", f"load_placeholder: {str(ex).strip().splitlines()[-1]}"
+    result["seconds"] = round(result["seconds"] + time.perf_counter() - started, 3)
+    for name in samples.COUNTED:
+        added = sum(1 for item in getattr(bpy.data, name) if item not in before[name])
+        if added:
+            result["created"][name] = result["created"].get(name, 0) + added
+    # With *Replace entity* on, a loaded placeholder is deleted and its model takes its place.
+    remaining = set(bpy.data.objects)
+    loaded = sum(1 for obj in placeholders if obj not in remaining or obj["entity_data"].get("imported"))
+    result["details"]["placeholders"] = f"{loaded}/{len(placeholders)}"
+    errors = list(dict.fromkeys(samples.captured_errors))
+    result["errors"] = (result["errors"] + errors)[:20]
+    result["error_count"] += len(errors)
+    if result["status"] == "PASS" and (errors or loaded < len(placeholders)):
+        result["status"] = "WARN"
+        result["message"] = errors[0] if errors else f"only {loaded} of {len(placeholders)} placeholders loaded"
+
+
 def report(result: dict, label: str):
     created = ", ".join(f"{k}={v}" for k, v in result["created"].items()) or "-"
     extra = ", ".join(f"{k}={v}" for k, v in result["details"].items() if v)
@@ -102,19 +158,23 @@ def report(result: dict, label: str):
 def main() -> int:
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
-    parser.add_argument("--game", type=Path, required=True, help="mod folder that holds gameinfo.txt")
-    parser.add_argument("--model", action="append", default=[], help="game-relative .mdl path")
+    parser.add_argument("--game", type=Path, required=True, help="mod folder that holds gameinfo.txt or gameinfo.gi")
+    parser.add_argument("--model", action="append", default=[], help="game-relative .mdl or .vmdl_c path")
     parser.add_argument("--map", action="append", default=[], help="map name in <game>/maps")
     parser.add_argument("--include-animations", action="store_true",
-                        help="also import the animations of each model's include models")
+                        help="also import the animations of each model's include models (Source 1), "
+                             "or the model's own animations (Source 2)")
+    parser.add_argument("--load-placeholders", action="store_true",
+                        help="after importing a map, load every prop placeholder (the Load Entity button)")
     parser.add_argument("--json", type=Path)
     args = parser.parse_args(argv)
-    if not (args.game / "gameinfo.txt").is_file():
-        print(f"No gameinfo.txt in {args.game}")
+    source2 = is_source2(args.game)
+    if not source2 and not (args.game / "gameinfo.txt").is_file():
+        print(f"No gameinfo.txt or gameinfo.gi in {args.game}")
         return 1
     models, maps = args.model, args.map
     if not models and not maps:
-        models, maps = TF2_MODELS, TF2_MAPS
+        models, maps = (CS2_MODELS, CS2_MAPS) if source2 else (TF2_MODELS, TF2_MAPS)
 
     samples.load_addon()
     results = []
@@ -126,22 +186,28 @@ def main() -> int:
                           "errors": [], "error_count": 0, "message": "not found in the game's search paths"}
             else:
                 # The operator unmounts everything when it finishes, so mount the game for each import.
-                result = samples.run_one(path, "mdl", "files", before_import=lambda: mount(args.game),
-                                         options={"import_include_animations": args.include_animations})
+                if path.suffix == ".vmdl_c":
+                    operator, options = "vmdl", {"import_animations": args.include_animations}
+                else:
+                    operator, options = "mdl", {"import_include_animations": args.include_animations}
+                result = samples.run_one(path, operator, "files", before_import=lambda: mount(args.game),
+                                         options=options)
                 result["file"] = model
                 result["details"].update(summarize_model())
             results.append(result)
             report(result, model)
 
         for name in maps:
-            path = args.game / "maps" / f"{name}.bsp"
+            path = args.game / "maps" / (f"{name}.vpk" if source2 else f"{name}.bsp")
             if not path.is_file():
                 result = {"file": str(path), "status": "FAIL", "seconds": 0, "created": {}, "details": {},
                           "errors": [], "error_count": 0, "message": "map not found"}
             else:
-                result = samples.run_one(path, "bsp", "filepath")
+                result = samples.run_one(path, "vmap_vpk" if source2 else "bsp", "filepath")
+                if args.load_placeholders and result["status"] != "FAIL":
+                    load_placeholders(result)
             results.append(result)
-            report(result, f"maps/{name}.bsp")
+            report(result, f"maps/{path.name}")
 
     summary = {status: sum(1 for r in results if r["status"] == status) for status in ("PASS", "WARN", "FAIL")}
     print(f"GAME SUMMARY {summary}")

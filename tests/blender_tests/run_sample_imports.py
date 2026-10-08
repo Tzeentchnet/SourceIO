@@ -34,6 +34,7 @@ IMPORTERS = {
     ("source2/textures", ".vtex_c"): ("vtex", "files"),
     ("source2/physics", ".vphys_c"): ("vphys", "files"),
     ("source2/maps", ".vpk"): ("vmap_vpk", "filepath"),
+    ("source2/animations", ".vmdl_c"): ("vmdl", "files"),
 }
 
 COUNTED = ("objects", "meshes", "materials", "images", "armatures", "actions", "lights", "collections")
@@ -67,6 +68,44 @@ def load_addon():
     bindings.register()
 
 
+def texture_pixel_error(path: Path, image: bpy.types.Image) -> float | None:
+    """Largest difference between the imported image and SourceIO's own decode of ``path``.
+
+    Blender stores rows bottom-up, so the image must equal the decode flipped vertically. LDR values
+    are compared directly (8-bit rounding is tolerated by the caller); HDR values relatively, and only
+    where they fit in the half-float EXR the importer writes. Returns None when there is nothing to
+    compare against (textures that embed a PNG/JPEG/WEBP file).
+    """
+    import numpy as np
+    from SourceIO.library.utils import FileBuffer
+    from SourceIO.library.utils.tiny_path import TinyPath
+
+    hdr = False
+    if path.suffix == ".vtex_c":
+        from SourceIO.library.source2 import CompiledTextureResource
+        with FileBuffer(TinyPath(path)) as f:
+            resource = CompiledTextureResource.from_buffer(f, TinyPath(path))
+            if resource.get_encoded_image() is not None:
+                return None
+            expected, (width, height) = resource.get_texture_data(0)
+            hdr = resource.is_hdr()
+    else:
+        from SourceIO.library.source1.vtf import load_texture
+        with open(path, "rb") as f:
+            expected, height, width = load_texture(f)
+    expected = np.asarray(expected, np.float32).reshape(height, width, -1)[::-1]
+
+    if tuple(image.size) != (width, height):
+        return float("inf")
+    pixels = np.zeros(width * height * 4, np.float32)
+    image.pixels.foreach_get(pixels)
+    pixels = pixels.reshape(height, width, 4)[..., :expected.shape[2]]
+    if hdr:
+        representable = np.abs(expected) < 6e4
+        return float((np.abs(pixels - expected) / np.maximum(np.abs(expected), 1))[representable].max())
+    return float(np.abs(pixels - np.clip(expected, 0, 1)).max())
+
+
 def snapshot():
     return {name: set(getattr(bpy.data, name)) for name in COUNTED}
 
@@ -81,7 +120,7 @@ def run_one(path: Path, operator: str, mode: str) -> dict:
         kwargs.update(directory=str(path.parent) + "/", files=[{"name": path.name}])
     elif mode == "filepath_files":
         kwargs.update(files=[{"name": path.name}])
-    if operator == "mdl":
+    if operator == "mdl" or path.parent.name == "animations":
         kwargs["import_animations"] = True
 
     status, message = "PASS", ""
@@ -104,6 +143,16 @@ def run_one(path: Path, operator: str, mode: str) -> dict:
         "blended_materials": sum(1 for mat in materials if mat.surface_render_method == 'BLENDED'),
         "empty_materials": sum(1 for mat in materials if mat.node_tree is None or len(mat.node_tree.nodes) <= 2),
     }
+
+    if status == "PASS" and path.suffix in (".vtf", ".vtex_c") and len(created["images"]) == 1:
+        try:
+            pixel_error = texture_pixel_error(path, created["images"][0])
+        except Exception as ex:
+            pixel_error, message = float("inf"), f"pixel check failed: {ex}"
+        details["pixel_error"] = pixel_error
+        # 8-bit rounding of LDR values, or half-float precision of HDR values.
+        if pixel_error is not None and pixel_error > 2.5 / 255:
+            status, message = "FAIL", message or f"pixels differ from the decoded texture by {pixel_error:.4g}"
 
     errors = list(dict.fromkeys(captured_errors))
     if status == "PASS" and (errors or not counts):

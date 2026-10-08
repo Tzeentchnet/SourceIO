@@ -1,6 +1,7 @@
 """``blender -c sourceio`` command line interface.
 
-    blender -c sourceio import [--scale S] [--no-materials] [--animations] [--output out.blend] FILE [FILE ...]
+    blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--output out.blend]
+                               FILE [FILE ...]
 
 Imports each file with the same operator the File > Import menu uses, picked by extension, then
 optionally saves the result as a .blend file.
@@ -56,7 +57,9 @@ def _import(path: Path, args) -> bool:
         if name in properties:
             kwargs[name] = not args.no_materials
     if "import_animations" in properties:
-        kwargs["import_animations"] = args.animations
+        kwargs["import_animations"] = args.animations or bool(args.clips)
+    if args.clips and "animation_clips" in properties:
+        kwargs["animation_clips"] = args.clips
 
     try:
         result = operator('EXEC_DEFAULT', **kwargs)
@@ -78,6 +81,9 @@ def execute(argv: list[str]) -> int:
     import_parser.add_argument("--scale", type=float, help="world scale (defaults to each importer's own)")
     import_parser.add_argument("--no-materials", action="store_true", help="skip materials and textures")
     import_parser.add_argument("--animations", action="store_true", help="import animations where supported")
+    import_parser.add_argument("--clips", default="", metavar="PATTERNS",
+                               help="Source 2 models: also import the animation graph clips matching these "
+                                    "comma-separated name patterns (implies --animations)")
     import_parser.add_argument("--output", type=Path, help="save the result to this .blend file")
     args = parser.parse_args(argv)
 

@@ -30,6 +30,7 @@ from SourceIO.library.utils.path_utilities import path_stem
 from SourceIO.library.source2.compiled_resource import DATA_BLOCK
 from SourceIO.library.utils.tiny_path import TinyPath
 from .animation_loader import import_animations
+from SourceIO.library.source2.animation import parse_clip_filter
 from .vmat_loader import load_material
 from .vphy_loader import load_physics
 from ..utils.fast_mesh import FastMesh, set_vertex_weights
@@ -79,6 +80,7 @@ class ImportContext:
     draw_call_index: int | None = None
     lm_uv_scale: tuple[float, float] = (1, 1)
     import_animations: bool = False
+    animation_clips: str = ''  # graph clip filter, see parse_clip_filter
 
 
 def load_model(content_manager: ContentManager, resource: CompiledModelResource, import_contex: ImportContext):
@@ -97,7 +99,8 @@ def load_model(content_manager: ContentManager, resource: CompiledModelResource,
             modifier = obj.modifiers.new(type="ARMATURE", name="Armature")
             modifier.object = armature
         if import_contex.import_animations:
-            import_animations(content_manager, resource, armature, import_contex.scale)
+            import_animations(content_manager, resource, armature, import_contex.scale,
+                              clip_patterns=parse_clip_filter(import_contex.animation_clips))
 
     return container
 
@@ -109,6 +112,7 @@ def create_armature(content_manager: ContentManager, resource: CompiledModelReso
     name = resource.name
     armature_obj = bpy.data.objects.new(name + "_ARM", bpy.data.armatures.new(name + "_ARM_DATA"))
     armature_obj['MODE'] = 'SourceIO'
+    armature_obj['import_scale'] = scale
     armature_obj.show_in_front = True
     physics_block = get_physics_block(content_manager, resource)
 

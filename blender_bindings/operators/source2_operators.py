@@ -17,6 +17,10 @@ from SourceIO.blender_bindings.source2.vmdl_loader import (load_model, put_into_
                                                            get_physics_block, ImportContext)
 from SourceIO.blender_bindings.source2.vphy_loader import load_physics
 from SourceIO.blender_bindings.source2.vtex_loader import import_texture
+from SourceIO.blender_bindings.source2.animation_loader import import_clips
+from SourceIO.library.source2.animation.loader import clip_from_resource
+from SourceIO.library.source2.blocks.kv3_block import KVBlock
+from SourceIO.library.source2.compiled_resource import CompiledResource, DATA_BLOCK
 from SourceIO.blender_bindings.source2.vwrld.loader import load_map
 from SourceIO.blender_bindings.utils.bpy_utils import get_new_unique_collection
 from SourceIO.blender_bindings.utils.resource_utils import serialize_mounted_content, deserialize_mounted_content
@@ -36,6 +40,11 @@ class SOURCEIO_OT_VMDLImport(ImportOperatorHelper):
     import_materials: BoolProperty(name="Import materials", default=True)
     import_attachments: BoolProperty(name="Import attachments", default=False)
     import_animations: BoolProperty(name="Import animations", default=False)
+    animation_clips: StringProperty(
+        name="Graph clips", default="",
+        description="Also import the animation graph clips (.vnmclip_c) of the model whose path or name matches "
+                    "one of these patterns, separated by commas or spaces, e.g. \"idle*, run_n_*\" or * for all. "
+                    "A CS2 character's graphs reach about 2000 clips")
     lod_mask: IntProperty(name="Lod mask", default=0xFFFF, subtype="UNSIGNED")
     scale: FloatProperty(name="World scale", default=SOURCE2_HAMMER_UNIT_TO_METERS, precision=6)
 
@@ -55,12 +64,64 @@ class SOURCEIO_OT_VMDLImport(ImportOperatorHelper):
             with FileBuffer(directory / file.name) as f:
                 model_resource = CompiledModelResource.from_buffer(f, directory / file.name)
                 import_context = ImportContext(self.scale, self.lod_mask, self.import_physics, self.import_attachments,
-                                               self.import_materials, import_animations=self.import_animations)
+                                               self.import_materials, import_animations=self.import_animations,
+                                               animation_clips=self.animation_clips)
                 container = load_model(content_manager, model_resource, import_context)
 
             master_collection = get_new_unique_collection(model_resource.name, bpy.context.scene.collection)
             put_into_collections(container, TinyPath(model_resource.name).stem, master_collection, False)
 
+        return {'FINISHED'}
+
+
+# noinspection PyPep8Naming
+class SOURCEIO_OT_VNMClipImport(ImportOperatorHelper):
+    """Load Source2 animation graph clips onto the active armature, matching bones by name"""
+    bl_idname = "sourceio.vnmclip"
+    bl_label = "Import Source2 animation clip"
+    bl_options = {'UNDO'}
+
+    discover_resources: BoolProperty(name="Mount discovered content", default=True)
+    scale: FloatProperty(name="World scale", default=SOURCE2_HAMMER_UNIT_TO_METERS, precision=6,
+                         description="Scale the armature was imported with (taken from SourceIO armatures)")
+    apply_root_motion: BoolProperty(name="Apply root motion", default=True)
+
+    filter_glob: StringProperty(default="*.vnmclip_c", options={'HIDDEN'})
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None and context.active_object.type == 'ARMATURE'
+
+    def invoke(self, context, event):
+        if 'import_scale' in context.active_object:
+            self.scale = context.active_object['import_scale']
+        return super().invoke(context, event)
+
+    def execute(self, context):
+        armature = context.active_object
+        directory = self.get_directory()
+        content_manager = ContentManager()
+        if self.discover_resources:
+            content_manager.scan_for_content(directory)
+            serialize_mounted_content(content_manager)
+        else:
+            deserialize_mounted_content(content_manager)
+
+        clips = []
+        for file in self.files:
+            path = directory / file.name
+            with FileBuffer(path) as f:
+                resource = CompiledResource.from_buffer(f, path)
+                data = resource.get_block(KVBlock, block_id=DATA_BLOCK)
+                if not data:
+                    self.report({'ERROR'}, f"{file.name} is not an animation clip")
+                    continue
+                clips.append((str(path), clip_from_resource(data, file.name)))
+        created = import_clips(content_manager, clips, armature, self.scale, self.apply_root_motion)
+        if not created:
+            self.report({'ERROR'}, "No clip could be imported (see the console)")
+            return {'CANCELLED'}
+        self.report({'INFO'}, f"Imported {len(created)} of {len(self.files)} clip(s)")
         return {'FINISHED'}
 
 

@@ -80,7 +80,7 @@ class DecodedAnimation:
     animated_position: np.ndarray  # (bones,) bool
     animated_rotation: np.ndarray  # (bones,) bool
     animated_scale: np.ndarray  # (bones,) bool
-    movement_positions: np.ndarray | None = None  # (frames, 3), root motion
+    movement_positions: np.ndarray | None = None  # (frames, 3), root motion; planar except for clips
     movement_angles: np.ndarray | None = None  # (frames,), root motion yaw in degrees
 
 
@@ -203,6 +203,7 @@ class SequenceAnimation:
         if self.has_movement and not self.delta:
             movement = [self.movement_at(frame) for frame in range(frames)]
             result.movement_positions = np.array([m[0] for m in movement], dtype=np.float32).reshape(frames, 3)
+            result.movement_positions[:, 2] = 0  # legacy movement is planar
             result.movement_angles = np.array([m[1] for m in movement], dtype=np.float32).reshape(frames)
         return result
 

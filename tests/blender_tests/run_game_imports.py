@@ -6,7 +6,7 @@ Usage:
         [--include-animations] [--load-placeholders] [--json FILE]
     blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- \
         --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--model models/chicken/chicken.vmdl_c ...] \
-        [--map de_dust2 ...]
+        [--map de_dust2 ...] [--include-animations] [--clips "idle*,run_n_*"]
 
 The game folder holds gameinfo.txt (Source 1) or gameinfo.gi (Source 2). With no --model/--map, a default
 TF2 or CS2 set is used. Models are read through the game's own search paths (VPKs included), copied with
@@ -14,7 +14,9 @@ their companion files into a temporary folder, and imported from there with the 
 materials and include models resolve the way they do for a user. Maps are imported from the game's maps
 folder (.bsp, or a Source 2 map .vpk). --include-animations imports the animations of Source 1 include
 models, or turns on *Import animations* for Source 2 models. --load-placeholders then runs *Load Entity* on
-every prop placeholder a map import leaves (Source 2 maps place all their geometry that way). Results use
+every prop placeholder a map import leaves (Source 2 maps place all their geometry that way). --clips also
+imports the animation graph clips of Source 2 models that match the patterns (implies --include-animations;
+"*" takes every clip, about 2000 for a CS2 character). Results use
 the same PASS/WARN/FAIL rules as run_sample_imports.py; exit code is 1 if anything failed.
 """
 import argparse
@@ -108,13 +110,14 @@ def summarize_model() -> dict:
     shape_keys = sum(len(mesh.shape_keys.key_blocks) - 1 for mesh in bpy.data.meshes if mesh.shape_keys)
     drivers = sum(len(key.animation_data.drivers) for key in bpy.data.shape_keys if key.animation_data)
     slots = sum(len(action.slots) for action in bpy.data.actions)
+    clips = sum(1 for action in bpy.data.actions if "clip" in action)
     nla_tracks = sum(len(obj.animation_data.nla_tracks) for obj in bpy.data.objects if obj.animation_data)
     bone_collections = {}
     for armature in bpy.data.armatures:
         for collection in armature.collections_all:
             bone_collections[collection.name] = bone_collections.get(collection.name, 0) + len(collection.bones)
-    return {"shape_keys": shape_keys, "flex_drivers": drivers, "action_slots": slots, "nla_tracks": nla_tracks,
-            "bone_collections": bone_collections}
+    return {"shape_keys": shape_keys, "flex_drivers": drivers, "action_slots": slots, "clip_actions": clips,
+            "nla_tracks": nla_tracks, "bone_collections": bone_collections}
 
 
 def load_placeholders(result: dict):
@@ -164,6 +167,8 @@ def main() -> int:
     parser.add_argument("--include-animations", action="store_true",
                         help="also import the animations of each model's include models (Source 1), "
                              "or the model's own animations (Source 2)")
+    parser.add_argument("--clips", default="", metavar="PATTERNS",
+                        help="Source 2: also import the animation graph clips matching these patterns")
     parser.add_argument("--load-placeholders", action="store_true",
                         help="after importing a map, load every prop placeholder (the Load Entity button)")
     parser.add_argument("--json", type=Path)
@@ -187,7 +192,8 @@ def main() -> int:
             else:
                 # The operator unmounts everything when it finishes, so mount the game for each import.
                 if path.suffix == ".vmdl_c":
-                    operator, options = "vmdl", {"import_animations": args.include_animations}
+                    operator, options = "vmdl", {"import_animations": args.include_animations or bool(args.clips),
+                                                 "animation_clips": args.clips}
                 else:
                     operator, options = "mdl", {"import_include_animations": args.include_animations}
                 result = samples.run_one(path, operator, "files", before_import=lambda: mount(args.game),

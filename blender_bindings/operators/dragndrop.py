@@ -58,6 +58,18 @@ class OBJECT_FH_vmdl_import(bpy.types.FileHandler):
 
 
 # noinspection PyPep8Naming
+class OBJECT_FH_vnmclip_import(bpy.types.FileHandler):
+    bl_idname = "OBJECT_FH_vnmclip_import"
+    bl_label = "Source2 animation clip (.vnmclip_c)"
+    bl_import_operator = "sourceio.vnmclip"
+    bl_file_extensions = ".vnmclip_c"
+
+    @classmethod
+    def poll_drop(cls, context):
+        return _in_3d_view(context) and context.active_object is not None and context.active_object.type == 'ARMATURE'
+
+
+# noinspection PyPep8Naming
 class OBJECT_FH_vphys_import(bpy.types.FileHandler):
     bl_idname = "OBJECT_FH_vphys_import"
     bl_label = "Source2 physics (.vphys_c)"
@@ -146,6 +158,7 @@ file_handler_classes = (
     IMAGE_FH_vtex_import,
     OBJECT_FH_mdl_import,
     OBJECT_FH_vmdl_import,
+    OBJECT_FH_vnmclip_import,
     OBJECT_FH_vphys_import,
     OBJECT_FH_dmx_camera_import,
     MATERIAL_FH_vmt_import,

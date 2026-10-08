@@ -8,6 +8,10 @@ after the model) keyed on every frame with linear interpolation.
 Values are written in the rest-relative bone space of the armature built by ``vmdl_loader.create_armature``.
 Delta (additive) animations are composed over the bind pose, and root motion (movement data) is baked
 into the root bones, the same way VRF's glTF exporter does.
+
+Animation graph 2 clips (``.vnmclip_c``) are authored on their own NM skeleton and play on the model by
+bone name: :func:`import_animations` takes the model's graph clips that match a name filter, and
+:func:`import_clips` puts clip files on any armature whose bone names match.
 """
 from __future__ import annotations
 
@@ -18,8 +22,9 @@ from mathutils import Matrix
 from SourceIO.blender_bindings.models.import_animations import _make_continuous, _quat_multiply, _write_curves
 from SourceIO.blender_bindings.utils.bpy_utils import ActionCurveFactory
 from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2.animation import DecodedAnimation, SequenceAnimation, Skeleton, load_model_animations, \
-    model_skeleton
+from SourceIO.library.source2.animation import (AnimationClip, ClipAnimation, ClipLoader, DecodedAnimation,
+                                                SequenceAnimation, Skeleton, clip_names, load_graph_clips,
+                                                load_model_animations, model_skeleton)
 from SourceIO.library.source2.compiled_resource import CompiledResource
 from SourceIO.logger import SourceLogMan
 
@@ -28,9 +33,11 @@ logger = log_manager.get_logger('Source2::AnimImport')
 
 
 def import_animations(content_manager: ContentManager, model_resource: CompiledResource,
-                      armature_obj: bpy.types.Object, scale: float,
-                      apply_root_motion: bool = True) -> list[tuple[bpy.types.Action, bpy.types.ActionSlot]]:
-    """Import every animation of ``model_resource`` onto ``armature_obj``; returns the created (action, slot) pairs."""
+                      armature_obj: bpy.types.Object, scale: float, apply_root_motion: bool = True,
+                      clip_patterns: list[str] | None = None) -> list[tuple[bpy.types.Action, bpy.types.ActionSlot]]:
+    """Import every animation of ``model_resource`` onto ``armature_obj``, plus the clips of its animation
+    graphs whose path or name matches one of ``clip_patterns`` (``fnmatch``-style); returns the created
+    (action, slot) pairs."""
     skeleton = model_skeleton(model_resource)
     if skeleton is None:
         return []
@@ -38,24 +45,91 @@ def import_animations(content_manager: ContentManager, model_resource: CompiledR
         animations = load_model_animations(model_resource, content_manager, skeleton)
     except Exception as ex:
         logger.exception(f"Failed to load animations of {model_resource.name}", ex)
-        return []
-    if not animations:
+        animations = []
+    clips = []
+    if clip_patterns:
+        try:
+            clips = load_graph_clips(model_resource, content_manager, clip_patterns, skeleton)
+        except Exception as ex:
+            logger.exception(f"Failed to load animation graph clips of {model_resource.name}", ex)
+    if not animations and not clips:
         return []
 
     binding = _ArmatureBinding(armature_obj, skeleton)
     factory = ActionCurveFactory(model_resource.name, armature_obj, legacy_behavior=True)
+    created = _create_actions(factory, binding, animations, scale, apply_root_motion)
+    created += _create_actions(factory, binding, clips, scale, apply_root_motion)
+    logger.info(f"Imported {len(created)} animation(s) for {model_resource.name}"
+                + (f", {len(clips)} of them graph clips" if clips else ""))
+    return created
+
+
+def import_clips(content_manager: ContentManager, clips: list[tuple[str, AnimationClip]],
+                 armature_obj: bpy.types.Object, scale: float,
+                 apply_root_motion: bool = True) -> list[tuple[bpy.types.Action, bpy.types.ActionSlot]]:
+    """Import (path, clip) pairs onto any armature, matching bones by name; the clips' skeletons are
+    looked up in ``content_manager``.
+
+    The armature's rest pose stands in for the model skeleton, so it should be in Source units times ``scale``.
+    """
+    skeleton = armature_skeleton(armature_obj, scale)
+    loader = ClipLoader(content_manager)
+    animations = []
+    for path, clip in clips:
+        animation = loader.bind(clip, skeleton, path)
+        if animation is None:
+            missing = [candidate.skeleton_name for candidate in [clip, *clip.secondary]
+                       if loader.skeleton(candidate.skeleton_name) is None]
+            reason = f" (skeleton {', '.join(missing)} not found)" if missing else ""
+            logger.error(f"Clip {path} drives no bone of {armature_obj.name}{reason}")
+            continue
+        animations.append(animation)
+    if not animations:
+        return []
+    binding = _ArmatureBinding(armature_obj, skeleton)
+    # Share the slot name of the armature's current action (the model name after a VMDL import), so
+    # swapping actions keeps the binding.
+    adt = armature_obj.animation_data
+    slot_name = adt.action_slot.name_display if adt and adt.action_slot else armature_obj.name
+    factory = ActionCurveFactory(slot_name, armature_obj, legacy_behavior=True)
+    return _create_actions(factory, binding, animations, scale, apply_root_motion)
+
+
+def armature_skeleton(armature_obj: bpy.types.Object, scale: float) -> Skeleton:
+    """The armature's rest pose as a skeleton in Source units, bones in the armature's order."""
+    bones = armature_obj.data.bones
+    names = [bone.name for bone in bones]
+    index = {name: i for i, name in enumerate(names)}
+    parents = np.array([index[bone.parent.name] if bone.parent else -1 for bone in bones], dtype=np.int32)
+    positions = np.zeros((len(bones), 3), dtype=np.float32)
+    rotations = np.zeros((len(bones), 4), dtype=np.float32)
+    for i, bone in enumerate(bones):
+        local = bone.parent.matrix_local.inverted() @ bone.matrix_local if bone.parent else bone.matrix_local
+        translation, rotation, _ = local.decompose()
+        positions[i] = translation / scale
+        rotations[i] = (rotation.x, rotation.y, rotation.z, rotation.w)
+    return Skeleton(names, parents, positions, rotations, np.zeros(len(bones), dtype=np.int64))
+
+
+def _create_actions(factory: ActionCurveFactory, binding: '_ArmatureBinding',
+                    animations: list[SequenceAnimation | ClipAnimation], scale: float, apply_root_motion: bool):
+    names = clip_names([animation.path for animation in animations if isinstance(animation, ClipAnimation)])
     created = []
     for animation in animations:
         if animation.frame_count <= 0:
             continue
+        is_clip = isinstance(animation, ClipAnimation)
+        name = names[animation.path] if is_clip else animation.name
         try:
-            decoded = animation.decode(skeleton)
-            result = _create_action(factory, binding, animation, decoded, scale, apply_root_motion)
+            decoded = animation.decode(binding.skeleton)
+            action, slot = _create_action(factory, binding, animation, decoded, scale, apply_root_motion, name)
         except Exception as ex:
-            logger.exception(f"Failed to import animation '{animation.name}'", ex)
+            logger.exception(f"Failed to import animation '{name}'", ex)
             continue
-        created.append(result)
-    logger.info(f"Imported {len(created)} animation(s) for {model_resource.name}")
+        if is_clip:
+            action["clip"] = animation.path
+            action["clip_skeleton"] = animation.clip.skeleton_name
+        created.append((action, slot))
     return created
 
 
@@ -88,15 +162,14 @@ class _ArmatureBinding:
 
 def _apply_root_motion(skeleton: Skeleton, movement_positions: np.ndarray, movement_angles: np.ndarray,
                        positions: np.ndarray, rotations: np.ndarray):
-    """Bake planar movement (translation + yaw) into the root bones (VRF glTF exporter behaviour)."""
+    """Bake movement (translation + yaw) into the root bones (VRF glTF exporter behaviour)."""
     roots = np.nonzero(skeleton.parents < 0)[0]
     angles = np.radians(movement_angles.astype(np.float64))
     yaw = np.zeros((len(angles), 4))
     yaw[:, 0] = np.cos(angles / 2)
     yaw[:, 3] = np.sin(angles / 2)
     cos, sin = np.cos(angles)[:, None], np.sin(angles)[:, None]
-    offset = movement_positions.astype(np.float64).copy()
-    offset[:, 2] = 0
+    offset = movement_positions.astype(np.float64)
     for root in roots:
         x, y, z = positions[:, root, 0].copy(), positions[:, root, 1].copy(), positions[:, root, 2].copy()
         positions[:, root, 0] = cos[:, 0] * x - sin[:, 0] * y + offset[:, 0]
@@ -144,8 +217,9 @@ def _world_matrices(skeleton: Skeleton, local: np.ndarray) -> np.ndarray:
     return world
 
 
-def _create_action(factory: ActionCurveFactory, binding: _ArmatureBinding, animation: SequenceAnimation,
-                   decoded: DecodedAnimation, scale: float, apply_root_motion: bool):
+def _create_action(factory: ActionCurveFactory, binding: _ArmatureBinding,
+                   animation: SequenceAnimation | ClipAnimation, decoded: DecodedAnimation, scale: float,
+                   apply_root_motion: bool, name: str | None = None):
     skeleton = binding.skeleton
     positions = decoded.positions.astype(np.float64) * scale
     rotations = decoded.rotations.astype(np.float64)
@@ -154,7 +228,7 @@ def _create_action(factory: ActionCurveFactory, binding: _ArmatureBinding, anima
     if apply_root_motion and decoded.movement_positions is not None:
         _apply_root_motion(skeleton, decoded.movement_positions * scale, decoded.movement_angles, positions, rotations)
 
-    action, slot = factory.new_action(animation.name)
+    action, slot = factory.new_action(name or animation.name)
     action["fps"] = animation.fps
     action["looping"] = animation.looping
     action["delta"] = animation.delta

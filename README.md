@@ -26,14 +26,15 @@ Installing the repository folder as a legacy add-on also still works.
 ### Command line
 With the extension enabled, files can be imported without opening the UI. The importer is chosen from the file extension, and for `.bsp` from the file header (GoldSrc or Source):
 ```
-blender -c sourceio import [--scale S] [--no-materials] [--animations] [--output out.blend] FILE [FILE ...]
+blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--output out.blend] FILE [FILE ...]
 ```
+`--clips` imports a Source 2 model's animation graph clips that match the patterns (see below).
 
 # Usage
 In order to find the import tools you simply need to go to File>Import>Source Engine Assets
 ![](https://cdn.discordapp.com/attachments/786989240529059900/1143975506589515886/image.png)
 
-Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files and `.dmx` cameras.
+Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files and `.dmx` cameras. Source 2 animation clips (`.vnmclip_c`) can be dropped onto a selected armature.
 
 # Changes in this fork
 
@@ -54,7 +55,12 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   * included models;
   * older NTRO-format files.
 
-  All of VRF's segment decoders are ported. Position, rotation and scale channels are imported, with delta animations, looping flags and root motion. Results match VRF's own glTF export within float precision on every frame of 192 animations across 9 test models. Not yet supported: flex/morph channels, AnimGraph 2 clips (`.vnmclip_c`), bone masks and pose-parameter blending.
+  All of VRF's segment decoders are ported. Position, rotation and scale channels are imported, with delta animations, looping flags and root motion. Results match VRF's own glTF export within float precision on every frame of 192 animations across 9 test models. Not yet supported: flex/morph channels, bone masks and pose-parameter blending.
+* **Source 2 animation graph clips** (`.vnmclip_c`, AnimGraph 2). CS2 characters animate through these rather than through the model: a CS2 agent has 2 animations of its own and reaches about 2000 clips through its animation graphs. Each clip is authored on its own skeleton and is matched to the model by bone name, the same way VRF does it. Two ways to import them:
+  * *Graph clips* in the VMDL import dialog (with *Import animations*) takes the model's clips whose path or name matches the patterns, for example `idle*, run_n_*`, or `*` for all of them (about a minute for a CS2 agent).
+  * *File > Import > Source Engine Assets > Source2 animation clip* puts clip files onto the selected armature. Weapons need this route, because their animation comes from the second track set of viewmodel and menu clips, which the weapon's own model doesn't list.
+
+  Additive clips and root motion are supported, and each action records the clip's path. On 138 clips (the chicken, a CT agent and an AK-47), the result matches VRF's glTF export within 1e-4 units and 0.002°.
 * **GoldSrc animations.** All sequences embedded in a GoldSrc model are imported as actions when *Load animations* is enabled. Previously only a sequence named `walk1` was imported, and its values were wrong.
 * **More Source 2 texture formats.** ETC2, ETC2_EAC, R11_EAC and RG11_EAC.
 * **Command-line import.** `blender -c sourceio import ...` (see above).
@@ -94,7 +100,7 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   * a module that failed to import (`csgo_weapon.py`).
 
 ## Testing
-`tests/fetch_samples.py` downloads 99 hash-verified sample assets (about 17 MB) from public repositories into the git-ignored `samples/` folder.
+`tests/fetch_samples.py` downloads 104 hash-verified sample assets (about 17 MB) from public repositories into the git-ignored `samples/` folder.
 `tests/blender_tests/run_sample_imports.py` imports each one headlessly through the real operators. For every texture, it also checks that the imported pixels match SourceIO's own decode:
 ```
 python tests/fetch_samples.py
@@ -106,9 +112,9 @@ Current result: 88 pass, 5 warn (only because game content isn't included), 0 fa
 ```
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf"
 ```
-It also takes a Source 2 game. With Counter-Strike 2 (9 models: agents, arms, weapons, chicken, hostage, a prop; and 3 maps), all 12 pass. `--load-placeholders` also loads every prop and world mesh a map places (de_dust2, de_inferno and cs_office load all of them without errors):
+It also takes a Source 2 game. With Counter-Strike 2 (9 models: agents, arms, weapons, chicken, hostage, a prop; and 3 maps), all 12 pass. `--load-placeholders` also loads every prop and world mesh a map places (de_dust2, de_inferno and cs_office load all of them without errors). `--clips "*"` imports every graph clip as well; all 9 models still pass:
 ```
-blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders]
+blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders] [--clips PATTERNS]
 ```
 See [plan.md](plan.md) for details.
 
@@ -138,6 +144,7 @@ See [plan.md](plan.md) for details.
 | .VMAP     | Map Files (Hammer Format)         | Not Planned         | Not Planned  |
 | .VTEX     | Textures                          | :heavy_check_mark:  | :x:          |
 | .VMAT     | Materials                         | :heavy_check_mark:  | :x:          |
+| .VNMCLIP  | Animation clips (AnimGraph 2)     | :heavy_check_mark:  | :x:          |
 
 ## Supported games
 | Game      | Status                                                                                          |

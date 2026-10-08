@@ -145,4 +145,10 @@ Models are read through the game's search paths (VPKs included), with the game m
 
 `tests/animation_tests` used made-up counts and the old array `frames` API; it now checks the counts against the MDL headers (HL2 `dog_*` from TF2's `hl2_misc_dir.vpk`), the per-bone dict, and degenerate rotations: 11 pass. Unit tests: 179 pass. Sample suite unchanged: 88 PASS / 5 WARN / 0 FAIL.
 
-Not done: `tf/custom/*` wildcard search paths are still skipped with a warning; `_read_frame_animations` (v49+ FRAMEANIM) asserts constant and per-frame data never mix.
+Not done: ~~`tf/custom/*` wildcard search paths are still skipped with a warning~~ (round 4); `_read_frame_animations` (v49+ FRAMEANIM) asserts constant and per-frame data never mix.
+
+## Round 4 (2026-10-08)
+
+| Item | Result |
+|------|--------|
+| `custom/*` wildcard search paths | Every subfolder and VPK is mounted ahead of the game, in alphabetical order, as the engine does. Split archives mount through `_dir.vpk`; the `_NNN.vpk` chunks are skipped. `tests/content_manager` (3 tests, using a generated VPK v1) fails on the old code. TF2: `tf/custom/workshop` now mounts; still 13 PASS / 0 WARN / 0 FAIL. Unit tests: 182 pass. |

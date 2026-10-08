@@ -39,7 +39,11 @@ class Source1GameInfoProvider(ContentProvider):
             elif "gameinfo_path" in search_path.lower():
                 search_path = TinyPath(search_path.replace("|gameinfo_path|", self.root.stem + "/"))
             elif search_path.endswith("*"):
-                logger.warn(f"Wildcard search path is not supported: {search_path}")
+                wildcard_root = TinyPath(search_path.rstrip("*"))
+                if not wildcard_root.is_absolute():
+                    wildcard_root = (mods_folder / wildcard_root).resolve()
+                for entry in self._expand_wildcard(wildcard_root):
+                    self._mount_path(entry)
                 continue
             if search_path.endswith(".vpk"):
                 tmp = TinyPath(search_path)
@@ -52,20 +56,43 @@ class Source1GameInfoProvider(ContentProvider):
                 mod_folder = search_path
             else:
                 mod_folder = (mods_folder / search_path).resolve()
-            if mod_folder.exists():
-                if mod_folder.is_file():
-                    if mod_folder.suffix == ".vpk":
-                        mod_provider = register_provider(VPKContentProvider(mod_folder, self._steamapp_id))
-                        self._add_mount(mod_provider)
-                    else:
-                        logger.warn("Only VPK/HFS/GMA supported to be mounted as files")
-                        continue
-                else:
-                    mod_provider = register_provider(LooseFilesContentProvider(mod_folder, self._steamapp_id))
-                    self._add_mount(mod_provider)
-                    for vpk in mod_folder.glob("*_dir.vpk"):
-                        vpk_provider = register_provider(VPKContentProvider(vpk, self._steamapp_id))
-                        self._add_mount(vpk_provider)
+            self._mount_path(mod_folder)
+
+    @staticmethod
+    def _expand_wildcard(folder: TinyPath) -> list[TinyPath]:
+        """Subfolders and VPKs of a `custom/*` search path, in the engine's alphabetical order.
+
+        Split archives are mounted through their `_dir.vpk`; the numbered `_NNN.vpk` chunks are not
+        archives on their own.
+        """
+        if not folder.is_dir():
+            return []
+        entries = []
+        for entry in folder.iterdir():
+            if entry.is_dir():
+                entries.append(entry)
+            elif entry.suffix.lower() == ".vpk":
+                stem, _, chunk = entry.stem.rpartition("_")
+                if stem and chunk.isdigit() and (folder / f"{stem}_dir.vpk").exists():
+                    continue
+                entries.append(entry)
+        return sorted(entries, key=lambda p: p.name.lower())
+
+    def _mount_path(self, mod_folder: TinyPath):
+        if not mod_folder.exists():
+            return
+        if mod_folder.is_file():
+            if mod_folder.suffix == ".vpk":
+                mod_provider = register_provider(VPKContentProvider(mod_folder, self._steamapp_id))
+                self._add_mount(mod_provider)
+            else:
+                logger.warn("Only VPK/HFS/GMA supported to be mounted as files")
+        else:
+            mod_provider = register_provider(LooseFilesContentProvider(mod_folder, self._steamapp_id))
+            self._add_mount(mod_provider)
+            for vpk in mod_folder.glob("*_dir.vpk"):
+                vpk_provider = register_provider(VPKContentProvider(vpk, self._steamapp_id))
+                self._add_mount(vpk_provider)
 
     def _add_mount(self, mod_provider):
         if mod_provider not in self.mount:

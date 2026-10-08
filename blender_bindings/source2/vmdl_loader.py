@@ -29,6 +29,7 @@ from SourceIO.library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from SourceIO.library.utils.path_utilities import path_stem
 from SourceIO.library.source2.compiled_resource import DATA_BLOCK
 from SourceIO.library.utils.tiny_path import TinyPath
+from .animation_loader import import_animations
 from .vmat_loader import load_material
 from .vphy_loader import load_physics
 from ..utils.fast_mesh import FastMesh, set_vertex_weights
@@ -77,6 +78,7 @@ class ImportContext:
     import_materials: bool = False
     draw_call_index: int | None = None
     lm_uv_scale: tuple[float, float] = (1, 1)
+    import_animations: bool = False
 
 
 def load_model(content_manager: ContentManager, resource: CompiledModelResource, import_contex: ImportContext):
@@ -94,6 +96,8 @@ def load_model(content_manager: ContentManager, resource: CompiledModelResource,
         for obj in objects:
             modifier = obj.modifiers.new(type="ARMATURE", name="Armature")
             modifier.object = armature
+        if import_contex.import_animations:
+            import_animations(content_manager, resource, armature, import_contex.scale)
 
     return container
 

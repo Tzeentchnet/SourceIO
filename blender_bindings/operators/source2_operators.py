@@ -35,6 +35,7 @@ class SOURCEIO_OT_VMDLImport(ImportOperatorHelper):
     import_physics: BoolProperty(name="Import physics", default=False)
     import_materials: BoolProperty(name="Import materials", default=True)
     import_attachments: BoolProperty(name="Import attachments", default=False)
+    import_animations: BoolProperty(name="Import animations", default=False)
     lod_mask: IntProperty(name="Lod mask", default=0xFFFF, subtype="UNSIGNED")
     scale: FloatProperty(name="World scale", default=SOURCE2_HAMMER_UNIT_TO_METERS, precision=6)
 
@@ -54,7 +55,7 @@ class SOURCEIO_OT_VMDLImport(ImportOperatorHelper):
             with FileBuffer(directory / file.name) as f:
                 model_resource = CompiledModelResource.from_buffer(f, directory / file.name)
                 import_context = ImportContext(self.scale, self.lod_mask, self.import_physics, self.import_attachments,
-                                               self.import_materials)
+                                               self.import_materials, import_animations=self.import_animations)
                 container = load_model(content_manager, model_resource, import_context)
 
             master_collection = get_new_unique_collection(model_resource.name, bpy.context.scene.collection)

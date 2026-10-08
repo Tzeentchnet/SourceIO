@@ -58,6 +58,9 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 * **GoldSrc animations.** All sequences embedded in a GoldSrc model are imported as actions when *Load animations* is enabled. Previously only a sequence named `walk1` was imported, and its values were wrong.
 * **More Source 2 texture formats.** ETC2, ETC2_EAC, R11_EAC and RG11_EAC.
 * **Command-line import.** `blender -c sourceio import ...` (see above).
+* **Source 1 overlays.** `info_overlay` decals (signs, posters, road markings) are imported into an `overlays` collection, clipped to the faces and displacements they cover. They were previously not imported at all. Controlled by *Load overlays* (on by default).
+* **Bone collections and colours** for Source 1 models (MDL v44–v52). Bones are sorted by what the engine uses them for: *Deform*, *Procedural*, *Bone merge*, *Attachments* and *Other*. Deform bones are coloured by side (left blue, right red, centre yellow), and the others by role.
+* **`custom/*` search paths.** Every folder and VPK in a game's `custom` folder is mounted ahead of the game, as the engine does, so community content and workshop items resolve.
 
 ## Bug fixes
 * Map props with a multi-frame `defaultanim` failed to pose, and GoldSrc animation import was broken (both regressions from the recent animation overhaul).
@@ -69,6 +72,13 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 * Brush entities in BSPs without face data no longer crash the map import.
 * KV3 v2 data compressed as several zstd frames failed to load. This affected some newer Source 2 models' animation blocks.
 * External resource references in older NTRO-format Source 2 files were read as empty.
+* Source 1 animations stored in sections had broken rotations on every bone a section didn't list (for example 178 tracks on the TF2 heavy).
+* Source 1 v49+ frame animations that mix constant and per-frame data, which is most of them, failed to decode.
+* *Load Ref pose* failed on every model with animations and left Blender in edit mode.
+* Building an armature put any other selected armature into edit mode too, and a failed import could leave Blender in edit mode.
+* Displacements far from the map origin could be built from the wrong corner, which rotated their grid.
+* Water materials set with `$bottommaterial` weren't found, and underwater faces got an empty material.
+* Model materials with `..` in their path, and models whose VPK path differs in case, failed to resolve.
 * Smaller fixes:
   * duplicate *Export to VTF* menu entries after re-enabling the add-on;
   * a leaked scene property;
@@ -85,7 +95,13 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 python tests/fetch_samples.py
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--filter TEXT] [--json report.json]
 ```
-Current result: 88 pass, 5 warn (only because game content isn't included), 0 fail. See [plan.md](plan.md) for details.
+Current result: 88 pass, 5 warn (only because game content isn't included), 0 fail.
+
+`tests/blender_tests/run_game_imports.py` imports models and maps straight from an installed game through its own search paths. With Team Fortress 2 (9 models, including HL2's dog, and 4 maps), all 13 pass:
+```
+blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf"
+```
+See [plan.md](plan.md) for details.
 
 # Credits
 * [datamodel.py](https://github.com/Artfunkel/BlenderSourceTools/blob/master/io_scene_valvesource/datamodel.py) by [Artfunkel](https://github.com/Artfunkel)

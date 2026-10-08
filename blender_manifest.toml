@@ -30,6 +30,7 @@ paths_exclude_pattern = [
   "/tests/",
   "/samples/",
   "/dist/",
+  "/tools/",
   "/wiki/",
   "/plan.md",
   "/TODO.md",

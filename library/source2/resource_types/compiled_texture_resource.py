@@ -41,6 +41,50 @@ UNCOMPRESSED_FORMATS = {
     VTexFormat.RGBA32323232F: (np.float32, 4, None),
 }
 
+# EAC modifier table (Khronos ETC2 spec, same values as VRF's CommonEAC).
+_EAC_MODIFIERS = np.array([
+    [-3, -6, -9, -15, 2, 5, 8, 14], [-3, -7, -10, -13, 2, 6, 9, 12],
+    [-2, -5, -8, -13, 1, 4, 7, 12], [-2, -4, -6, -13, 1, 3, 5, 12],
+    [-3, -6, -8, -12, 2, 5, 7, 11], [-3, -7, -9, -11, 2, 6, 8, 10],
+    [-4, -7, -8, -11, 3, 6, 7, 10], [-3, -5, -8, -11, 2, 4, 7, 10],
+    [-2, -6, -8, -10, 1, 5, 7, 9], [-2, -5, -8, -10, 1, 4, 7, 9],
+    [-2, -4, -8, -10, 1, 3, 7, 9], [-2, -5, -7, -10, 1, 4, 6, 9],
+    [-3, -4, -7, -10, 2, 3, 6, 9], [-1, -2, -3, -10, 0, 1, 2, 9],
+    [-4, -6, -8, -9, 3, 5, 7, 8], [-3, -5, -7, -9, 2, 4, 6, 8],
+], np.int32)
+
+
+def _decode_eac_blocks(blocks: np.ndarray, alpha: bool) -> np.ndarray:
+    """Decode (N, 8) EAC blocks into (N, 4, 4) values in 0..1, indexed [block, y, x].
+
+    ``alpha`` selects the 8-bit ETC2 alpha variant, otherwise the 11-bit R11/RG11 variant.
+    """
+    blocks = blocks.astype(np.int64)
+    base = blocks[:, 0:1]
+    multiplier = blocks[:, 1:2] >> 4
+    table = blocks[:, 1] & 0xF
+    bits = np.zeros(len(blocks), np.int64)
+    for byte in range(2, 8):
+        bits = (bits << 8) | blocks[:, byte]
+    shifts = 45 - 3 * np.arange(16)
+    indices = (bits[:, None] >> shifts) & 7
+    modifiers = _EAC_MODIFIERS[table[:, None], indices]
+    if alpha:
+        values = np.where(multiplier == 0, base, base + modifiers * multiplier)
+        values = np.clip(values, 0, 255) / 255
+    else:
+        step = np.where(multiplier == 0, 1, multiplier * 8)
+        values = np.clip(base * 8 + 4 + modifiers * step, 0, 2047) / 2047
+    # Pixels are stored column-major: entry i is at x = i // 4, y = i % 4.
+    return values.reshape(-1, 4, 4).transpose(0, 2, 1).astype(np.float32)
+
+
+def _blocks_to_image(block_values: np.ndarray, width: int, height: int) -> np.ndarray:
+    blocks_x, blocks_y = (width + 3) // 4, (height + 3) // 4
+    image = block_values.reshape(blocks_y, blocks_x, 4, 4).transpose(0, 2, 1, 3).reshape(blocks_y * 4, blocks_x * 4)
+    return image[:height, :width]
+
+
 HDR_FORMATS = {VTexFormat.BC6H, VTexFormat.RGBA16161616F, VTexFormat.R16F, VTexFormat.RG1616F,
                VTexFormat.R32F, VTexFormat.RG3232F, VTexFormat.RGB323232F, VTexFormat.RGBA32323232F}
 
@@ -68,6 +112,8 @@ class CompiledTextureResource(CompiledResource):
             VTexFormat.BC7,
             VTexFormat.ETC2,
             VTexFormat.ETC2_EAC,
+            VTexFormat.R11_EAC,
+            VTexFormat.RG11_EAC,
             VTexFormat.ATI1N,
             VTexFormat.ATI2N,
         ]:
@@ -317,6 +363,21 @@ class CompiledTextureResource(CompiledResource):
             pixel_data = np.repeat(r, 4, axis=1).astype(np.float32) / 255
             pixel_data[:, 3] = 1
             pixel_data.reshape((width, height, 4))
+        elif pixel_format in (VTexFormat.ETC2, VTexFormat.ETC2_EAC):
+            block_size = 8 if pixel_format == VTexFormat.ETC2 else 16
+            blocks = np.frombuffer(data, np.uint8).reshape(-1, block_size)
+            color = decode_texture(blocks[:, block_size - 8:].tobytes(), width, height, "ETC2")
+            pixel_data = np.frombuffer(color, np.uint8).reshape((height, width, 4)).astype(np.float32) / 255
+            if pixel_format == VTexFormat.ETC2_EAC:
+                pixel_data[..., 3] = _blocks_to_image(_decode_eac_blocks(blocks[:, :8], alpha=True), width, height)
+        elif pixel_format in (VTexFormat.R11_EAC, VTexFormat.RG11_EAC):
+            channels = 1 if pixel_format == VTexFormat.R11_EAC else 2
+            blocks = np.frombuffer(data, np.uint8).reshape(-1, channels, 8)
+            pixel_data = np.zeros((height, width, 4), np.float32)
+            for channel in range(channels):
+                pixel_data[..., channel] = _blocks_to_image(_decode_eac_blocks(blocks[:, channel], alpha=False),
+                                                            width, height)
+            pixel_data[..., 3] = 1
         elif pixel_format == VTexFormat.BGRA8888:
             pixel_data = np.frombuffer(data, np.uint8, width * height * 4).reshape((width, height, 4))
             pixel_data = pixel_data[..., [2, 1, 0, 3]].astype(np.float32) / 255

@@ -7,7 +7,7 @@ import bpy
 import numpy as np
 from mathutils import Euler, Matrix, Quaternion, Vector
 
-from SourceIO.blender_bindings.models.common import merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors, create_flex_drivers
+from SourceIO.blender_bindings.models.common import assign_bone_collections, merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors, create_flex_drivers
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
 from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
 from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material, ActionCurveFactory
@@ -47,8 +47,10 @@ def create_armature(mdl: MdlV44, scale=1.0, load_refpose=False):
 
     bpy.ops.object.mode_set(mode='EDIT')
 
+    edit_bones = []
     for i, bone in enumerate(mdl.bones):
         bl_bone = armature.edit_bones.new(bone.name[:63])
+        edit_bones.append(bl_bone)
         bl_bone.head = bone.position
         bl_bone.tail = bl_bone.head + Vector((0, 0, 1)) * scale
         if bone.parent_id != -1:
@@ -60,6 +62,7 @@ def create_armature(mdl: MdlV44, scale=1.0, load_refpose=False):
             bl_bone.matrix = mat
         else:
             bl_bone.matrix = (armature.edit_bones[bone.parent_id].matrix @ mat)
+    assign_bone_collections(armature, mdl.bones, edit_bones)
 
     if mdl.animations and load_refpose:
         ref_animation = mdl.animations[0]

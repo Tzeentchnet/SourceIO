@@ -7,11 +7,34 @@ from SourceIO.library.models.mdl.structs.model import Model
 from SourceIO.library.models.vtx.v7.structs.lod import ModelLod as VtxModel
 from SourceIO.library.models.vtx.v7.structs.mesh import Mesh as VtxMesh
 from SourceIO.library.models.mdl import Mdl
+from SourceIO.library.models.mdl.structs.bone import Bone, BoneRole
 
 from SourceIO.library.models.mdl.load_animations import load_all_animations, load_mdl_animations
 from SourceIO.blender_bindings.models.import_animations import import_animations_to_armature
 from SourceIO.library.utils import Buffer
 from SourceIO.library.shared.content_manager import ContentManager
+
+# Deform bones are coloured by side (left blue, right red, centre yellow); the rest by role.
+BONE_SIDE_COLORS = {'L': 'THEME04', 'R': 'THEME01', None: 'THEME09'}
+BONE_ROLE_COLORS = {
+    BoneRole.PROCEDURAL: 'THEME06',  # purple
+    BoneRole.BONE_MERGE: 'THEME03',  # green
+    BoneRole.ATTACHMENT: 'THEME07',  # teal
+    BoneRole.OTHER: 'DEFAULT',
+}
+
+
+def assign_bone_collections(armature: bpy.types.Armature, bones: list[Bone], edit_bones: list[bpy.types.EditBone]):
+    """Put each bone into a collection named after its role and colour it. Runs in edit mode."""
+    roles = [bone.role for bone in bones]
+    collections = {role: armature.collections.new(role.value) for role in BoneRole if role in roles}
+    for bone, role, edit_bone in zip(bones, roles, edit_bones):
+        collections[role].assign(edit_bone)
+        if role == BoneRole.DEFORM:
+            edit_bone.color.palette = BONE_SIDE_COLORS[bone.side]
+        else:
+            edit_bone.color.palette = BONE_ROLE_COLORS[role]
+
 
 def import_animations_common(mdl, buffer: Buffer, content_manager: ContentManager, model_path: str, scale: float, compact_animations: bool, include_all: bool, armature: bpy.types.Object,
                              delta_animations_to_nla: bool = False):

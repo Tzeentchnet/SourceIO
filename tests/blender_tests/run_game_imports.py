@@ -84,7 +84,12 @@ def summarize_model() -> dict:
     drivers = sum(len(key.animation_data.drivers) for key in bpy.data.shape_keys if key.animation_data)
     slots = sum(len(action.slots) for action in bpy.data.actions)
     nla_tracks = sum(len(obj.animation_data.nla_tracks) for obj in bpy.data.objects if obj.animation_data)
-    return {"shape_keys": shape_keys, "flex_drivers": drivers, "action_slots": slots, "nla_tracks": nla_tracks}
+    bone_collections = {}
+    for armature in bpy.data.armatures:
+        for collection in armature.collections_all:
+            bone_collections[collection.name] = bone_collections.get(collection.name, 0) + len(collection.bones)
+    return {"shape_keys": shape_keys, "flex_drivers": drivers, "action_slots": slots, "nla_tracks": nla_tracks,
+            "bone_collections": bone_collections}
 
 
 def report(result: dict, label: str):

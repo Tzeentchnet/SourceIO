@@ -9,20 +9,20 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): `master` = `origin/master` at c84254fa. Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2.
+State (2026-10-08): `master` is one commit ahead of `origin/master` (round 5, not pushed). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2.
 
 Checks, with the current baseline:
 
 ```
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 194 pass
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 212 pass
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 88 PASS / 5 WARN / 0 FAIL
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 ```
 
-1. **Bone collections and colours** on Source 1 MDL armatures. TF2's v48/v49 models are built by `create_armature` in `blender_bindings/models/mdl44/import_mdl.py`, which `mdl49` reuses. Test on the TF2 player models.
-2. **v49+ FRAMEANIM:** `_read_frame_animations` (`library/models/mdl/structs/local_animation.py:222`) asserts that constant and per-frame data never mix. Find a TF2 model that hits it (scan the VPKs for v49 models with frame animations) or build a fixture, then decode the mixed case.
-3. **`bpy.ops.object.mode_set` in the armature builders:** `mdl44` (also used by `mdl49`), `mdl4`, `mdl6`, `mdl9`, `mdl10`, `mdl36`, `mdl2531`, `source2/vmdl_loader.py`. Replace with the data API where possible. TF2 covers `mdl44`; the samples cover GoldSrc and Source 2.
-4. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
+1. **v49+ FRAMEANIM:** `_read_frame_animations` (`library/models/mdl/structs/local_animation.py:222`) asserts that constant and per-frame data never mix. Find a TF2 model that hits it (scan the VPKs for v49 models with frame animations) or build a fixture, then decode the mixed case.
+2. **`bpy.ops.object.mode_set` in the armature builders:** `mdl44` (also used by `mdl49`), `mdl4`, `mdl6`, `mdl9`, `mdl10`, `mdl36`, `mdl2531`, `source2/vmdl_loader.py`. Replace with the data API where possible. TF2 covers `mdl44`; the samples cover GoldSrc and Source 2.
+3. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
+4. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
 
 Blocked until CS2 or Dota 2 is installed: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks, pose-parameter blending, real CS2/Dota 2 maps.
 
@@ -177,3 +177,12 @@ Not done: ~~`tf/custom/*` wildcard search paths are still skipped with a warning
 | Displacements built from the wrong corner | `import_disp` matched the start position with `np.isclose(..., 0.5e-2)`, which is a *relative* 0.5%, so far from the origin it took a neighbouring corner and rotated the grid. Wrong on Badlands 54/1191, 2fort 2/232, Harvest 2/533. Now the nearest corner, through the shared `displacement_mesh()` (also vectorized). |
 
 `tests/bsp_tests` (12 tests on a stub BSP): basis and flip, clipping, wrapping onto a second face, draping over a displacement, the start-corner case. Unit tests: 194 pass. Samples: 88 PASS / 5 WARN / 0 FAIL (`dm_lockdown` imports its 3 overlays). TF2: 13 PASS / 0 WARN / 0 FAIL.
+
+## Round 5 (2026-10-08)
+
+| Item | Result |
+|------|--------|
+| Bone collections and colours (Source 1 v44–v52) | `create_armature` in `models/mdl44/import_mdl.py` sorts every bone into a collection by what the engine uses it for: *Deform* (any USED_BY_VERTEX flag), *Procedural* (a procedural rule or ALWAYS_PROCEDURAL; checked first, since helpers skin vertices too), *Bone merge* (weapon/prop/cosmetic attach points), *Attachments* (only carries attachment points), *Other*. Deform bones are coloured by side (left THEME04 blue, right THEME01 red, centre THEME09 yellow); the others by role (procedural purple, bone merge green, attachments teal). The side comes from a whole L/R/Left/Right name token or a CamelCase Left/Right word, so `S2midHousingL` stays centre. Classification is `Bone.role` / `bone_side()` in `library/models/mdl/structs/bone.py`. TF2 heavy: Deform 60, Procedural 2 (`hlp_forearm_*`), Bone merge 15, Attachments 2 (`effect_hand_*`). |
+| `Bone.procedural_rule_type` | Held the rule object instead of the type number (wrong argument in `from_buffer`). |
+
+`tests/mdl_tests` (18 tests): side detection, role priority, and the roles and counts of the sample `dog.mdl`. `run_game_imports.py` now reports bone collection counts per model. Unit tests: 212 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL; scout 59/2/15/2, spy 68 deform / 7 bone merge / 9 attachments, sentry3 26/9, bot_heavy 54 deform / 3 bone merge / 12 other (hitbox-only bones), dog 49/7/2 (procedural tricep/elbow helpers).

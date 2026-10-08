@@ -1,5 +1,6 @@
+import re
 from dataclasses import dataclass, field
-from enum import IntEnum, IntFlag
+from enum import Enum, IntEnum, IntFlag
 
 import numpy as np
 import numpy.typing as npt
@@ -130,6 +131,30 @@ class ProceduralBoneType(IntEnum):
     JIGGLE = 5
 
 
+class BoneRole(Enum):
+    """What the engine uses a bone for, from its procedural rule and USED_BY flags."""
+    DEFORM = "Deform"  # skins vertices (or has a child that does)
+    PROCEDURAL = "Procedural"  # driven by a procedural rule (helpers, jiggle bones)
+    BONE_MERGE = "Bone merge"  # where weapons and cosmetics attach
+    ATTACHMENT = "Attachments"  # only carries attachment points
+    OTHER = "Other"
+
+
+# A side marker is a whole name token (bip_hand_L, Dog_Model.Leg1_R, ValveBiped.Bip01_L_Thigh, foot.l)
+# or a capitalised Left/Right word inside a CamelCase name (mixamorig:LeftArm, Bip01RightHand).
+_SIDE_TOKEN = re.compile(r'(?:^|[^A-Za-z0-9])((?i:l|r|left|right))(?=$|[^A-Za-z0-9])'
+                         r'|(?:^|(?<=[^A-Z]))(Left|Right)(?=[A-Z0-9_]|$)')
+
+
+def bone_side(name: str) -> str | None:
+    """'L', 'R', or None for a centre bone. The last marker wins (Bip01_L_Finger_R is unusual, but it's R)."""
+    side = None
+    for match in _SIDE_TOKEN.finditer(name):
+        token = match.group(1) or match.group(2)
+        side = token[0].upper()
+    return side
+
+
 @dataclass(slots=True)
 class Bone:
     bone_id: int = field(init=False)
@@ -153,6 +178,22 @@ class Bone:
     surface_prop: str
 
     procedural_rule: AxisInterpRule | JiggleRule | QuatInterpRule | None
+
+    @property
+    def role(self) -> BoneRole:
+        if self.procedural_rule_type or self.flags & BoneFlags.ALWAYS_PROCEDURAL:
+            return BoneRole.PROCEDURAL
+        if self.flags & BoneFlags.USED_BY_VERTEX_MASK:
+            return BoneRole.DEFORM
+        if self.flags & BoneFlags.USED_BY_BONE_MERGE:
+            return BoneRole.BONE_MERGE
+        if self.flags & BoneFlags.USED_BY_ATTACHMENT:
+            return BoneRole.ATTACHMENT
+        return BoneRole.OTHER
+
+    @property
+    def side(self) -> str | None:
+        return bone_side(self.name)
 
     @property
     def matrix(self):
@@ -219,5 +260,5 @@ class Bone:
                 if procedural_rule_type == ProceduralBoneType.JIGGLE:
                     procedural_rule = JiggleRule.from_buffer(buffer)
         return cls(name, parent_bone_id, bone_controller_ids, position, rotation, position_scale, rotation_scale,
-                   pose_to_bone, q_alignment, flags, procedural_rule, physics_bone_index, quat, contents, surface_prop,
+                   pose_to_bone, q_alignment, flags, procedural_rule_type, physics_bone_index, quat, contents, surface_prop,
                    procedural_rule)

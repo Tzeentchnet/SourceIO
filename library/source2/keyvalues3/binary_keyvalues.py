@@ -11,6 +11,34 @@ from .enums import *
 from .types import *
 
 
+def _zstd_frame_size(data: bytes, offset: int) -> int:
+    """Size of the zstd frame starting at ``offset`` (RFC 8878 frame header and block headers)."""
+    descriptor = data[offset + 4]
+    single_segment = (descriptor >> 5) & 1
+    position = offset + 5 + (0 if single_segment else 1)
+    position += (0, 1, 2, 4)[descriptor & 3]
+    position += (single_segment, 2, 4, 8)[descriptor >> 6]
+    while True:
+        header = data[position] | (data[position + 1] << 8) | (data[position + 2] << 16)
+        block_type = (header >> 1) & 3
+        position += 3 + (1 if block_type == 1 else header >> 3)
+        if header & 1:
+            break
+    return position + (4 if (descriptor >> 2) & 1 else 0) - offset
+
+
+def zstd_decompress_frames(data: bytes) -> bytes:
+    """Decompress every zstd frame in ``data``; KV3 v2 stores the main data and the blocks as separate frames."""
+    data = bytes(data)
+    out = bytearray()
+    offset = 0
+    while offset + 4 <= len(data) and data[offset:offset + 4] == b"\x28\xb5\x2f\xfd":
+        size = _zstd_frame_size(data, offset)
+        out += zstd_decompress_stream(data[offset:offset + size])
+        offset += size
+    return bytes(out)
+
+
 class KV3UnsupportedVersion(Exception):
     pass
 
@@ -861,7 +889,7 @@ def read_v2(buffer: Buffer):
         del u_data, data
     elif compression_method == 2:
         data = buffer.read(compressed_size)
-        u_data = zstd_decompress_stream(data, )
+        u_data = zstd_decompress_frames(data)
         assert len(
             u_data) == uncompressed_size + block_total_size, "Decompressed data size does not match expected size"
         data_buffer = MemoryBuffer(u_data)

@@ -167,7 +167,8 @@ class ResourceIntrospectionInfo:
         resource_id = buffer.read_uint64()
         if resource_id == 0:
             return String('')
-        if resource := self.resource_list.get(resource_id, None):
+        # RERL entries are keyed by the low 32 bits of the 64-bit id (see ResourceExternalReferenceList).
+        if resource := self.resource_list.get(resource_id) or self.resource_list.get(resource_id & 0xFFFF_FFFF):
             return String(resource)
         return NullObject()
 

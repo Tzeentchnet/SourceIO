@@ -25,9 +25,11 @@ from .operators.source2_operators import (SOURCEIO_OT_VMAPImport,
                                           SOURCEIO_OT_DMXCameraImport)
 from .operators.dragndrop import file_handler_classes
 from .ui.export_nodes import register_nodes, unregister_nodes
+from . import cli
 
 
 custom_icons = {}
+_cli_commands = []
 
 
 # noinspection PyPep8Naming
@@ -196,11 +198,14 @@ def register():
     register_props()
     bpy.types.TOPBAR_MT_file_import.append(menu_import)
     bpy.types.IMAGE_MT_image.append(vtf_export)
+    _cli_commands.append(bpy.utils.register_cli_command("sourceio", cli.execute))
 
 
 def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
     bpy.types.IMAGE_MT_image.remove(vtf_export)
+    while _cli_commands:
+        bpy.utils.unregister_cli_command(_cli_commands.pop())
 
     # Taken from https://github.com/lasa01/Plumber/blob/master/plumber/__init__.py
     # if is_windows and False:

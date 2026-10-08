@@ -180,7 +180,8 @@ def import_model(mdl_file: Buffer, mdl_texture_file: Optional[Buffer], options: 
                     # model_mesh.vertices[vertex].normal = vertex_group_transform @ model_mesh.vertices[vertex].normal
             model_mesh.validate()
 
-    load_animations(mdl, armature, path_stem(mdl.header.name), options.scale)
+    if options.import_animations:
+        load_animations(mdl, armature, path_stem(mdl.header.name), options.scale)
     bpy.context.scene.collection.objects.unlink(armature)
 
     return ModelContainer(objects, bodygroups, [], [], armature)
@@ -250,109 +251,59 @@ def write_smd(mdl: Mdl, sequence: StudioSequence, animation: list[Channels]):
 
 
 def load_animations(mdl: Mdl, armature, model_name, scale):
-    # animation_zero = mdl.animations[0]
-    bpy.ops.object.select_all(action="DESELECT")
-    armature.select_set(True)
-    bpy.context.view_layer.objects.active = armature
-    bpy.ops.object.mode_set(mode='POSE')
-    if not armature.animation_data:
-        armature.animation_data_create()
+    """Import every sequence stored in the model as an action on ``armature``.
 
-    for bone in armature.pose.bones:
-        bone.rotation_mode = 'XYZ'
+    Each frame's bone transform is ``T(pos + delta_pos) @ R(rot + delta_rot)`` in parent space, exactly
+    how ``create_armature`` builds the rest pose from ``pos``/``rot``, so the pose-bone value is the
+    rest-relative ``rest_local^-1 @ frame_local``. Only the first blend of each sequence is used, and
+    sequences stored in external ``*NN.mdl`` sequence-group files are skipped.
+    """
+    bones = mdl.bones
+    rest_inverse = [(Matrix.Translation(Vector(bone.pos) * scale) @ Euler(bone.rot).to_matrix().to_4x4()).inverted()
+                    for bone in bones]
+    for pose_bone in armature.pose.bones:
+        pose_bone.rotation_mode = 'QUATERNION'
 
+    factory = ActionCurveFactory(armature.name, armature, legacy_behavior=True)
     for sequence_id, sequence in enumerate(mdl.sequences):
-        if sequence.group_index != 0:
+        if sequence.group_index != 0 or sequence_id not in mdl.animations or sequence.frame_count == 0:
             continue
-        if sequence.name != "walk1":
-            continue
-
-        animation = mdl.animations[sequence_id]
-        # write_smd(mdl, sequence, animation[0])
-
-        factory = ActionCurveFactory(armature.name, armature, legacy_behavior=True)
+        frame_count = sequence.frame_count
+        blend = mdl.animations[sequence_id][0]
         factory.new_action(f'{model_name}_{sequence.name}')
+        frames = np.arange(frame_count, dtype=np.float32)
 
-        curve_per_bone = {}
+        for bone_id, bone in enumerate(bones):
+            channels: Channels = blend[bone_id]
+            deltas = np.zeros((6, frame_count), np.float32)
+            for axis, values in enumerate((channels.pos_x, channels.pos_y, channels.pos_z,
+                                           channels.rot_x, channels.rot_y, channels.rot_z)):
+                if values is not None and len(values):
+                    padded = np.empty(frame_count, np.float32)
+                    count = min(len(values), frame_count)
+                    padded[:count] = values[:count]
+                    padded[count:] = values[count - 1]
+                    deltas[axis] = padded
+            positions = (np.asarray(bone.pos, np.float32)[:, None] + deltas[:3] * np.asarray(bone.pos_scale, np.float32)[:, None]) * scale
+            rotations = np.asarray(bone.rot, np.float32)[:, None] + deltas[3:] * np.asarray(bone.rot_scale, np.float32)[:, None]
 
-        for bone in mdl.bones:
-            bone_string = f'pose.bones["{bone.name}"].'
+            locations = np.empty((frame_count, 3), np.float32)
+            quaternions = np.empty((frame_count, 4), np.float32)
+            previous = None
+            for frame in range(frame_count):
+                frame_local = Matrix.Translation(Vector(positions[:, frame])) @ Euler(rotations[:, frame]).to_matrix().to_4x4()
+                location, rotation, _ = (rest_inverse[bone_id] @ frame_local).decompose()
+                if previous is not None and rotation.dot(previous) < 0:
+                    rotation.negate()
+                previous = rotation
+                locations[frame] = location
+                quaternions[frame] = rotation
+
             group = factory.new_group(bone.name)
-            pos_curves = []
-            rot_curves = []
-            for i in range(3):
-                pos_curve = factory.new_fcurve(data_path=bone_string + "location", index=i, group=group)
-                pos_curve.keyframe_points.add(count=sequence.frame_count)
-                pos_curves.append(pos_curve)
-            for i in range(3):
-                rot_curve = factory.new_fcurve(data_path=bone_string + "rotation_euler", index=i, group=group)
-                rot_curve.keyframe_points.add(count=sequence.frame_count)
-                rot_curves.append(rot_curve)
-            curve_per_bone[bone.name] = pos_curves, rot_curves
-
-        blend0_animation = animation[0]
-
-        for bone_id, bone in enumerate(mdl.bones):
-            pos_curves, rot_curves = curve_per_bone[bone.name]
-            bone_pos_scale = [x * scale for x in bone.pos_scale]
-            bone_rot_scale = bone.rot_scale
-
-            animation_channels = blend0_animation[bone_id]
-
-            def apply_animation(curve, values: np.ndarray):
-                for n in range(values.size):
-                    curve.keyframe_points[n].co = (n, values[n])
-
-            if bone.parent == -1:
-                if animation_channels.pos_y is not None:
-                    apply_animation(pos_curves[0], bone.pos[0] + animation_channels.pos_y * bone_pos_scale[1])
-
-                if animation_channels.pos_x is not None:
-                    apply_animation(pos_curves[1], -(bone.pos[1] + animation_channels.pos_x * bone_pos_scale[0]))
-
-                if animation_channels.pos_z is not None:
-                    apply_animation(pos_curves[2], bone.pos[2] + animation_channels.pos_z * bone_pos_scale[2])
-
-                if animation_channels.rot_x is not None:
-                    apply_animation(rot_curves[0], bone.rot[0] + animation_channels.rot_x * bone_rot_scale[0])
-
-                if animation_channels.rot_y is not None:
-                    apply_animation(rot_curves[1], bone.rot[1] + animation_channels.rot_y * bone_rot_scale[1])
-
-                if animation_channels.rot_z is not None:
-                    apply_animation(rot_curves[2], (bone.rot[2] + animation_channels.rot_z * bone_rot_scale[2]))
-
-            else:
-                if animation_channels.pos_x is not None:
-                    apply_animation(pos_curves[0], bone.pos[0] + animation_channels.pos_x * bone_pos_scale[0])
-
-                if animation_channels.pos_y is not None:
-                    apply_animation(pos_curves[1], bone.pos[1] + animation_channels.pos_y * bone_pos_scale[1])
-
-                if animation_channels.pos_z is not None:
-                    apply_animation(pos_curves[2], bone.pos[2] + animation_channels.pos_z * bone_pos_scale[2])
-
-                if animation_channels.rot_x is not None:
-                    apply_animation(rot_curves[0], bone.rot[0] + animation_channels.rot_x * bone_rot_scale[0])
-
-                if animation_channels.rot_y is not None:
-                    apply_animation(rot_curves[1], bone.rot[1] + animation_channels.rot_y * bone_rot_scale[1])
-
-                if animation_channels.rot_z is not None:
-                    apply_animation(rot_curves[2], bone.rot[2] + animation_channels.rot_z * bone_rot_scale[2])
-
-            # for n, frame in enumerate(bone_animations.frames):
-            #     # print(zero_anim[0], zero_anim[1])
-            #     # print(frame[0], frame[1])
-            #     bone_pos = Vector((frame[0]).tolist()) * scale
-            #     bone_rot = Euler((frame[1]).tolist())
-            #     # if bone.parent == -1:
-            #     #     bone_pos.x, bone_pos.y = bone_pos.y, bone_pos.x
-            #     #     bone_rot.z += math.radians(-90)
-            #     for i in range(3):
-            #         pos_curves[i].keyframe_points.add(count=1)
-            #         pos_curves[i].keyframe_points[-1].co = (n, bone_pos[i])
-            #     for i in range(3):
-            #         rot_curves[i].keyframe_points.add(count=1)
-            #         rot_curves[i].keyframe_points[-1].co = (n, bone_rot[i])
-    bpy.ops.object.mode_set(mode='OBJECT')
+            for data_path, values in (("location", locations), ("rotation_quaternion", quaternions)):
+                for index in range(values.shape[1]):
+                    curve = factory.new_fcurve(f'pose.bones["{bone.name}"].{data_path}', index, group)
+                    curve.keyframe_points.add(frame_count)
+                    curve.keyframe_points.foreach_set("co_ui", np.column_stack((frames, values[:, index])).ravel())
+                    curve.keyframe_points.foreach_set("interpolation", np.ones(frame_count, np.int32))
+                    curve.update()

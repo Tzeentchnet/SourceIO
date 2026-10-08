@@ -443,7 +443,8 @@ class CompiledTextureResource(CompiledResource):
         output = output.astype(np.int32)
         swizzle_r = output[:, :, 0] * 2 - 255
         swizzle_g = output[:, :, 1] * 2 - 255
-        derive_b = np.sqrt((255 * 255) - (swizzle_r * swizzle_r) - (swizzle_g * swizzle_g))
+        # R and G can encode a vector longer than 1; Z is then 0, not NaN.
+        derive_b = np.sqrt(np.maximum((255 * 255) - (swizzle_r * swizzle_r) - (swizzle_g * swizzle_g), 0))
         output[:, :, 0] = np.clip((swizzle_r / 2) + 128, 0, 255)
         output[:, :, 1] = np.clip((swizzle_g / 2) + 128, 0, 255)
         output[:, :, 2] = np.clip((derive_b / 2) + 128, 0, 255)

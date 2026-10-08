@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "sourceio"
-version = "5.6.0"
+version = "5.7.0"
 name = "SourceIO"
 tagline = "Import GoldSrc, Source and Source 2 models, maps and textures"
 maintainer = "REDxEYE"

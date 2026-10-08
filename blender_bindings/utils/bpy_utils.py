@@ -22,6 +22,44 @@ def pause_view_layer_update():
         _BPyOpsSubModOp._view_layer_update = view_layer_update
 
 
+@contextlib.contextmanager
+def edit_armature(armature_obj: bpy.types.Object):
+    """Edit mode on ``armature_obj`` for the duration of the block; yields its edit bones.
+
+    Bones can only be created in edit mode, and only an operator enters it. Edit mode follows the
+    view layer's active object (a context override is ignored) and also takes in every other
+    selected armature, so the armature is made the only selected, active object meanwhile. It is
+    linked to the scene collection for the duration unless it is already there. Object mode, the
+    selection and the active object are restored afterwards, also when the block raises.
+    """
+    view_layer = bpy.context.view_layer
+    scene_collection = bpy.context.scene.collection
+    # Not view_layer.objects: it is only resynced lazily after a link or unlink.
+    linked = armature_obj.name not in scene_collection.objects
+    if linked:
+        scene_collection.objects.link(armature_obj)
+    active = view_layer.objects.active
+    if active is not None and active.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    selected = [obj for obj in view_layer.objects if obj.select_get()]
+    for obj in selected:
+        obj.select_set(False)
+    armature_obj.select_set(True)
+    view_layer.objects.active = armature_obj
+    try:
+        bpy.ops.object.mode_set(mode='EDIT')
+        yield armature_obj.data.edit_bones
+    finally:
+        if armature_obj.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        armature_obj.select_set(False)
+        for obj in selected:
+            obj.select_set(True)
+        view_layer.objects.active = active
+        if linked:
+            scene_collection.objects.unlink(armature_obj)
+
+
 class ActionCurveFactory:
     """Creates layered (slotted) actions and their FCurves.
 

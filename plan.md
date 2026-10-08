@@ -9,19 +9,21 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): `master` is two commits ahead of `origin/master` (rounds 5 and 6, not pushed). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive` exists but is empty).
+State (2026-10-08): `master` is three commits ahead of `origin/master` (rounds 5–7, not pushed). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive` exists but is empty).
 
 Checks, with the current baseline:
 
 ```
 cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 221 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 88 PASS / 5 WARN / 0 FAIL
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 ```
 
-1. **`bpy.ops.object.mode_set` in the armature builders:** `mdl44` (also used by `mdl49`), `mdl4`, `mdl6`, `mdl9`, `mdl10`, `mdl36`, `mdl2531`, `source2/vmdl_loader.py`. Replace with the data API where possible. TF2 covers `mdl44`; the samples cover GoldSrc and Source 2.
-2. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
-3. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
+1. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
+2. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
+3. **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
+4. **`MdlV44/V49.from_buffer`** (minor): after an animation fails to decode, `animations.extend([None] * (len(animations) - len(local_animations)))` pads by a negative count, so `animations` ends up shorter than `anim_descs` instead of aligned with it.
 
 Blocked until CS2 or Dota 2 is installed: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks, pose-parameter blending, real CS2/Dota 2 maps.
 Blocked until a v49 game is installed (CS:GO, L4D2, Portal 2, SFM): checking the round 6 FRAMEANIM decoder against a real model.
@@ -80,7 +82,7 @@ The baseline (before any changes) fails with:
 - File handlers for `.vmdl_c`, `.vphys_c`, `.dmx` (camera); fix the copy-pasted handler labels.
 - Collapsible `layout.panel()` sections in the import dialogs.
 
-Deferred (larger, needs test assets): replacing `bpy.ops` mode switching in MDL armature builders, bone collections and colours. The CLI command was done in round 2; `Object.visible_shadow` was dropped because material-level shadow disabling already covers sky materials.
+Deferred (larger, needs test assets): ~~replacing `bpy.ops` mode switching in MDL armature builders~~ (round 7), ~~bone collections and colours~~ (round 5). The CLI command was done in round 2; `Object.visible_shadow` was dropped because material-level shadow disabling already covers sky materials.
 
 ## Execution / ownership
 
@@ -147,7 +149,7 @@ Follow-ups found during execution:
 | CLI | `blender -c sourceio import ...` (`blender_bindings/cli.py`). Tested through the installed extension: imports, `--output` .blend, exit codes. |
 | Samples | 99 files (20 more VRF textures, 3 animation samples). Suite: **88 PASS / 5 WARN / 0 FAIL**; the 5 WARN are missing game content. |
 
-Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; ~~decals and overlays~~ (Source 1 overlays: round 4); bone collections and colours; `bpy.ops` mode switching in the armature builders; relative imports for the extension; testing against CS2/Dota 2 installs.
+Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; ~~decals and overlays~~ (Source 1 overlays: round 4); ~~bone collections and colours~~ (round 5); ~~`bpy.ops` mode switching in the armature builders~~ (round 7); relative imports for the extension; testing against CS2/Dota 2 installs.
 
 ## Round 3 (2026-10-08, TF2 install)
 
@@ -194,3 +196,13 @@ Not done: ~~`tf/custom/*` wildcard search paths are still skipped with a warning
 | v49+ FRAMEANIM, mixed constant and per-frame data | `_read_frame_animations` asserted that a section has either constants or per-frame data. studiomdl writes constants for every bone that holds still over a section and per-frame data for the rest, so nearly every real frame animation mixes them. Rewritten to read both: each bone stores rotation then position (ROT2 before ROT, full-float before half-float position), constants once per section, frames at `frame_offset + i * frame_length` (the extra overlap frame of non-last sections is ignored). A channel with no flag holds the rest pose (identity in delta animations); previously a rotation-only bone got position (0, 0, 0). The per-frame block is decoded with NumPy (`decode_quat48`, `decode_quat48s`); the Quat48/Quat48S `sqrt` is clamped against rounding. A short `frame_length` raises `ValueError`. |
 
 Layout references: Crowbar's v49 reader and PulseModel's studiomdl-style writer and decoder (both open source). TF2 has no frame animations: its VPKs hold only v44–v48 models (13493 v48), and no loose MDLs exist, so `tests/mdl_tests/test_frame_anim.py` builds the blocks the way studiomdl does: mixed per-bone flags, legacy Quaternion48 and Quaternion48S, half- and full-float positions, delta, and 10 frames in 4 sections with different flags per section. 4 of its 9 tests fail on the old reader. Unit tests: 221 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL. Not checked against a real v49 model (CS:GO, L4D2, Portal 2 or SFM content would do).
+
+## Round 7 (2026-10-08)
+
+| Item | Result |
+|------|--------|
+| `bpy.ops` mode switching in the armature builders | Bones can only be created in edit mode, and only `bpy.ops.object.mode_set` enters it (checked on 5.2.2: a `temp_override` is ignored, since edit mode follows the view layer's active object and also takes in every other selected armature). All edit-mode use now goes through one context manager, `edit_armature()` in `utils/bpy_utils.py`: it makes the armature the only selected, active object, links it to the scene for the duration if needed, and restores object mode, the selection and the active object afterwards, also on error. Previously an import with another armature selected put that one in edit mode too, and a failure inside a builder left Blender in edit mode. Every other mode switch is gone: mdl4/6/9/36/2531 no longer go through pose mode and `pose.armature_apply()` but set each edit bone's matrix to its accumulated MDL transform (as mdl10 and mdl44 already did), and keyframing (mdl4/6) and the GoldSrc/Source 2/GLM builders no longer switch modes at all. The only `mode_set` calls left are in `edit_armature`. |
+| *Load Ref pose* (v44–v52) | Always failed on a model with local animations (TF2 heavy, sentry3: `'NoneType' object has no attribute 'parent'`) and left Blender in edit mode: it read `pose.bones` while still in edit mode, and indexed the per-bone animation dict from round 3 as a frame list. Now applied after edit mode by `set_pose()` (`models/import_animations.py`) in the bone spaces the animation importer keys in, root correction included, and skipped for a delta animation. TF2 heavy (`@ref`), scout and sentry3 (`@idle_off`): equal to frame 0 of the same animation imported as an action, to 1.7e-5. |
+| `import_static_animations` (mdl44) | Removed: it had no callers, used pose mode, and indexed animations the same broken way. |
+
+Checked by importing every sample and TF2 model before and after and comparing each armature: parents, rest matrices, collections, colours, rotation modes, pose, mesh vertices and actions are identical (bone lengths differ by float rounding). The importers now leave the user's active object as it was instead of making the armature active. mdl4/6/9/36/2531 have no samples, so the old (from git) and new builders were run side by side on random 14-bone skeletons at four scales: equal to float32 precision, and equal to the transforms the vertices are built with. `tests/blender_tests/test_armatures.py` (10 tests, run inside Blender): the helper keeps another selected armature out of edit mode and restores selection, also when the block raises; each builder's rest pose equals the accumulated MDL transforms (mdl4/6/9/10/36/2531, v6 rotation mode); `set_pose` gives the expected pose-space matrices. Unit tests: 221 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL. Smoke test (import every module, register → unregister → register): clean.

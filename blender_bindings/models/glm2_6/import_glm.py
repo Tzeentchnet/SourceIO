@@ -7,7 +7,7 @@ from mathutils import Matrix
 from SourceIO.blender_bindings.material_loader.shaders.idtech3.idtech3 import IdTech3Shader
 from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material, add_material
+from SourceIO.blender_bindings.utils.bpy_utils import edit_armature, get_or_create_material, add_material
 from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
 from SourceIO.library.models.glm import GLMModel, GLASkeleton
 from SourceIO.library.shared.content_manager import ContentManager
@@ -18,26 +18,23 @@ from SourceIO.library.utils.idtech3_shader_parser import parse_shader_materials
 def _import_skeleton(name: str, skeleton: GLASkeleton):
     arm_data = bpy.data.armatures.new(name)
     arm_obj = bpy.data.objects.new(name, arm_data)
-    bpy.context.scene.collection.objects.link(arm_obj)
-    bpy.context.view_layer.objects.active = arm_obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bones = {}
-    for bone in skeleton.bones:
-        edit_bone = arm_data.edit_bones.new(bone.name)
-        edit_bone.head = (0, 0, 0)
-        edit_bone.tail = (0, 1, 0)
-        matrix = bone.matrix.tolist()
-        matrix.append([0, 0, 0, 1])
-        edit_bone.matrix = Matrix(matrix)
+    with edit_armature(arm_obj) as edit_bones:
+        bones = {}
+        for bone in skeleton.bones:
+            edit_bone = edit_bones.new(bone.name)
+            edit_bone.head = (0, 0, 0)
+            edit_bone.tail = (0, 1, 0)
+            matrix = bone.matrix.tolist()
+            matrix.append([0, 0, 0, 1])
+            edit_bone.matrix = Matrix(matrix)
 
-        bones[bone.name] = edit_bone
+            bones[bone.name] = edit_bone
 
-    for bone in skeleton.bones:
-        if bone.parent_id != -1:
-            parent_bone = skeleton.bones[bone.parent_id]
-            bones[bone.name].parent = bones[parent_bone.name]
+        for bone in skeleton.bones:
+            if bone.parent_id != -1:
+                parent_bone = skeleton.bones[bone.parent_id]
+                bones[bone.name].parent = bones[parent_bone.name]
 
-    bpy.ops.object.mode_set(mode='OBJECT')
     arm_obj.show_in_front = True
     arm_obj['MODE'] = 'SourceIO'
 
@@ -58,8 +55,6 @@ def import_model(name: str, mdl_buffer: Buffer, options: ModelOptions, content_m
     if skeleton_buffer is not None:
         skeleton_data = GLASkeleton.from_buffer(skeleton_buffer)
         skeleton = _import_skeleton(name + "_skeleton", skeleton_data)
-
-        bpy.context.scene.collection.objects.unlink(skeleton)
     hier = model.hier
     lod = model.lods[0]
     objects = []

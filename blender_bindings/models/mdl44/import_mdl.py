@@ -10,22 +10,19 @@ from mathutils import Euler, Matrix, Quaternion, Vector
 from SourceIO.blender_bindings.models.common import assign_bone_collections, merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors, create_flex_drivers
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
 from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material, ActionCurveFactory
+from SourceIO.blender_bindings.models.import_animations import set_pose
+from SourceIO.blender_bindings.utils.bpy_utils import add_material, edit_armature, get_or_create_material
 from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
 from SourceIO.library.models.mdl.structs.header import StudioHDRFlags
-from SourceIO.library.models.mdl.v2531 import MdlV2531
-from SourceIO.library.models.mdl.v36 import MdlV36
-from SourceIO.library.models.mdl.v36 import MdlV36
+from SourceIO.library.models.mdl.structs.local_animation import AnimDescFlags
 from SourceIO.library.models.mdl.v44.mdl_file import MdlV44
 from SourceIO.library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
 from SourceIO.library.models.mdl.v49.flex_expressions import *
 from SourceIO.library.models.vtx.v7.vtx import Vtx
 from SourceIO.library.models.vvd import Vvd
 from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.shared.content_manager.provider import ContentProvider
 from SourceIO.library.utils.common import get_slice
 from SourceIO.library.utils.path_utilities import path_stem
-from SourceIO.library.utils.tiny_path import TinyPath
 from SourceIO.logger import SourceLogMan
 
 log_manager = SourceLogMan()
@@ -40,49 +37,32 @@ def create_armature(mdl: MdlV44, scale=1.0, load_refpose=False):
     armature_obj = bpy.data.objects.new(f"{model_name}_ARM", armature)
     armature_obj['MODE'] = 'SourceIO'
     armature_obj.show_in_front = True
-    bpy.context.scene.collection.objects.link(armature_obj)
 
-    armature_obj.select_set(True)
-    bpy.context.view_layer.objects.active = armature_obj
-
-    bpy.ops.object.mode_set(mode='EDIT')
-
-    edit_bones = []
-    for i, bone in enumerate(mdl.bones):
-        bl_bone = armature.edit_bones.new(bone.name[:63])
-        edit_bones.append(bl_bone)
-        bl_bone.head = bone.position
-        bl_bone.tail = bl_bone.head + Vector((0, 0, 1)) * scale
-        if bone.parent_id != -1:
-            bl_bone.parent = armature.edit_bones[bone.parent_id]
-        x, y, z, w = bone.quat
-        rotation = w, x, y, z
-        mat = Matrix.LocRotScale(Vector(bone.position) * scale, Quaternion(rotation), (1, 1, 1))
-        if bone.parent_id == -1:
-            bl_bone.matrix = mat
-        else:
-            bl_bone.matrix = (armature.edit_bones[bone.parent_id].matrix @ mat)
-    assign_bone_collections(armature, mdl.bones, edit_bones)
-
-    if mdl.animations and load_refpose:
-        ref_animation = mdl.animations[0]
-        if ref_animation is not None:
-            frame_zero = ref_animation[0]
-            for bone, anim_data in enumerate(frame_zero):
-                mdl_bone = mdl.bones[bone]
-                bl_bone = armature_obj.pose.bones.get(mdl_bone.name[:63])
-
-                pos = Vector(anim_data["pos"]) * scale
-                x, y, z, w = anim_data["rot"]
-                rot = Quaternion((w, x, y, z))
-                mat = Matrix.Translation(pos) @ rot.to_matrix().to_4x4()
-                mat = (bl_bone.parent.matrix @ mat) if bl_bone.parent else mat
+    with edit_armature(armature_obj) as edit_bones:
+        bl_bones = []
+        for bone in mdl.bones:
+            bl_bone = edit_bones.new(bone.name[:63])
+            bl_bones.append(bl_bone)
+            bl_bone.tail = Vector((0, 0, scale))
+            x, y, z, w = bone.quat
+            mat = Matrix.LocRotScale(Vector(bone.position) * scale, Quaternion((w, x, y, z)), (1, 1, 1))
+            if bone.parent_id == -1:
                 bl_bone.matrix = mat
+            else:
+                bl_bone.parent = bl_bones[bone.parent_id]
+                bl_bone.matrix = bl_bones[bone.parent_id].matrix @ mat
+        assign_bone_collections(armature, mdl.bones, bl_bones)
 
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    bpy.context.scene.collection.objects.unlink(armature_obj)
+    if load_refpose:
+        apply_reference_pose(armature_obj, mdl, scale)
     return armature_obj
+
+
+def apply_reference_pose(armature_obj: bpy.types.Object, mdl: MdlV44, scale: float):
+    """Pose the armature at the first frame of the model's first animation, unless it is a delta."""
+    if not mdl.animations or mdl.animations[0] is None or mdl.anim_descs[0].flags & AnimDescFlags.DELTA:
+        return
+    set_pose(armature_obj, {name: track[0] for name, track in mdl.animations[0].items() if len(track)}, scale)
 
 
 def import_model(content_manager: ContentManager, mdl: MdlV44, vtx: Vtx, vvd: Vvd,
@@ -275,83 +255,3 @@ def create_attachments(mdl: MdlV44, armature: bpy.types.Object, scale):
         attachments.append(empty)
 
     return attachments
-
-
-def __swap_components(vec, mp):
-    __pat = 'XYZ'
-    return [vec[__pat.index(k)] for k in mp]
-
-
-def import_static_animations(cm: ContentProvider, mdl: MdlV44, animation_name: str, armature: bpy.types.Object,
-                             scale: float):
-    if armature is None:
-        return
-    bpy.context.view_layer.update()
-    bpy.context.view_layer.objects.active = armature
-    bpy.ops.object.mode_set(mode='OBJECT')
-    if mdl.animations:
-        bpy.ops.object.select_all(action="DESELECT")
-        armature.select_set(True)
-        bpy.context.view_layer.objects.active = armature
-        bpy.ops.object.mode_set(mode='POSE')
-        for n, anim in enumerate(mdl.sequences):
-            if anim.name.strip("@") == animation_name:
-                ref_animation = mdl.animations[n]
-                if ref_animation is None:
-                    return
-                frame_zero = ref_animation[0]
-                for bone, anim_data in enumerate(frame_zero):
-                    mdl_bone = mdl.bones[bone]
-                    bl_bone = armature.pose.bones.get(mdl_bone.name[:63])
-
-                    pos = Vector(anim_data["pos"]) * scale
-                    x, y, z, w = anim_data["rot"]
-                    rot = Quaternion((w, x, y, z))
-                    mat = Matrix.Translation(pos) @ rot.to_matrix().to_4x4()
-                    mat = bl_bone.parent.matrix @ mat if bl_bone.parent else mat
-                    bl_bone.matrix = mat
-
-                bpy.ops.object.mode_set(mode='OBJECT')
-                return
-
-    for include_model in mdl.include_models:
-        buffer = cm.find_file(TinyPath(include_model))
-        if buffer:
-            buffer.seek(4)
-            version = buffer.read_uint32()
-            buffer.seek(0)
-            if version == 2531:
-                i_mdl = MdlV2531.from_buffer(buffer)
-            elif 35 <= version <= 37:
-                i_mdl = MdlV36.from_buffer(buffer)
-            elif version >= 44:
-                i_mdl = MdlV44.from_buffer(buffer)
-            else:
-                return
-            if i_mdl.animations:
-                for n, anim in enumerate(i_mdl.sequences):
-                    if anim.name.strip("@") == animation_name:
-
-                        ref_animation = i_mdl.animations[n]
-                        if ref_animation is None:
-                            return
-                        frame_zero = ref_animation[0]
-
-                        armature.select_set(True)
-                        bpy.context.view_layer.objects.active = armature
-
-                        bpy.ops.object.mode_set(mode='POSE')
-
-                        for bone, anim_data in enumerate(frame_zero):
-                            mdl_bone = i_mdl.bones[bone]
-                            bl_bone = armature.pose.bones.get(mdl_bone.name[:63])
-                            pos = Vector(anim_data["pos"]) * scale
-                            x, y, z, w = anim_data["rot"]
-                            rot = Quaternion((w, x, y, z))
-                            mat = Matrix.Translation(pos) @ rot.to_matrix().to_4x4()
-                            mat = bl_bone.parent.matrix @ mat if bl_bone.parent else mat
-
-                            bl_bone.matrix = mat
-
-                        bpy.ops.object.mode_set(mode='OBJECT')
-                        return

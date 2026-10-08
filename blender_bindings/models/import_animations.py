@@ -14,7 +14,7 @@ from math import radians
 
 import bpy
 import numpy as np
-from mathutils import Matrix, Euler, Quaternion
+from mathutils import Matrix, Euler, Quaternion, Vector
 
 from SourceIO.blender_bindings.utils.bpy_utils import ActionCurveFactory
 from SourceIO.library.models.mdl.load_animations import AnimationData
@@ -59,6 +59,20 @@ def import_animations_to_armature(
     if delta_animations_to_nla and deltas:
         push_to_nla(armature_obj, deltas, blend_type='COMBINE')
     return created
+
+
+def set_pose(armature_obj: bpy.types.Object, frame: dict[str, np.void], scale: float):
+    """Pose the armature at one frame of a non-delta animation (parent-relative ``pos`` and xyzw
+    ``rot`` per bone name), with the bone spaces ``_create_action`` keys animations in."""
+    bones = armature_obj.data.bones
+    for bone_name, data in frame.items():
+        bone = bones.get(bone_name[:63])
+        if bone is None:
+            continue
+        parent_space = bone.parent.matrix_local if bone.parent else _ROOT_CORRECTION
+        x, y, z, w = (float(value) for value in data["rot"])
+        local = Matrix.Translation(Vector(data["pos"].tolist()) * scale) @ Quaternion((w, x, y, z)).to_matrix().to_4x4()
+        armature_obj.pose.bones[bone.name].matrix_basis = bone.matrix_local.inverted() @ parent_space @ local
 
 
 def push_to_nla(armature_obj: bpy.types.Object,

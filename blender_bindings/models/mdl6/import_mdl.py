@@ -9,7 +9,7 @@ from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_s
     GoldSrcShader
 from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material, ActionCurveFactory
+from SourceIO.blender_bindings.utils.bpy_utils import add_material, edit_armature, get_or_create_material, ActionCurveFactory
 from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
 from SourceIO.library.models.mdl.v6.mdl_file import Mdl
 from SourceIO.library.models.mdl.v6.structs.texture import StudioTexture
@@ -24,41 +24,27 @@ def create_armature(mdl: Mdl, scale):
     armature_obj = bpy.data.objects.new(f"{model_name}_ARM", armature)
     armature_obj['MODE'] = 'SourceIO'
     armature_obj.show_in_front = True
-    bpy.context.scene.collection.objects.link(armature_obj)
-
-    armature_obj.select_set(True)
-    bpy.context.view_layer.objects.active = armature_obj
-    bpy.ops.object.mode_set(mode='EDIT')
-
-    for n, mdl_bone_info in enumerate(mdl.bones):
-        if not mdl_bone_info.name:
-            mdl_bone_info.name = f'Bone_{n}'
-        mdl_bone = armature.edit_bones.new(mdl_bone_info.name)
-        mdl_bone.head = Vector(mdl_bone_info.pos) * scale
-        mdl_bone.tail = (Vector([0, 0, 0.25]) * scale) + mdl_bone.head
-        if mdl_bone_info.parent != -1:
-            mdl_bone.parent = armature.edit_bones.get(mdl.bones[mdl_bone_info.parent].name)
-
-    bpy.ops.object.mode_set(mode='POSE')
 
     mdl_bone_transforms = []
-
-    for mdl_bone_info in mdl.bones:
-        mdl_bone = armature_obj.pose.bones.get(mdl_bone_info.name)
-        mdl_bone.rotation_mode = 'XYZ'
-        mdl_bone_pos = Vector(mdl_bone_info.pos) * scale
-        mdl_bone_rot = Euler(mdl_bone_info.rot).to_matrix().to_4x4()
-        mdl_bone_mat = Matrix.Translation(mdl_bone_pos) @ mdl_bone_rot
-        mdl_bone.matrix.identity()
-        mdl_bone.matrix = mdl_bone.parent.matrix @ mdl_bone_mat if mdl_bone.parent else mdl_bone_mat
-
-        if mdl_bone.parent:
-            mdl_bone_transforms.append(mdl_bone_transforms[mdl_bone_info.parent] @ mdl_bone_mat)
-        else:
+    with edit_armature(armature_obj) as edit_bones:
+        bl_bones = []
+        for n, mdl_bone_info in enumerate(mdl.bones):
+            if not mdl_bone_info.name:
+                mdl_bone_info.name = f'Bone_{n}'
+            mdl_bone = edit_bones.new(mdl_bone_info.name)
+            bl_bones.append(mdl_bone)
+            mdl_bone.tail = Vector((0, 0, 0.25 * scale))
+            mdl_bone_pos = Vector(mdl_bone_info.pos) * scale
+            mdl_bone_rot = Euler(mdl_bone_info.rot).to_matrix().to_4x4()
+            mdl_bone_mat = Matrix.Translation(mdl_bone_pos) @ mdl_bone_rot
+            if mdl_bone_info.parent != -1:
+                mdl_bone.parent = bl_bones[mdl_bone_info.parent]
+                mdl_bone_mat = mdl_bone_transforms[mdl_bone_info.parent] @ mdl_bone_mat
+            mdl_bone.matrix = mdl_bone_mat
             mdl_bone_transforms.append(mdl_bone_mat)
 
-    bpy.ops.pose.armature_apply()
-    bpy.ops.object.mode_set(mode='OBJECT')
+    for pose_bone in armature_obj.pose.bones:
+        pose_bone.rotation_mode = 'XYZ'
     return armature_obj, mdl_bone_transforms
 
 
@@ -74,7 +60,6 @@ def import_model(mdl_file: Buffer, mdl_texture_file: Optional[Buffer], options: 
 
     armature, bone_transforms = create_armature(mdl, options.scale)
     load_animations(mdl, armature, path_stem(mdl.header.name), options.scale)
-    bpy.context.scene.collection.objects.unlink(armature)
 
     for body_part in mdl.bodyparts:
         for body_part_model in body_part.models:
@@ -158,10 +143,6 @@ def load_material(model_texture_info: StudioTexture, model_object):
 
 def load_animations(mdl: Mdl, armature, model_name, scale):
     # animation_zero = mdl.animations[0]
-    bpy.ops.object.select_all(action="DESELECT")
-    armature.select_set(True)
-    bpy.context.view_layer.objects.active = armature
-    bpy.ops.object.mode_set(mode='POSE')
     if not armature.animation_data:
         armature.animation_data_create()
 
@@ -205,4 +186,3 @@ def load_animations(mdl: Mdl, armature, model_name, scale):
                 for i in range(3):
                     rot_curves[i].keyframe_points.add(count=1)
                     rot_curves[i].keyframe_points[-1].co = (n, bone_rot[i])
-    bpy.ops.object.mode_set(mode='OBJECT')

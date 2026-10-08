@@ -11,7 +11,7 @@ import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import (add_material, find_layer_collection,
+from SourceIO.blender_bindings.utils.bpy_utils import (add_material, edit_armature, find_layer_collection,
                                                        get_new_unique_collection, get_or_create_material)
 from SourceIO.library.shared.app_id import SteamAppId
 from SourceIO.library.shared.content_manager import ContentManager
@@ -102,11 +102,6 @@ def load_model(content_manager: ContentManager, resource: CompiledModelResource,
     return container
 
 
-def clear_selection():
-    for obj in bpy.context.selected_objects:
-        obj.select_set(False)
-
-
 def create_armature(content_manager: ContentManager, resource: CompiledModelResource, scale: float):
     s2_bones = resource.get_bones()
     if not s2_bones:
@@ -115,43 +110,35 @@ def create_armature(content_manager: ContentManager, resource: CompiledModelReso
     armature_obj = bpy.data.objects.new(name + "_ARM", bpy.data.armatures.new(name + "_ARM_DATA"))
     armature_obj['MODE'] = 'SourceIO'
     armature_obj.show_in_front = True
-    bpy.context.scene.collection.objects.link(armature_obj)
-    clear_selection()
-    armature_obj.select_set(True)
-    bpy.context.view_layer.objects.active = armature_obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    armature = armature_obj.data
-
-    for s2_bone in s2_bones:
-        bl_bone = armature.edit_bones.new(name=s2_bone.name)
-        bl_bone.tail = (Vector([0, 0, 1]) * scale) + bl_bone.head
-
-        if s2_bone.parent:
-            bl_bone.parent = armature.edit_bones.get(s2_bone.parent)
-
-        bone_pos = s2_bone.pos
-        bone_rot = s2_bone.rot
-
-        bone_pos = Vector(bone_pos) * scale
-        # noinspection PyTypeChecker
-        bone_rot = Quaternion(bone_rot)
-        mat = (Matrix.Translation(bone_pos) @ bone_rot.to_matrix().to_4x4())
-        if bl_bone.parent:
-            bl_bone.matrix = bl_bone.parent.matrix @ mat
-        else:
-            bl_bone.matrix = mat
-
     physics_block = get_physics_block(content_manager, resource)
-    if physics_block and physics_block.get("m_pFeModel") and physics_block["m_pFeModel"].get("m_TreeChildren"):
-        p_model_data = physics_block["m_pFeModel"]
-        names = p_model_data["m_CtrlName"]
 
-        for parent_pair in p_model_data["m_CtrlOffsets"]:
-            parent = names[parent_pair["nCtrlParent"]]
-            child = names[parent_pair["nCtrlChild"]]
+    with edit_armature(armature_obj) as edit_bones:
+        for s2_bone in s2_bones:
+            bl_bone = edit_bones.new(name=s2_bone.name)
+            bl_bone.tail = Vector((0, 0, scale))
 
-            if child in armature.edit_bones:
-                armature.edit_bones.get(child).parent = armature.edit_bones.get(parent)
+            if s2_bone.parent:
+                bl_bone.parent = edit_bones.get(s2_bone.parent)
+
+            bone_pos = Vector(s2_bone.pos) * scale
+            # noinspection PyTypeChecker
+            bone_rot = Quaternion(s2_bone.rot)
+            mat = (Matrix.Translation(bone_pos) @ bone_rot.to_matrix().to_4x4())
+            if bl_bone.parent:
+                bl_bone.matrix = bl_bone.parent.matrix @ mat
+            else:
+                bl_bone.matrix = mat
+
+        if physics_block and physics_block.get("m_pFeModel") and physics_block["m_pFeModel"].get("m_TreeChildren"):
+            p_model_data = physics_block["m_pFeModel"]
+            names = p_model_data["m_CtrlName"]
+
+            for parent_pair in p_model_data["m_CtrlOffsets"]:
+                parent = names[parent_pair["nCtrlParent"]]
+                child = names[parent_pair["nCtrlChild"]]
+
+                if child in edit_bones:
+                    edit_bones.get(child).parent = edit_bones.get(parent)
     # elif physics_block and physics_block.get("m_boneNames") and physics_block.get("m_boneParents") and physics_block.get("m_indexNames"):
     #     names = physics_block["m_boneNames"]
     #     index_names = physics_block["m_indexNames"]
@@ -160,10 +147,6 @@ def create_armature(content_manager: ContentManager, resource: CompiledModelReso
     #     for index, parent in enumerate(bone_parents):
     #         parent =
 
-    bpy.ops.object.mode_set(mode='OBJECT')
-    # armature_obj.rotation_euler = Euler([math.radians(180), 0, math.radians(90)])
-
-    bpy.context.scene.collection.objects.unlink(armature_obj)
     return armature_obj
 
 

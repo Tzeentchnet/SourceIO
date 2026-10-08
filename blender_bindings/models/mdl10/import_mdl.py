@@ -9,7 +9,7 @@ from mathutils import Euler, Matrix, Vector
 from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader import GoldSrcShader
 from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material, ActionCurveFactory
+from SourceIO.blender_bindings.utils.bpy_utils import add_material, edit_armature, get_or_create_material, ActionCurveFactory
 from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
 from SourceIO.library.models.mdl.v10.mdl_file import Mdl, Channels
 from SourceIO.library.models.mdl.v10.structs.texture import StudioTexture
@@ -24,52 +24,47 @@ def create_armature(mdl: Mdl, scale):
     armature_obj = bpy.data.objects.new(f"{model_name}_ARM", armature)
     armature_obj['MODE'] = 'SourceIO'
     armature_obj.show_in_front = True
-    bpy.context.scene.collection.objects.link(armature_obj)
-
-    armature_obj.select_set(True)
-    bpy.context.view_layer.objects.active = armature_obj
-    bpy.ops.object.mode_set(mode='EDIT')
 
     bone_length = 0.25 * scale
     edit_bones = []
     mdl_bone_transforms = []
 
-    # Create bones and calculate their armature-space transforms.
-    for index, mdl_bone_info in enumerate(mdl.bones):
-        if not mdl_bone_info.name:
-            mdl_bone_info.name = f"Bone_{index}"
+    with edit_armature(armature_obj) as armature_edit_bones:
+        # Create bones and calculate their armature-space transforms.
+        for index, mdl_bone_info in enumerate(mdl.bones):
+            if not mdl_bone_info.name:
+                mdl_bone_info.name = f"Bone_{index}"
 
-        edit_bone = armature.edit_bones.new(mdl_bone_info.name)
+            edit_bone = armature_edit_bones.new(mdl_bone_info.name)
 
-        mdl_bone_info.name = edit_bone.name
+            mdl_bone_info.name = edit_bone.name
 
-        edit_bone.head = Vector((0.0, 0.0, 0.0))
-        edit_bone.tail = Vector((0.0, bone_length, 0.0))
+            edit_bone.head = Vector((0.0, 0.0, 0.0))
+            edit_bone.tail = Vector((0.0, bone_length, 0.0))
 
-        local_position = Vector(mdl_bone_info.pos) * scale
-        local_rotation = Euler(mdl_bone_info.rot).to_matrix().to_4x4()
-        local_matrix = Matrix.Translation(local_position) @ local_rotation
+            local_position = Vector(mdl_bone_info.pos) * scale
+            local_rotation = Euler(mdl_bone_info.rot).to_matrix().to_4x4()
+            local_matrix = Matrix.Translation(local_position) @ local_rotation
 
-        if mdl_bone_info.parent != -1:
-            armature_matrix = mdl_bone_transforms[mdl_bone_info.parent] @ local_matrix
-        else:
-            armature_matrix = local_matrix
+            if mdl_bone_info.parent != -1:
+                armature_matrix = mdl_bone_transforms[mdl_bone_info.parent] @ local_matrix
+            else:
+                armature_matrix = local_matrix
 
-        edit_bones.append(edit_bone)
-        mdl_bone_transforms.append(armature_matrix)
+            edit_bones.append(edit_bone)
+            mdl_bone_transforms.append(armature_matrix)
 
-    for index, mdl_bone_info in enumerate(mdl.bones):
-        edit_bone = edit_bones[index]
+        for index, mdl_bone_info in enumerate(mdl.bones):
+            edit_bone = edit_bones[index]
 
-        if mdl_bone_info.parent != -1:
-            edit_bone.parent = edit_bones[mdl_bone_info.parent]
-            edit_bone.use_connect = False
+            if mdl_bone_info.parent != -1:
+                edit_bone.parent = edit_bones[mdl_bone_info.parent]
+                edit_bone.use_connect = False
 
-        edit_bone.matrix = mdl_bone_transforms[index]
+            edit_bone.matrix = mdl_bone_transforms[index]
 
-        edit_bone.length = bone_length
+            edit_bone.length = bone_length
 
-    bpy.ops.object.mode_set(mode='OBJECT')
     return armature_obj, mdl_bone_transforms
 
 
@@ -182,7 +177,6 @@ def import_model(mdl_file: Buffer, mdl_texture_file: Optional[Buffer], options: 
 
     if options.import_animations:
         load_animations(mdl, armature, path_stem(mdl.header.name), options.scale)
-    bpy.context.scene.collection.objects.unlink(armature)
 
     return ModelContainer(objects, bodygroups, [], [], armature)
 

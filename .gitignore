@@ -119,3 +119,5 @@ dmypy.json
 sycreation-s-default.blend1
 
 .vscode/settings.json
+# Third-party sample assets fetched by tests/fetch_samples.py
+samples/

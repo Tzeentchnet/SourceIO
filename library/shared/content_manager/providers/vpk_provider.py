@@ -19,7 +19,9 @@ class VPKContentProvider(ContentProvider):
 
     def check(self, filepath: TinyPath) -> bool:
         self._init()
-        return self.vpk_archive.check(filepath)
+        # The native lookup is case-sensitive, unlike find_file; Valve's VPKs store lowercase names
+        # while MDLs and VMTs often reference mixed case ("models/buildables/sentry3/Sentry3").
+        return self.vpk_archive.check(filepath) or self.vpk_archive.check(TinyPath(filepath.as_posix().lower()))
 
     def get_relative_path(self, filepath: TinyPath) -> TinyPath | None:
         return None

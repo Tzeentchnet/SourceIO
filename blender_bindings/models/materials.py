@@ -1,4 +1,6 @@
 """Material path resolution shared by Source 1 material and mesh import."""
+import posixpath
+
 from SourceIO.library.utils.tiny_path import TinyPath
 from SourceIO.library.shared.content_manager import ContentManager
 
@@ -13,15 +15,15 @@ def resolve_model_material(content_manager: ContentManager, mdl, material_name: 
 
     # The bare name may already contain its full path. Deduplicate candidates
     # because MDLs can also contain empty or repeated material search paths.
-    candidates = [TinyPath(material_name)]
+    candidates = [_normalize(material_name)]
     for directory in mdl.materials_paths:
         if not directory:
             continue
-        directory = TinyPath(directory)
-        if not directory.is_absolute():
-            candidates.append(directory / material_name)
+        if not TinyPath(directory).is_absolute():
+            # Like the engine, concatenate and then resolve "..": TF2's spy uses "/../../effects/invulnfx_red"
+            candidates.append(_normalize(directory + "/" + material_name))
     seen = set()
-    for path in candidates:
+    for path in filter(None, candidates):
         candidate = 'materials' / TinyPath(path.as_posix() + '.vmt')
         key = candidate.as_posix().casefold()
         if key in seen:
@@ -32,6 +34,13 @@ def resolve_model_material(content_manager: ContentManager, mdl, material_name: 
             return path
     paths[material_name] = None
     return None
+
+
+def _normalize(path: str) -> TinyPath | None:
+    path = posixpath.normpath(path.replace("\\", "/")).lstrip("/")
+    if path in ("", ".") or path.startswith("../"):
+        return None
+    return TinyPath(path)
 
 
 def get_model_material_names(content_manager: ContentManager, mdl):

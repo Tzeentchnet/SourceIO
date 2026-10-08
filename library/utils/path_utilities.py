@@ -112,6 +112,15 @@ def path_stem(path: str):
     return os.path.basename(path).rsplit(".", 1)[0]
 
 
+def strip_vmt_extension(material_name: str) -> str:
+    """Drop a trailing ``.vmt``, which the engine ignores in material names.
+
+    vbsp copies names such as ``$bottommaterial "water/water_2fort_beneath.vmt"`` into the BSP verbatim,
+    and entity keys like ``ropematerial`` often carry the extension too.
+    """
+    return material_name[:-4] if material_name.lower().endswith(".vmt") else material_name
+
+
 def collect_full_material_names(material_names: list[str], material_search_paths: list[str],
                                 content_manager) -> dict[str, str]:
     full_mat_names = {}

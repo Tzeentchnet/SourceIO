@@ -19,7 +19,7 @@ from SourceIO.library.source1.bsp.datatypes.texture_data import TextureData
 from SourceIO.library.source1.bsp.datatypes.texture_info import TextureInfo
 from SourceIO.library.source1.vmt import VMT
 from SourceIO.library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.path_utilities import path_stem
+from SourceIO.library.utils.path_utilities import path_stem, strip_vmt_extension
 from SourceIO.library.utils.tiny_path import TinyPath
 from SourceIO.logger import SourceLogMan
 
@@ -294,7 +294,7 @@ class AbstractEntityHandler:
             texture_info = bsp_textures_info[texture_info_id]
             texture_data = bsp_textures_data[texture_info.texture_data_id]
             material_name = _get_string(texture_data.name_id)
-            material_name = material_name.rstrip("/\\").lstrip("/\\")
+            material_name = strip_vmt_extension(material_name.rstrip("/\\").lstrip("/\\"))
             if self.settings and self.settings.import_textures:
                 material_file = self.content_manager.find_file(TinyPath("materials") / (material_name + ".vmt"))
                 if material_file:

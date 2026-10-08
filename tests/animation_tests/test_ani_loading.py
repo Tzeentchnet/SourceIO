@@ -70,7 +70,7 @@ class TestBlockTable:
             mdl = MdlV49.from_buffer(buf)
             blocks = read_anim_block_table(buf, mdl.header.anim_block_offset, mdl.header.anim_block_count)
 
-        assert len(blocks) == 51
+        assert len(blocks) == mdl.header.anim_block_count == 41
         assert blocks[0].data_offset == 0
         assert blocks[0].data_size == 0
         assert blocks[1].data_offset > 0
@@ -99,7 +99,8 @@ class TestAnimationLoading:
             anims = load_animations_from_mdl(mdl, buf, cm, model_path)
 
         cm.clean()
-        assert len(anims) == 115
+        # Every local animation loads (HL2 dog_animations.mdl: 116, 41 of them blocks in the .ani)
+        assert len(anims) == len(mdl.anim_descs) == 116
 
     def test_loads_all_from_dog_gestures(self, dog_gestures_mdl):
         cm = ContentManager()
@@ -111,7 +112,7 @@ class TestAnimationLoading:
             anims = load_animations_from_mdl(mdl, buf, cm, model_path)
 
         cm.clean()
-        assert len(anims) == 83
+        assert len(anims) == len(mdl.anim_descs) == 9
 
     def test_animation_has_valid_frames(self, dog_animations_mdl):
         cm = ContentManager()
@@ -124,10 +125,15 @@ class TestAnimationLoading:
 
         cm.clean()
 
+        bone_names = {bone.name for bone in mdl.bones}
+        anim_dtype = np.dtype([("pos", np.float32, (3,)), ("rot", np.float32, (4,))])
         for anim in anims[:10]:
-            assert anim.frames.shape == (anim.frame_count, 51)
-            assert anim.frames.dtype == np.dtype([("pos", np.float32, (3,)), ("rot", np.float32, (4,))])
-            assert not np.all(anim.frames["rot"] == 0), f"{anim.name} has all-zero rotations"
+            # frames holds only the bones the animation moves
+            assert anim.frames and set(anim.frames) <= bone_names
+            for bone_name, track in anim.frames.items():
+                assert track.shape == (anim.frame_count,)
+                assert track.dtype == anim_dtype
+                assert not np.all(track["rot"] == 0), f"{anim.name}/{bone_name} has all-zero rotations"
 
     def test_animation_metadata(self, dog_animations_mdl):
         cm = ContentManager()
@@ -145,6 +151,29 @@ class TestAnimationLoading:
         assert ref.fps == 30.0
         assert not ref.is_looping
 
+    def test_sections_fill_unlisted_bones(self, dog_animations_mdl):
+        # Sections list only the bones they animate. Frames a bone is absent from used to stay
+        # zero-filled ([0, 0, 0, 0] rotations); they hold the rest pose (identity in delta animations).
+        cm = ContentManager()
+        model_path = TinyPath(str(dog_animations_mdl))
+        cm.scan_for_content(model_path)
+
+        with FileBuffer(dog_animations_mdl) as buf:
+            mdl = MdlV49.from_buffer(buf)
+            anims = load_animations_from_mdl(mdl, buf, cm, model_path)
+
+        cm.clean()
+
+        for anim in anims:
+            for bone_name, track in anim.frames.items():
+                norms = np.linalg.norm(track["rot"], axis=1)
+                assert np.allclose(norms, 1, atol=1e-3), f"{anim.name}/{bone_name} has degenerate rotations"
+
+        bones = {bone.name: bone for bone in mdl.bones}
+        toe = next(a for a in anims if a.name == "@actioninout").frames["Dog_Model.Toe_R"]
+        rest = np.all(np.isclose(toe["rot"], bones["Dog_Model.Toe_R"].quat, atol=1e-6), axis=1)
+        assert rest.any() and not rest.all()
+
     def test_multi_block_animation(self, dog_animations_mdl):
         cm = ContentManager()
         model_path = TinyPath(str(dog_animations_mdl))
@@ -158,7 +187,7 @@ class TestAnimationLoading:
 
         action = next(a for a in anims if a.name == "@actioninout")
         assert action.frame_count == 171
-        assert action.frames.shape == (171, 51)
+        assert all(track.shape == (171,) for track in action.frames.values())
 
     def test_inline_animations_still_work(self, dog_mdl):
         cm = ContentManager()

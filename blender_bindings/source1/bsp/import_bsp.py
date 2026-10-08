@@ -22,7 +22,7 @@ from SourceIO.library.source1.bsp.datatypes.texture_info import TextureInfo
 from SourceIO.library.source1.bsp.lumps import *
 from SourceIO.library.source1.bsp.lumps.texture_lump import Quake3TextureInfoLump
 from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.utils import Buffer, TinyPath, path_stem, SOURCE1_HAMMER_UNIT_TO_METERS
+from SourceIO.library.utils import Buffer, TinyPath, path_stem, strip_vmt_extension, SOURCE1_HAMMER_UNIT_TO_METERS
 from SourceIO.library.utils.idtech3_shader_parser import parse_shader_materials
 from SourceIO.library.utils.math_utilities import convert_rotation_source1_to_blender
 from SourceIO.logger import SourceLogMan, SLogger
@@ -199,7 +199,7 @@ def import_materials(bsp: VBSPFile, content_manager: ContentManager, settings: S
             content_manager.add_child(pak_lump)
         for texture_data in texture_data_lump.texture_data:
             material_name = strings_lump.strings[texture_data.name_id] or "NO_NAME"
-            material_name = material_name.lstrip("/\\")
+            material_name = strip_vmt_extension(material_name.lstrip("/\\"))
             tmp = strip_patch_coordinates.sub("", material_name)
 
             mat = get_or_create_material(path_stem(tmp), tmp)

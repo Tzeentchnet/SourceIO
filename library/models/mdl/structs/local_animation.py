@@ -157,6 +157,7 @@ class StudioAnimDesc:
 
         if sections:
             frame_buffer = defaultdict(lambda: np.zeros((self.frame_count,), ANIM_DTYPE))
+            written = defaultdict(lambda: np.zeros((self.frame_count,), bool))
             frame_offset = 0
             for section_id, section in enumerate(sections):
                 if section_id < len(sections) - 2:
@@ -169,33 +170,35 @@ class StudioAnimDesc:
 
                 if section.anim_block == 0:
                     adjusted_anim_offset = section.anim_offset + (self.animblock_offset - sections[0].anim_offset)
-                    buffer.seek(self._entry_offset + adjusted_anim_offset)
-                    animation_section = self._read_animation_frames(buffer, bones, section_frame_count)
-                    if not animation_section:
-                        print("No animation in embedded anim block")
-                        continue
-                    for key, data in animation_section.items():
-                        frame_buffer[key][frame_offset:frame_offset + section_frame_count] = data
-                    frame_offset += section_frame_count
+                    section_buffer = buffer
+                    section_buffer.seek(self._entry_offset + adjusted_anim_offset)
                 elif ani_buffer is not None and block_table is not None:
-                    block_entry = block_table[section.anim_block]
-                    ani_buffer.seek(block_entry.data_offset + section.anim_offset)
-                    animation_section = self._read_animation_frames(ani_buffer, bones, section_frame_count)
-                    if not animation_section:
-                        print("No animation in external anim block with block table")
-                        continue
-                    for key, data in animation_section.items():
-                        frame_buffer[key][frame_offset:frame_offset + section_frame_count] = data
-                    frame_offset += section_frame_count
+                    section_buffer = ani_buffer
+                    section_buffer.seek(block_table[section.anim_block].data_offset + section.anim_offset)
                 elif ani_buffer is not None:
-                    ani_buffer.seek(section.anim_offset)
-                    animation_section = self._read_animation_frames(ani_buffer, bones, section_frame_count)
-                    if not animation_section:
-                        print("No animation in external anim block")
-                        continue
-                    for key, data in animation_section.items():
+                    section_buffer = ani_buffer
+                    section_buffer.seek(section.anim_offset)
+                else:
+                    section_buffer = None
+
+                # A section that animates no bones still covers its frames.
+                if section_buffer is not None:
+                    animation_section = self._read_animation_frames(section_buffer, bones, section_frame_count)
+                    for key, data in (animation_section or {}).items():
                         frame_buffer[key][frame_offset:frame_offset + section_frame_count] = data
-                    frame_offset += section_frame_count
+                        written[key][frame_offset:frame_offset + section_frame_count] = True
+                frame_offset += section_frame_count
+
+            # Each section lists only the bones it animates; elsewhere a bone holds its rest pose
+            # (identity in a delta animation), as in the engine.
+            is_delta = bool(self.flags & AnimDescFlags.DELTA)
+            bones_by_name = {bone.name: bone for bone in bones}
+            for name, track in frame_buffer.items():
+                missing = ~written[name]
+                if missing.any():
+                    bone = bones_by_name[name]
+                    track["pos"][missing] = (0, 0, 0) if is_delta else bone.position
+                    track["rot"][missing] = (0, 0, 0, 1) if is_delta else bone.quat
             return frame_buffer
         elif self.animblock_id == 0:
             buffer.seek(self._entry_offset + self.animblock_offset)

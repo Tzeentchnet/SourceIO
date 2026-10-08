@@ -97,7 +97,7 @@ Fixed (all pre-existing on `master`):
 
 Found while verifying the textures (also pre-existing): every HDR texture (BC6H, RGBA16161616F) imported with reversed channels, because the native EXR writer stores values in EXR's alphabetical channel order (A, B, G, R). In-memory HDR images were also created as 8-bit sRGB placeholders. Both fixed in `texture_utils.py`, and float formats (R16F…RGBA32323232F) now use the HDR path. Verified pixel-exact for BC6H and RGBA16161616F (memory and disk cache), and within half-float precision for R32F.
 
-Still needs game installs: animated or flexed Source 1 models (TF2 / Source SDK Base 2013, incl. `dog_animations.mdl` for `tests/animation_tests`), real CS2/Dota 2 maps.
+Still needs game installs: real CS2/Dota 2 maps. (Source 1 animated/flexed models: done in round 3 against TF2.)
 
 ## Status
 
@@ -126,4 +126,23 @@ Follow-ups found during execution:
 | CLI | `blender -c sourceio import ...` (`blender_bindings/cli.py`). Tested through the installed extension: imports, `--output` .blend, exit codes. |
 | Samples | 99 files (20 more VRF textures, 3 animation samples). Suite: **88 PASS / 5 WARN / 0 FAIL**; the 5 WARN are missing game content. |
 
-Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; decals and overlays; bone collections and colours; `bpy.ops` mode switching in the armature builders; relative imports for the extension; testing against real game installs.
+Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; decals and overlays; bone collections and colours; `bpy.ops` mode switching in the armature builders; relative imports for the extension; testing against CS2/Dota 2 installs.
+
+## Round 3 (2026-10-08, TF2 install)
+
+```
+blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf" [--include-animations] [--model PATH] [--map NAME]
+```
+
+Models are read through the game's search paths (VPKs included), with the game mounted during import. Default set: heavy, HWM heavy, scout, spy, minigun, sentry3, bot_heavy, resupply locker, HL2 dog; maps ctf_2fort, cp_badlands, koth_harvest_final, pl_upward. Result: **13 PASS / 0 WARN / 0 FAIL** (was 11 PASS / 2 WARN, with wrong materials on spy and sentry). With `--include-animations`: dog 134 animations (1 + 116 + 9 + 8, matching the MDL headers), heavy 902. HWM heavy: 647 shape keys, 653 flex drivers.
+
+| Bug | Fix |
+|-----|-----|
+| Sectioned animations left `[0,0,0,0]` rotations wherever a section didn't list a bone (dog 122 tracks, heavy 178, scout 94, sentry3 17) | Unlisted frames hold the rest pose, or identity in delta animations; an empty section still advances the frame offset (`local_animation.py`). No non-unit quaternions remain in any TF2 class animation file |
+| `$bottommaterial "water/x.vmt"` is copied into the BSP verbatim, so SourceIO looked up `x.vmt.vmt`; the underwater faces weren't skipped and got an empty material | `strip_vmt_extension()` for BSP texdata, brush models, rope and infodecal materials |
+| `ContentManager.check()` was case-sensitive for VPKs while `find_file()` wasn't (`sentry3/Sentry3` missed) | `VPKContentProvider.check` retries lowercase |
+| MDL material names like `/../../effects/invulnfx_red` made an absolute path | Join cdmaterials and name, then normalize `..`, as the engine does (`models/materials.py`) |
+
+`tests/animation_tests` used made-up counts and the old array `frames` API; it now checks the counts against the MDL headers (HL2 `dog_*` from TF2's `hl2_misc_dir.vpk`), the per-bone dict, and degenerate rotations: 11 pass. Unit tests: 179 pass. Sample suite unchanged: 88 PASS / 5 WARN / 0 FAIL.
+
+Not done: `tf/custom/*` wildcard search paths are still skipped with a warning; `_read_frame_animations` (v49+ FRAMEANIM) asserts constant and per-frame data never mix.

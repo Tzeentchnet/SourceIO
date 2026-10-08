@@ -13,7 +13,7 @@ from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_creat
 from SourceIO.library.source1.vmt import VMT
 from SourceIO.library.source1.vtf import SkyboxException
 from SourceIO.library.utils.math_utilities import ensure_length, lerp_vec, srgb_to_linear
-from SourceIO.library.utils.path_utilities import path_stem
+from SourceIO.library.utils.path_utilities import path_stem, strip_vmt_extension
 from SourceIO.library.utils.tiny_path import TinyPath
 from SourceIO.logger import SourceLogMan
 from .abstract_entity_handlers import AbstractEntityHandler, register_entity_handlers
@@ -746,7 +746,7 @@ class BaseEntityHandler(AbstractEntityHandler):
 
         curve_path.use_endpoint_u = True
 
-        material_name = start_entity.ropematerial
+        material_name = strip_vmt_extension(start_entity.ropematerial)
         stripped_material_name = strip_patch_coordinates.sub("", material_name)
 
         mat = get_or_create_material(TinyPath(stripped_material_name).name, stripped_material_name)
@@ -793,8 +793,9 @@ class BaseEntityHandler(AbstractEntityHandler):
         self._put_into_collection('path_track', obj)
 
     def handle_infodecal(self, entity: infodecal, entity_raw: dict):
-        material_name = TinyPath(entity.texture).name
-        material_path = TinyPath("materials") / (entity.texture + ".vmt")
+        texture = strip_vmt_extension(entity.texture)
+        material_name = TinyPath(texture).name
+        material_path = TinyPath("materials") / (texture + ".vmt")
         size = [64, 64] # More reasonable than 128x128, based off of what I've seen for decal resolutions across Source 1
         decal_scale = 1
         mat = None

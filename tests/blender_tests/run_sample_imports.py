@@ -110,8 +110,10 @@ def snapshot():
     return {name: set(getattr(bpy.data, name)) for name in COUNTED}
 
 
-def run_one(path: Path, operator: str, mode: str) -> dict:
+def run_one(path: Path, operator: str, mode: str, before_import=None, options=None) -> dict:
     bpy.ops.wm.read_homefile(use_empty=True)
+    if before_import is not None:
+        before_import()
     before = snapshot()
     captured_errors.clear()
 
@@ -122,6 +124,7 @@ def run_one(path: Path, operator: str, mode: str) -> dict:
         kwargs.update(files=[{"name": path.name}])
     if operator == "mdl" or path.parent.name == "animations":
         kwargs["import_animations"] = True
+    kwargs.update(options or {})
 
     status, message = "PASS", ""
     started = time.perf_counter()

@@ -32,7 +32,8 @@ def parse_float_vector(string):
     if isinstance(string, tuple):
         return list(string)
     elif isinstance(string, np.ndarray):
-        return string
+        # KV3 arrays are read-only views of the file; handlers adjust the result in place.
+        return string.astype(np.float64)
     return [float(val) for val in string.replace('  ', ' ').split(' ')]
 
 

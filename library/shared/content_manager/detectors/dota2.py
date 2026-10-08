@@ -16,7 +16,8 @@ class Dota2Detector(Source2Detector):
     @classmethod
     def find_game_root(cls, path: TinyPath) -> TinyPath | None:
         dota_pack01 = backwalk_file_resolver(path, r'dota/pak01_dir.vpk')
-        if dota_pack01 is not None:
+        # The resolver also accepts a bare pak01_dir.vpk, which every Source 2 game has.
+        if dota_pack01 is not None and dota_pack01.parent.name.lower() == 'dota':
             return dota_pack01.parent.parent
         return None
 

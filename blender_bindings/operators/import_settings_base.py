@@ -29,6 +29,8 @@ class GoldSrcBspSettings(BSPOptions):
 
 class Source1BSPSettings(GoldSrcBspSettings, Source1SharedSettings):
     import_cubemaps: BoolProperty(name="Import cubemaps", default=False, subtype='UNSIGNED')
+    load_overlays: BoolProperty(name="Load overlays", description="Import info_overlay decals compiled into the map",
+                                default=True, subtype='UNSIGNED')
 
 
 class ModelOptions(SharedOptions, Source1SharedSettings):

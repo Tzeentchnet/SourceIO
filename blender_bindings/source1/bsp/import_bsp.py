@@ -19,6 +19,7 @@ from SourceIO.library.source1.bsp.datatypes.static_prop_lump import StaticPropLu
 from SourceIO.library.source1.bsp.datatypes.face import Face
 from SourceIO.library.source1.bsp.datatypes.texture_data import TextureData
 from SourceIO.library.source1.bsp.datatypes.texture_info import TextureInfo
+from SourceIO.library.source1.bsp.geometry import OverlayBuilder, displacement_mesh
 from SourceIO.library.source1.bsp.lumps import *
 from SourceIO.library.source1.bsp.lumps.texture_lump import Quake3TextureInfoLump
 from SourceIO.library.source1.vmt import VMT
@@ -70,6 +71,7 @@ def import_bsp(map_path: TinyPath, buffer: Buffer, content_manager: ContentManag
     import_static_props(bsp, settings, master_collection, logger)
     import_materials(bsp, content_manager, settings, logger)
     import_disp(bsp, settings, master_collection, logger)
+    import_overlays(bsp, settings, master_collection, logger)
 
 
 def import_entities(bsp: VBSPFile, content_manager: ContentManager, settings: Source1BSPSettings,
@@ -304,15 +306,7 @@ def import_disp(bsp: VBSPFile, settings: Source1BSPSettings,
 
     disp_multiblend: Optional[DispMultiblendLump] = bsp.get_lump('LUMP_DISP_MULTIBLEND')
     strings_lump: Optional[StringsLump] = bsp.get_lump('LUMP_TEXDATA_STRING_TABLE')
-    vertex_lump: Optional[VertexLump] = bsp.get_lump('LUMP_VERTICES')
-    edge_lump: Optional[EdgeLump] = bsp.get_lump('LUMP_EDGES')
-    surf_edge_lump: Optional[SurfEdgeLump] = bsp.get_lump('LUMP_SURFEDGES')
     disp_verts_lump: Optional[DispVertLump] = bsp.get_lump('LUMP_DISP_VERTS')
-    surf_edges = surf_edge_lump.surf_edges
-    vertices = vertex_lump.vertices
-    edges = edge_lump.edges
-
-    disp_verts = disp_verts_lump.transformed_vertices
 
     parent_collection = get_or_create_collection('displacements', master_collection)
     info_count = len(disp_info_lump.infos)
@@ -326,60 +320,12 @@ def import_disp(bsp: VBSPFile, settings: Source1BSPSettings,
         texture_data = get_texture_data(texture_info, bsp)
         tv1, tv2 = texture_info.texture_vectors
 
-        first_edge = src_face.first_edge
-        edge_count = src_face.edge_count
-
-        used_surf_edges = surf_edges[first_edge:first_edge + edge_count]
-        reverse = np.subtract(1, (used_surf_edges > 0).astype(np.uint8))
-        used_edges = edges[np.abs(used_surf_edges)]
-        tmp = np.arange(used_edges.shape[0])
-        face_vertex_ids = used_edges[tmp, reverse]
-        face_vertices = vertices[face_vertex_ids] * settings.scale
-
-        start_pos = np.asarray(disp_info.start_position, np.float32)
-        min_index = np.where(
-            np.sum(
-                np.isclose(face_vertices,
-                           start_pos * settings.scale,
-                           0.5e-2),
-                axis=1
-            ) == 3)
-        if min_index[0].shape[0] == 0:
-            lowest = 999.e16
-            for i, value in enumerate(np.sum(face_vertices - start_pos, axis=1)):
-                if value < lowest:
-                    min_index = i
-                    lowest = value
-        else:
-            min_index = min_index[0][0]
-
-        left_edge = face_vertices[(1 + min_index) & 3] - face_vertices[min_index & 3]
-        right_edge = face_vertices[(2 + min_index) & 3] - face_vertices[(3 + min_index) & 3]
-
-        num_edge_vertices = (1 << disp_info.power) + 1
-        subdivide_scale = 1.0 / (num_edge_vertices - 1)
-        left_edge_step = left_edge * subdivide_scale
-        right_edge_step = right_edge * subdivide_scale
-
-        subdiv_vert_count = num_edge_vertices ** 2
-
-        disp_vertices = np.zeros((subdiv_vert_count, 3), dtype=np.float32)
+        disp_mesh = displacement_mesh(bsp, disp_info)
+        disp_indices = disp_mesh.disp_vertex_ids
+        subdiv_vert_count = len(disp_indices)
         disp_uv = np.zeros((subdiv_vert_count, 2), dtype=np.float32)
-        disp_indices = np.arange(0, subdiv_vert_count, dtype=np.uint32) + disp_info.disp_vert_start
-        for i in range(num_edge_vertices):
-            left_end = left_edge_step * i
-            left_end += face_vertices[min_index & 3]
-
-            right_end = right_edge_step * i
-            right_end += face_vertices[(3 + min_index) & 3]
-
-            left_right_seg = right_end - left_end
-            left_right_step = left_right_seg * subdivide_scale
-
-            for j in range(num_edge_vertices):
-                disp_vertices[(i * num_edge_vertices + j)] = left_end + (left_right_step * j)
-        disp_uv[:, 0] = (np.dot(disp_vertices / settings.scale, tv1[:3]) + tv1[3]) / (texture_data.view_width )
-        disp_uv[:, 1] = 1 - ((np.dot(disp_vertices / settings.scale, tv2[:3]) + tv2[3]) / (texture_data.view_height))
+        disp_uv[:, 0] = (np.dot(disp_mesh.flat_positions, tv1[:3]) + tv1[3]) / texture_data.view_width
+        disp_uv[:, 1] = 1 - ((np.dot(disp_mesh.flat_positions, tv2[:3]) + tv2[3]) / texture_data.view_height)
 
         disp_vertices_alpha = disp_verts_lump.vertices['alpha'][disp_indices] / 255
         final_vertex_colors['vertex_alpha'] = np.ones((disp_vertices_alpha.shape[0],4))
@@ -413,25 +359,14 @@ def import_disp(bsp: VBSPFile, settings: Source1BSPSettings,
                                                                        np.ones((shape_, 1))),
                                                                       axis=1)
             multiblend_offset += subdiv_vert_count
-        face_indices = np.zeros(((num_edge_vertices - 1) * (num_edge_vertices - 1) * 2, 3), np.uint32)
-        face_index = 0
-        for i in range(num_edge_vertices - 1):
-            for j in range(num_edge_vertices - 1):
-                index = i * num_edge_vertices + j
-                if index & 1:
-                    face_indices[face_index] = (index, index + 1, index + num_edge_vertices)
-                    face_indices[face_index + 1] = (index + 1, index + num_edge_vertices + 1, index + num_edge_vertices)
-                else:
-                    face_indices[face_index] = (index, index + num_edge_vertices + 1, index + num_edge_vertices)
-                    face_indices[face_index + 1] = (index, index + 1, index + num_edge_vertices + 1)
-                face_index += 2
         mesh_data = FastMesh.new(f"{bsp.filepath.stem}_disp_{disp_info.map_face}_MESH")
         mesh_obj = bpy.data.objects.new(f"{bsp.filepath.stem}_disp_{disp_info.map_face}", mesh_data)
         if parent_collection is not None:
             parent_collection.objects.link(mesh_obj)
         else:
             master_collection.objects.link(mesh_obj)
-        mesh_data.from_pydata(disp_vertices + disp_verts[disp_indices] * settings.scale, [], face_indices)
+        mesh_data.from_pydata((disp_mesh.positions * settings.scale).astype(np.float32), [],
+                              disp_mesh.triangles)
 
         uv_data = mesh_data.uv_layers.new().data
         vertex_indices = np.zeros((len(mesh_data.loops, )), dtype=np.uint32)
@@ -447,6 +382,51 @@ def import_disp(bsp: VBSPFile, settings: Source1BSPSettings,
         material_name = strip_patch_coordinates.sub("", material_name)
         add_material(get_or_create_material(path_stem(material_name), material_name), mesh_obj)
         mesh_data.validate(clean_customdata=False)
+
+
+def import_overlays(bsp: VBSPFile, settings: Source1BSPSettings,
+                    master_collection: bpy.types.Collection, logger: SLogger):
+    """info_overlay entities: VBSP compiles them into LUMP_OVERLAYS and drops the entities."""
+    if not getattr(settings, 'load_overlays', True):
+        return
+    overlay_lump: Optional[OverlayLump] = bsp.get_lump('LUMP_OVERLAYS')
+    strings_lump: Optional[StringsLump] = bsp.get_lump('LUMP_TEXDATA_STRING_TABLE')
+    if not overlay_lump or not overlay_lump.overlays or not strings_lump:
+        return
+    texture_info_lump: TextureInfoLump = bsp.get_lump('LUMP_TEXINFO')
+    texture_data_lump: TextureDataLump = bsp.get_lump('LUMP_TEXDATA')
+
+    builder = OverlayBuilder(bsp)
+    parent_collection = get_or_create_collection('overlays', master_collection)
+    created = 0
+    for overlay in overlay_lump.overlays:
+        mesh = builder.build(overlay)
+        if not len(mesh.polygon_sizes):
+            logger.debug(f'Overlay {overlay.id} does not touch any of its faces')
+            continue
+        texture_data = texture_data_lump.texture_data[texture_info_lump.texture_info[overlay.tex_info].texture_data_id]
+        material_name = strings_lump.strings[texture_data.name_id] or "NO_NAME"
+        material_name = strip_patch_coordinates.sub("", strip_vmt_extension(material_name.lstrip("/\\")))
+
+        loop_starts = np.concatenate([[0], np.cumsum(mesh.polygon_sizes)[:-1]])
+        polygons = [range(start, start + size) for start, size in zip(loop_starts, mesh.polygon_sizes)]
+        mesh_data = bpy.data.meshes.new(f"overlay_{overlay.id}_MESH")
+        mesh_data.from_pydata((mesh.positions * settings.scale).tolist(), [], polygons)
+        # Loops follow the vertex order, so the texture coordinates line up one-to-one.
+        uvs = mesh.texcoords.copy()
+        uvs[:, 1] = 1.0 - uvs[:, 1]
+        mesh_data.uv_layers.new().data.foreach_set('uv', uvs.astype(np.float32).ravel())
+        mesh_data.validate()
+
+        mesh_obj = bpy.data.objects.new(f"overlay_{overlay.id}_{path_stem(material_name)}", mesh_data)
+        mesh_obj['overlay_id'] = overlay.id
+        mesh_obj['render_order'] = overlay.render_order
+        # A decal lifted a fraction of a unit off the wall would only shade the wall under it.
+        mesh_obj.visible_shadow = False
+        add_material(get_or_create_material(path_stem(material_name), material_name), mesh_obj)
+        parent_collection.objects.link(mesh_obj)
+        created += 1
+    logger.info(f'Imported {created}/{len(overlay_lump.overlays)} overlays')
     # def load_physics(self):
     #     physics_lump: PhysicsLump = self.map_file.get_lump('LUMP_PHYSICS')
     #     if not physics_lump or not physics_lump.solid_blocks:

@@ -33,36 +33,41 @@ class Overlay:
         return self.ofaces[:self.face_count]
 
     @property
-    def basis(self):
-        basis = np.zeros((2, 3), dtype=np.float32)
-        basis[0] = self.uv_points.T[2][:3]
-        basis[1] = np.cross(self.normal, basis[0])
-        return basis
+    def basis(self) -> npt.NDArray[np.float64]:
+        """Orthonormal (U, V, normal) rows of the overlay plane.
+
+        VBSP packs the U axis into the unused z of the first three UV points and sets the fourth
+        point's z to 1 when V is -(normal x U). Hammer's U can lean out of the plane, so it is
+        projected onto it here.
+        """
+        normal = np.asarray(self.normal, np.float64)
+        normal /= np.linalg.norm(normal)
+        u_axis = self.uv_points[:3, 2].astype(np.float64)
+        u_axis -= normal * (u_axis @ normal)
+        u_axis /= np.linalg.norm(u_axis)
+        v_axis = np.cross(normal, u_axis)
+        if self.uv_points[3, 2] == 1.0:
+            v_axis = -v_axis
+        return np.stack([u_axis, v_axis, normal])
 
     @property
-    def plane_points(self):
-        points = np.zeros((4, 2), dtype=np.float32)
-        points[0] = self.uv_points[0][:2][::-1]
-        points[1] = self.uv_points[1][:2][::-1]
-        points[2] = self.uv_points[2][:2][::-1]
-        points[3] = self.uv_points[3][:2][::-1]
-        return points
+    def plane_points(self) -> npt.NDArray[np.float64]:
+        """Quad corners as (U, V) coordinates relative to `origin`."""
+        return self.uv_points[:, :2].astype(np.float64)
+
+    @property
+    def corner_texcoords(self) -> npt.NDArray[np.float64]:
+        """Source (s, t) texture coordinates of the four quad corners."""
+        return np.array([(self.u[0], self.v[0]), (self.u[0], self.v[1]),
+                         (self.u[1], self.v[1]), (self.u[1], self.v[0])], np.float64)
 
     @property
     def plane(self):
-        dst_uv = np.zeros((4, 2), dtype=np.float32)
-        dst_uv[0] = self.u[0], self.v[0]
-        dst_uv[1] = self.u[0], self.v[1]
-        dst_uv[2] = self.u[1], self.v[1]
-        dst_uv[3] = self.u[1], self.v[0]
-        dst_pos = np.zeros((4, 3), dtype=np.float32)
-        for n, _ in enumerate(dst_pos):
-            # out[0] = v1[0] + v2[0] * a;
-            # out[1] = v1[1] + v2[1] * a;
-            dst_pos[n] = self.origin + self.basis[0] * self.plane_points[n][0]
-            dst_pos[n] += self.basis[1] * self.plane_points[n][1]
-
-        return dst_pos, dst_uv
+        """World-space quad corners and their texture coordinates."""
+        u_axis, v_axis, _ = self.basis
+        points = self.plane_points
+        positions = np.asarray(self.origin, np.float64) + np.outer(points[:, 0], u_axis) + np.outer(points[:, 1], v_axis)
+        return positions, self.corner_texcoords
 
     @classmethod
     def from_buffer(cls, buffer: Buffer, version: int, bsp: VBSPFile):

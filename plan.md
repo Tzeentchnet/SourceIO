@@ -126,7 +126,7 @@ Follow-ups found during execution:
 | CLI | `blender -c sourceio import ...` (`blender_bindings/cli.py`). Tested through the installed extension: imports, `--output` .blend, exit codes. |
 | Samples | 99 files (20 more VRF textures, 3 animation samples). Suite: **88 PASS / 5 WARN / 0 FAIL**; the 5 WARN are missing game content. |
 
-Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; decals and overlays; bone collections and colours; `bpy.ops` mode switching in the armature builders; relative imports for the extension; testing against CS2/Dota 2 installs.
+Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; ~~decals and overlays~~ (Source 1 overlays: round 4); bone collections and colours; `bpy.ops` mode switching in the armature builders; relative imports for the extension; testing against CS2/Dota 2 installs.
 
 ## Round 3 (2026-10-08, TF2 install)
 
@@ -152,3 +152,7 @@ Not done: ~~`tf/custom/*` wildcard search paths are still skipped with a warning
 | Item | Result |
 |------|--------|
 | `custom/*` wildcard search paths | Every subfolder and VPK is mounted ahead of the game, in alphabetical order, as the engine does. Split archives mount through `_dir.vpk`; the `_NNN.vpk` chunks are skipped. `tests/content_manager` (3 tests, using a generated VPK v1) fails on the old code. TF2: `tf/custom/workshop` now mounts; still 13 PASS / 0 WARN / 0 FAIL. Unit tests: 182 pass. |
+| Overlays (`info_overlay`) | Previously not imported at all: VBSP compiles them into `LUMP_OVERLAYS` and drops the entities. `library/source1/bsp/geometry.py` clips each overlay quad (as two triangles, so texture coordinates are exact) against the brush faces and displacement triangles it lists, then lifts it 0.1 unit off the surface for each render order. Imported into an `overlays` collection with *Load overlays* (default on): 2fort 236/237, Badlands 124/124, Harvest 286/286, Upward 156/156 (the missing 2fort one is on a face perpendicular to it). Conventions checked on the maps: UV point x is U and y is V (the old unused `Overlay.plane` swapped them); V = normal x U, negated by the flip flag; Hammer's U can lean out of the plane and is projected onto it; a face's plane already faces front (`side` is relative to its node). Rendered signs read correctly, flipped ones included. |
+| Displacements built from the wrong corner | `import_disp` matched the start position with `np.isclose(..., 0.5e-2)`, which is a *relative* 0.5%, so far from the origin it took a neighbouring corner and rotated the grid. Wrong on Badlands 54/1191, 2fort 2/232, Harvest 2/533. Now the nearest corner, through the shared `displacement_mesh()` (also vectorized). |
+
+`tests/bsp_tests` (12 tests on a stub BSP): basis and flip, clipping, wrapping onto a second face, draping over a displacement, the start-corner case. Unit tests: 194 pass. Samples: 88 PASS / 5 WARN / 0 FAIL (`dm_lockdown` imports its 3 overlays). TF2: 13 PASS / 0 WARN / 0 FAIL.

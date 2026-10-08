@@ -9,22 +9,22 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): `master` is one commit ahead of `origin/master` (round 5, not pushed). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2.
+State (2026-10-08): `master` is two commits ahead of `origin/master` (rounds 5 and 6, not pushed). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive` exists but is empty).
 
 Checks, with the current baseline:
 
 ```
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 212 pass
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 221 pass
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 88 PASS / 5 WARN / 0 FAIL
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 ```
 
-1. **v49+ FRAMEANIM:** `_read_frame_animations` (`library/models/mdl/structs/local_animation.py:222`) asserts that constant and per-frame data never mix. Find a TF2 model that hits it (scan the VPKs for v49 models with frame animations) or build a fixture, then decode the mixed case.
-2. **`bpy.ops.object.mode_set` in the armature builders:** `mdl44` (also used by `mdl49`), `mdl4`, `mdl6`, `mdl9`, `mdl10`, `mdl36`, `mdl2531`, `source2/vmdl_loader.py`. Replace with the data API where possible. TF2 covers `mdl44`; the samples cover GoldSrc and Source 2.
-3. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
-4. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
+1. **`bpy.ops.object.mode_set` in the armature builders:** `mdl44` (also used by `mdl49`), `mdl4`, `mdl6`, `mdl9`, `mdl10`, `mdl36`, `mdl2531`, `source2/vmdl_loader.py`. Replace with the data API where possible. TF2 covers `mdl44`; the samples cover GoldSrc and Source 2.
+2. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
+3. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
 
 Blocked until CS2 or Dota 2 is installed: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks, pose-parameter blending, real CS2/Dota 2 maps.
+Blocked until a v49 game is installed (CS:GO, L4D2, Portal 2, SFM): checking the round 6 FRAMEANIM decoder against a real model.
 
 ## Verification
 
@@ -186,3 +186,11 @@ Not done: ~~`tf/custom/*` wildcard search paths are still skipped with a warning
 | `Bone.procedural_rule_type` | Held the rule object instead of the type number (wrong argument in `from_buffer`). |
 
 `tests/mdl_tests` (18 tests): side detection, role priority, and the roles and counts of the sample `dog.mdl`. `run_game_imports.py` now reports bone collection counts per model. Unit tests: 212 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL; scout 59/2/15/2, spy 68 deform / 7 bone merge / 9 attachments, sentry3 26/9, bot_heavy 54 deform / 3 bone merge / 12 other (hitbox-only bones), dog 49/7/2 (procedural tricep/elbow helpers).
+
+## Round 6 (2026-10-08)
+
+| Item | Result |
+|------|--------|
+| v49+ FRAMEANIM, mixed constant and per-frame data | `_read_frame_animations` asserted that a section has either constants or per-frame data. studiomdl writes constants for every bone that holds still over a section and per-frame data for the rest, so nearly every real frame animation mixes them. Rewritten to read both: each bone stores rotation then position (ROT2 before ROT, full-float before half-float position), constants once per section, frames at `frame_offset + i * frame_length` (the extra overlap frame of non-last sections is ignored). A channel with no flag holds the rest pose (identity in delta animations); previously a rotation-only bone got position (0, 0, 0). The per-frame block is decoded with NumPy (`decode_quat48`, `decode_quat48s`); the Quat48/Quat48S `sqrt` is clamped against rounding. A short `frame_length` raises `ValueError`. |
+
+Layout references: Crowbar's v49 reader and PulseModel's studiomdl-style writer and decoder (both open source). TF2 has no frame animations: its VPKs hold only v44–v48 models (13493 v48), and no loose MDLs exist, so `tests/mdl_tests/test_frame_anim.py` builds the blocks the way studiomdl does: mixed per-bone flags, legacy Quaternion48 and Quaternion48S, half- and full-float positions, delta, and 10 frames in 4 sections with different flags per section. 4 of its 9 tests fail on the old reader. Unit tests: 221 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL. Not checked against a real v49 model (CS:GO, L4D2, Portal 2 or SFM content would do).

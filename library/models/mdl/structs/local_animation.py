@@ -8,7 +8,7 @@ import numpy.typing as npt
 from SourceIO.library.shared.vector_types import Vector4, Vector3
 from SourceIO.library.utils.math_utilities import euler_to_quat
 from .bone import Bone
-from .compressed_vectors import Quat64, Quat48, Quat48S
+from .compressed_vectors import Quat64, Quat48, Quat48S, decode_quat48, decode_quat48s
 from .frame_anim import StudioFrameAnim
 from SourceIO.library.utils import Buffer
 
@@ -221,56 +221,82 @@ class StudioAnimDesc:
 
     def _read_frame_animations(self, buffer: Buffer, bones: list[Bone], section_frame_count: int) \
             -> dict[str, npt.NDArray] | None:
+        """Decode one STUDIO_FRAMEANIM block (v49+): a flag byte per bone, then a constants block
+        with one value for the whole section and a per-frame block with a fixed stride.
+
+        A bone can mix the two (constant rotation, animated position), and a section usually
+        mixes bones of both kinds. Each bone stores its rotation, then its position. A bone with
+        no flag for a channel holds its rest pose (identity in a delta animation).
+        """
         entry_offset = buffer.tell()
         frame_anim = StudioFrameAnim.from_buffer(buffer)
         bone_flags = [AniBoneFlags(buffer.read_uint8()) for _ in bones]
-        if frame_anim.constant_offset > 0:
-            assert frame_anim.frame_length == 0
-            constant_anim_data: dict[str, npt.NDArray] = dict()
+        is_delta = bool(self.flags & AnimDescFlags.DELTA)
+
+        anim_data: dict[str, npt.NDArray] = {}
+
+        def track(bone: Bone) -> npt.NDArray:
+            if bone.name not in anim_data:
+                data = np.zeros((section_frame_count,), ANIM_DTYPE)
+                data["pos"] = (0, 0, 0) if is_delta else bone.position
+                data["rot"] = (0, 0, 0, 1) if is_delta else bone.quat
+                anim_data[bone.name] = data
+            return anim_data[bone.name]
+
+        constant_flags = AniBoneFlags.CONST_ROT2 | AniBoneFlags.RAW_ROT | AniBoneFlags.RAW_POS | AniBoneFlags.CONST_POS2
+        if frame_anim.constant_offset != 0 and any(flag & constant_flags for flag in bone_flags):
             buffer.seek(entry_offset + frame_anim.constant_offset)
             for bone in bones:
-                bone_anim_data = np.zeros(1, ANIM_DTYPE)
-
                 flag = bone_flags[bone.bone_id]
-                has_data = False
-                if flag & AniBoneFlags.CONST_ROT2:
-                    has_data = True
-                    bone_anim_data[0]["rot"] = Quat48S.read(buffer)
-                if flag & AniBoneFlags.RAW_ROT:
-                    has_data = True
-                    bone_anim_data[0]["rot"] = Quat48.read(buffer)
-                if flag & AniBoneFlags.RAW_POS:
-                    has_data = True
-                    bone_anim_data[0]["pos"] = buffer.read_fmt("3e")
-                if flag & AniBoneFlags.CONST_POS2:
-                    has_data = True
-                    bone_anim_data[0]["pos"] = buffer.read_fmt("3f")
-
-                if not has_data:
+                if not flag & constant_flags:
                     continue
-                constant_anim_data[bone.name] = bone_anim_data
-            return constant_anim_data
+                data = track(bone)
+                if flag & AniBoneFlags.CONST_ROT2:
+                    data["rot"] = Quat48S.read(buffer)
+                elif flag & AniBoneFlags.RAW_ROT:
+                    data["rot"] = Quat48.read(buffer)
+                if flag & AniBoneFlags.CONST_POS2:
+                    data["pos"] = buffer.read_fmt("3f")
+                elif flag & AniBoneFlags.RAW_POS:
+                    data["pos"] = buffer.read_fmt("3e")
 
-        elif frame_anim.frame_offset != 0 and frame_anim.frame_length > 0:
-            anim_data = defaultdict(lambda: np.zeros((section_frame_count,), ANIM_DTYPE))
+        # Per-frame values: byte offsets within one frame, in bone order.
+        frame_fields = []
+        stride = 0
+        for bone in bones:
+            flag = bone_flags[bone.bone_id]
+            if flag & AniBoneFlags.ANIM_ROT2:
+                frame_fields.append((bone, "rot", decode_quat48s, stride))
+                stride += 6
+            elif flag & AniBoneFlags.ANIM_ROT:
+                frame_fields.append((bone, "rot", decode_quat48, stride))
+                stride += 6
+            if flag & AniBoneFlags.FULL_ANIM_POS:
+                frame_fields.append((bone, "pos", "<f4", stride))
+                stride += 12
+            elif flag & AniBoneFlags.ANIM_POS:
+                frame_fields.append((bone, "pos", "<f2", stride))
+                stride += 6
 
-            assert frame_anim.constant_offset == 0
+        if frame_fields:
+            if frame_anim.frame_offset == 0 or frame_anim.frame_length < stride:
+                raise ValueError(f"Frame animation {self.name!r}: bone flags need {stride} bytes per frame, "
+                                 f"block has {frame_anim.frame_length} at offset {frame_anim.frame_offset}")
             buffer.seek(entry_offset + frame_anim.frame_offset)
-            for frame_id in range(section_frame_count):
-                for bone in bones:
-                    bone_flag = bone_flags[bone.bone_id]
-                    if bone_flag & AniBoneFlags.ANIM_ROT2:
-                        anim_data[bone.name][frame_id]["rot"] = Quat48S.read(buffer)
-                    if bone_flag & AniBoneFlags.ANIM_ROT:
-                        anim_data[bone.name][frame_id]["rot"] = Quat48.read(buffer)
-                    if bone_flag & AniBoneFlags.ANIM_POS:
-                        anim_data[bone.name][frame_id]["pos"] = buffer.read_fmt("3e")
-                    if bone_flag & AniBoneFlags.FULL_ANIM_POS:
-                        anim_data[bone.name][frame_id]["pos"] = buffer.read_fmt("3f")
+            # Sections other than the last store one more frame (the next section's first); it is not needed.
+            frames = np.frombuffer(buffer.read(frame_anim.frame_length * section_frame_count), np.uint8)
+            frames = frames.reshape(section_frame_count, frame_anim.frame_length)
+            for bone, channel, decoder, offset in frame_fields:
+                size = 12 if decoder == "<f4" else 6
+                raw = np.ascontiguousarray(frames[:, offset:offset + size])
+                if channel == "rot":
+                    values = decoder(raw.view("<u2"))
+                else:
+                    values = raw.view(decoder).astype(np.float32)
+                track(bone)[channel] = values
 
-            return anim_data
-        print("frame_anim.constant_offset == 0 && (frame_anim.frame_offset == 0 || frame_anim.frame_length == 0)")
-        return None
+        # Empty when every bone holds its rest pose
+        return anim_data
 
     def _read_anim_rot_value(self, buffer: Buffer, flags: AnimBoneFlags, frame_count: int, base_quat: Vector4,
                              base_rot: Vector3, rot_scale: Vector3) -> list[Vector4]:

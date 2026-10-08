@@ -41,6 +41,11 @@ class VTexFormat(IntEnum):
     RG11_EAC = 26
     ATI1N = 27
     BGRA8888 = 28
+    WEBP_RGBA8888 = 29
+    WEBP_DXT5 = 30
+    R32_UINT = 31
+    A8 = 32
+    R8_UNORM = 33
 
     @staticmethod
     def block_size(fmt):
@@ -67,7 +72,10 @@ class VTexFormat(IntEnum):
             VTexFormat.BGRA8888: 4,
             VTexFormat.ATI1N: 8,
             VTexFormat.ATI2N: 16,
-        }[fmt]
+            VTexFormat.R11_EAC: 8,
+            VTexFormat.RG11_EAC: 16,
+            VTexFormat.R32_UINT: 4,
+        }.get(fmt, 1)
 
 
 class VTexExtraData(IntEnum):

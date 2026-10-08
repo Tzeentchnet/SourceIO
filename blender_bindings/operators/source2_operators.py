@@ -144,17 +144,30 @@ class SOURCEIO_OT_VPK_VMAPImport(ImportOperatorHelper):
             serialize_mounted_content(content_manager)
         else:
             deserialize_mounted_content(content_manager)
-        content_manager.add_child(VPKContentProvider(vpk_path))
+        vpk_provider = VPKContentProvider(vpk_path)
+        content_manager.add_child(vpk_provider)
 
-        map_buffer = content_manager.find_file(TinyPath(f'maps/{vpk_path.stem}.vmap_c'))
-        assert map_buffer is not None, "Failed to find world file in selected VPK"
+        # Map VPKs are normally named after the map, but the map can live anywhere under maps/.
+        map_path = TinyPath(f'maps/{vpk_path.stem}.vmap_c')
+        map_buffer = content_manager.find_file(map_path)
+        if map_buffer is None:
+            candidates = sorted(((TinyPath(path), buffer) for path, buffer in vpk_provider.glob("*.vmap_c")),
+                                key=lambda item: item[0].as_posix())
+            if not candidates:
+                self.report({'ERROR'}, f"No .vmap_c map found in {vpk_path.name}")
+                return {'CANCELLED'}
+            if len(candidates) > 1:
+                self.report({'WARNING'}, f"{vpk_path.name} contains {len(candidates)} maps, importing "
+                                         f"{candidates[0][0].as_posix()}")
+            map_path, map_buffer = candidates[0]
 
         model = CompiledMapResource.from_buffer(map_buffer, vpk_path)
         load_map(model, content_manager, self.scale)
         if self.import_physics:
             map_collection = bpy.data.collections[vpk_path.stem]
-            phys_filename = TinyPath(f"maps/{vpk_path.stem}/world_physics.vphys_c")
-            vmdl_phys_filename = TinyPath(f"maps/{vpk_path.stem}/world_physics.vmdl_c")
+            map_folder = map_path.with_suffix("")
+            phys_filename = map_folder / "world_physics.vphys_c"
+            vmdl_phys_filename = map_folder / "world_physics.vmdl_c"
             if vmdl_phys_file := content_manager.find_file(vmdl_phys_filename):
                 vmdl_res = CompiledModelResource.from_buffer(vmdl_phys_file, vmdl_phys_filename)
                 physics_block = get_physics_block(content_manager, vmdl_res)

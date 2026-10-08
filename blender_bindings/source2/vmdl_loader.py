@@ -534,10 +534,14 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
             extra_vertex_buffer = extra_vertex_buffers[vertex_buffer_info['m_hBuffer']]
             all_buffers.append(extra_vertex_buffer)
     all_buffers = [vb for vb in all_buffers if vb.vertex_count > 0]
-    vertices, vertex_buffer = combine_vertex_buffers(all_buffers, mesh_resource)
-    indices = index_buffer.get_indices(mesh_resource)
     base_vertex = draw_call['m_nBaseVertex']
     vertex_count = draw_call['m_nVertexCount']
+    vertices, vertex_buffer = combine_vertex_buffers(all_buffers, mesh_resource) if all_buffers else (None, None)
+    if vertices is None or 'POSITION' not in (vertices.dtype.names or ()):
+        logging.warning(f'Skipping draw call of {mesh_resource.name} with material {material_name}: '
+                        f'vertex buffer has no POSITION attribute')
+        return g_vertex_offset + vertex_count
+    indices = index_buffer.get_indices(mesh_resource)
     tri_start = draw_call['m_nStartIndex'] // 3
     tri_count = draw_call['m_nIndexCount'] // 3
     part_indices = indices[tri_start:tri_start + tri_count]

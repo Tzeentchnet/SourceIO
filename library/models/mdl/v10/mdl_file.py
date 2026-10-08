@@ -44,17 +44,19 @@ class Channels:
         with buffer.read_from_offset(base_offset + channel_offset):
             frames_left = frame_count
             while frames_left > 0:
-                value = buffer.read_int16()
-                valid = value & 0xFF
-                total = value >> 8
+                # mstudioanimvalue_t run header: two unsigned bytes, not a signed short.
+                valid = buffer.read_uint8()
+                total = buffer.read_uint8()
+                if total == 0:
+                    break
                 frames_left -= total
                 for _ in range(valid):
                     frame_value = buffer.read_int16()
                     frames.append(frame_value)
                 for _ in range(total - valid):
-                    frames.append(frames[-1])
+                    frames.append(frames[-1] if frames else 0)
 
-            return np.asarray(frames, np.int16)
+            return np.asarray(frames[:frame_count], np.int16)
 
 
 @dataclass(slots=True)

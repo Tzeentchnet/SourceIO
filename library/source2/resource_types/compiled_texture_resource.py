@@ -16,6 +16,34 @@ from SourceIO.library.source2.compiled_resource import CompiledResource
 
 logger = logging.getLogger('CompiledTextureResource')
 
+# Formats that embed a complete image file instead of pixel data.
+ENCODED_IMAGE_EXTENSIONS = {
+    VTexFormat.PNG_RGBA8888: 'png',
+    VTexFormat.PNG_DXT5: 'png',
+    VTexFormat.JPEG_RGBA8888: 'jpg',
+    VTexFormat.JPEG_DXT5: 'jpg',
+    VTexFormat.WEBP_RGBA8888: 'webp',
+    VTexFormat.WEBP_DXT5: 'webp',
+}
+
+# Uncompressed formats: (dtype, channel count, divisor that maps values to 0..1, or None for float data).
+# Channels fill R, G, B, A in order; missing color channels stay 0 and missing alpha is 1, as in VRF.
+UNCOMPRESSED_FORMATS = {
+    VTexFormat.R8_UNORM: (np.uint8, 1, 255),
+    VTexFormat.R16: (np.uint16, 1, 65535),
+    VTexFormat.RG1616: (np.uint16, 2, 65535),
+    VTexFormat.RGBA16161616: (np.uint16, 4, 65535),
+    VTexFormat.R16F: (np.float16, 1, None),
+    VTexFormat.RG1616F: (np.float16, 2, None),
+    VTexFormat.R32F: (np.float32, 1, None),
+    VTexFormat.RG3232F: (np.float32, 2, None),
+    VTexFormat.RGB323232F: (np.float32, 3, None),
+    VTexFormat.RGBA32323232F: (np.float32, 4, None),
+}
+
+HDR_FORMATS = {VTexFormat.BC6H, VTexFormat.RGBA16161616F, VTexFormat.R16F, VTexFormat.RG1616F,
+               VTexFormat.R32F, VTexFormat.RG3232F, VTexFormat.RGB323232F, VTexFormat.RGBA32323232F}
+
 
 @dataclass(slots=True)
 class CompiledTextureResource(CompiledResource):
@@ -68,6 +96,31 @@ class CompiledTextureResource(CompiledResource):
     def get_texture_format(self) -> VTexFormat:
         data_block = self.get_block(TextureData, block_name='DATA')
         return data_block.texture_info.pixel_format
+
+    def is_hdr(self) -> bool:
+        return self.get_texture_format() in HDR_FORMATS
+
+    def get_encoded_image(self) -> tuple[bytes, str] | None:
+        """Return ``(file bytes, extension)`` for textures that embed a PNG/JPEG/WEBP file, else None."""
+        extension = ENCODED_IMAGE_EXTENSIONS.get(self.get_texture_format())
+        if extension is None:
+            return None
+        info_block = next(block for block in self._header.blocks if block.name == 'DATA')
+        buffer = self._buffer
+        buffer.seek(info_block.absolute_offset + info_block.size)
+        data = buffer.read()
+        if extension == 'png':
+            size = 8
+            while size + 8 <= len(data):
+                chunk_length = int.from_bytes(data[size:size + 4], 'big')
+                chunk_type = data[size + 4:size + 8]
+                size += chunk_length + 12
+                if chunk_type == b'IEND':
+                    break
+            data = data[:size]
+        elif extension == 'webp' and data[:4] == b'RIFF':
+            data = data[:8 + int.from_bytes(data[4:8], 'little')]
+        return data, extension
 
     def is_cubemap(self) -> bool:
         data_block = self.get_block(TextureData, block_name='DATA')
@@ -264,9 +317,36 @@ class CompiledTextureResource(CompiledResource):
             pixel_data = np.repeat(r, 4, axis=1).astype(np.float32) / 255
             pixel_data[:, 3] = 1
             pixel_data.reshape((width, height, 4))
+        elif pixel_format == VTexFormat.BGRA8888:
+            pixel_data = np.frombuffer(data, np.uint8, width * height * 4).reshape((width, height, 4))
+            pixel_data = pixel_data[..., [2, 1, 0, 3]].astype(np.float32) / 255
+        elif pixel_format == VTexFormat.IA88:
+            ia = np.frombuffer(data, np.uint8, width * height * 2).reshape((width, height, 2)).astype(np.float32) / 255
+            pixel_data = np.empty((width, height, 4), np.float32)
+            pixel_data[..., :3] = ia[..., :1]
+            pixel_data[..., 3] = ia[..., 1]
+        elif pixel_format == VTexFormat.A8:
+            pixel_data = np.ones((width, height, 4), np.float32)
+            pixel_data[..., 3] = np.frombuffer(data, np.uint8, width * height).reshape((width, height)) / 255
+        elif pixel_format == VTexFormat.R32_UINT:
+            pixel_data = np.zeros((width, height, 4), np.float32)
+            values = np.frombuffer(data, np.uint32, width * height).reshape((width, height))
+            pixel_data[..., 0] = np.minimum(values, 255) / 255
+            pixel_data[..., 3] = 1
+        elif pixel_format in UNCOMPRESSED_FORMATS:
+            dtype, channels, divisor = UNCOMPRESSED_FORMATS[pixel_format]
+            values = np.frombuffer(data, dtype, width * height * channels).reshape((width, height, channels))
+            values = values.astype(np.float32)
+            if divisor is not None:
+                values /= divisor
+            pixel_data = np.zeros((width, height, 4), np.float32)
+            pixel_data[..., :channels] = values
+            if channels < 4:
+                pixel_data[..., 3] = 1
+        elif pixel_format in ENCODED_IMAGE_EXTENSIONS:
+            raise ValueError(f"{pixel_format!r} embeds an image file, use get_encoded_image()")
         else:
-            logger.warning(f"Unsupported texture format: {pixel_format!r}")
-            pixel_data = np.frombuffer(data, np.float32).reshape((width, height, 4)).astype(np.float32) / 255
+            raise NotImplementedError(f"Unsupported texture format: {pixel_format!r}")
         return pixel_data
 
     @staticmethod

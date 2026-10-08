@@ -269,12 +269,18 @@ class AbstractEntityHandler:
         mesh_data = bpy.data.meshes.new(f"{model_name}_MESH")
         mesh_obj = bpy.data.objects.new(model_name, mesh_data)
 
-        bsp_surf_edges: np.ndarray = self._bsp.get_lump('LUMP_SURFEDGES').surf_edges
-        bsp_vertices: np.ndarray = self._bsp.get_lump('LUMP_VERTICES').vertices
-        bsp_edges: np.ndarray = self._bsp.get_lump('LUMP_EDGES').edges
-        bsp_faces: list[Face] = self._bsp.get_lump('LUMP_FACES').faces
-        bsp_textures_info: list[TextureInfo] = self._bsp.get_lump('LUMP_TEXINFO').texture_info
-        bsp_textures_data: list[TextureData] = self._bsp.get_lump('LUMP_TEXDATA').texture_data
+        geometry_lumps = [self._bsp.get_lump(name) for name in ('LUMP_SURFEDGES', 'LUMP_VERTICES', 'LUMP_EDGES',
+                                                                  'LUMP_FACES', 'LUMP_TEXINFO', 'LUMP_TEXDATA')]
+        if model.face_count == 0 or any(lump is None for lump in geometry_lumps):
+            # Entity-only or stripped maps: keep the object so callers can still place and parent it.
+            return mesh_obj
+        surf_edge_lump, vertex_lump, edge_lump, face_lump, texture_info_lump, texture_data_lump = geometry_lumps
+        bsp_surf_edges: np.ndarray = surf_edge_lump.surf_edges
+        bsp_vertices: np.ndarray = vertex_lump.vertices
+        bsp_edges: np.ndarray = edge_lump.edges
+        bsp_faces: list[Face] = face_lump.faces
+        bsp_textures_info: list[TextureInfo] = texture_info_lump.texture_info
+        bsp_textures_data: list[TextureData] = texture_data_lump.texture_data
 
         vertex_ids, material_ids = gather_vertex_ids(model, bsp_faces, bsp_surf_edges, bsp_edges)
         unique_vertex_ids = np.unique(vertex_ids)

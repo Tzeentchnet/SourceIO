@@ -209,12 +209,35 @@ def setup_image_sequence_node(texture_node: bpy.types.Node, frame_count: int, fr
         texture_node['source_frame_rate'] = frame_rate
 
 
+def create_texture_from_encoded_image(texture_path: TinyPath, data: bytes, extension: str):
+    """Create an image from an already encoded PNG/JPEG/WEBP file, without decoding it in Python."""
+    _add_texture(texture_path, texture_path.stem)
+    if bpy.context.scene.TextureCachePath != "":
+        save_path = (TinyPath(bpy.context.scene.TextureCachePath) / texture_path).with_suffix(f".{extension}")
+        os.makedirs(save_path.parent, exist_ok=True)
+        with open(save_path, "wb") as f:
+            f.write(data)
+        image = bpy.data.images.load(save_path.as_posix())
+        logger.info(f"Save {texture_path.as_posix()!r} texture to disc: {save_path}")
+    else:
+        image = bpy.data.images.new(texture_path.stem, width=1, height=1)
+        image.pack(data=data, data_len=len(data))
+        image.source = 'FILE'
+        logger.info(f"Save {texture_path.as_posix()!r} texture to memory")
+    image.alpha_mode = 'CHANNEL_PACKED'
+    image['full_path'] = texture_path.as_posix().lower()
+    return image
+
+
 def create_and_cache_texture(texture_path: TinyPath, data: np.ndarray, is_hdr: bool = False, invert_y: bool = False):
     _add_texture(texture_path, texture_path.stem)
     if invert_y and not is_hdr:
         data[:, :, 1] = 1 - data[:, :, 1]
     height, width, channels = data.shape
-    data = data.ravel()
+    if is_hdr and channels == 4:
+        # The native EXR writer assigns the interleaved values to channels in EXR (alphabetical) order: A, B, G, R.
+        data = data[..., ::-1]
+    data = np.ascontiguousarray(data, dtype=np.float32).ravel()
 
     if bpy.context.scene.TextureCachePath != "":
         save_path = TinyPath(bpy.context.scene.TextureCachePath) / texture_path
@@ -234,7 +257,7 @@ def create_and_cache_texture(texture_path: TinyPath, data: np.ndarray, is_hdr: b
             image_data = encode_exr(data.tobytes(), width, height, channels)
         else:
             image_data = encode_png((data * 255).astype(np.uint8).tobytes(), width, height, channels)
-        image = bpy.data.images.new(texture_path.stem, width=1, height=1)
+        image = bpy.data.images.new(texture_path.stem, width=1, height=1, float_buffer=is_hdr)
         image.pack(data=image_data, data_len=len(image_data))
         image.source = 'FILE'
         image.alpha_mode = 'CHANNEL_PACKED'

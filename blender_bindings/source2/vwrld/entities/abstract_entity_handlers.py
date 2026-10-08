@@ -233,12 +233,14 @@ class AbstractEntityHandler:
         elif 'model' in entity_raw:
             model_path = entity_raw.get('model')
         else:
-            model_path = 'error.vmdl'
+            model_path = None
         obj = self._create_empty(self._get_entity_name(entity))
-        properties = {'prop_path': model_path.replace('.vmdl', '.vmdl_c'),
-                      'type': entity_raw['classname'],
+        properties = {'type': entity_raw['classname'],
                       'scale': self.scale,
                       'entity': entity_raw}
+        # error.vmdl is the engine's stand-in for "no model" (e.g. skybox_reference); there is nothing to load.
+        if model_path and model_path != 'error.vmdl':
+            properties['prop_path'] = model_path.replace('.vmdl', '.vmdl_c')
 
         self._set_location_and_scale(obj, parse_float_vector(entity_raw.get('origin', '0 0 0')))
         self._set_rotation(obj, parse_float_vector(entity_raw.get('angles', '0 0 0')))

@@ -9,24 +9,29 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): `master` is pushed; rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive` exists but is empty).
+State (2026-10-08): round 8 is committed on `master` but not pushed; rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
 
 Checks, with the current baseline:
 
 ```
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 221 pass
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 225 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 88 PASS / 5 WARN / 0 FAIL
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
+blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
+blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 570/570 placeholders (~2 min)
 ```
 
-1. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
-2. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
-3. **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
-4. **`MdlV44/V49.from_buffer`** (minor): after an animation fails to decode, `animations.extend([None] * (len(animations) - len(local_animations)))` pads by a negative count, so `animations` ends up shorter than `anim_descs` instead of aligned with it.
+1. **AnimGraph 2 clips** (`.vnmclip_c`, 2735 in CS2): CS2 agents and weapons animate through these, not through the model's own ANIM block (`ctm_sas` imports 2 actions). The clip is plain KV3 (`m_trackCompressionSettings` per bone: static flags, constant rotation, translation/scale ranges; `m_compressedPoseData` + `m_compressedPoseOffsets`; `m_rootMotion`; `m_skeleton` → `.vnmskel_c` with bone IDs, parents and parent-space reference pose), all readable through `CompiledResource` + `KVBlock` already. Port the decoder from VRF's `ModelAnimation2/AnimationClip.cs` (MIT; not in the round 2 source cache, fetch it) and compare with the VRF CLI (round 2 left `cli-windows-x64` in an old session scratchpad, `.../1e88980c-.../scratchpad/vrf_cli`; it may be gone). Needs a way to pick clips for a model (its `.vnmgraph_c`, or a file picker matched by skeleton).
+2. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
+3. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
+4. **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
+5. **`MdlV44/V49.from_buffer`** (minor): after an animation fails to decode, `animations.extend([None] * (len(animations) - len(local_animations)))` pads by a negative count, so `animations` ends up shorter than `anim_descs` instead of aligned with it.
 
-Blocked until CS2 or Dota 2 is installed: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks, pose-parameter blending, real CS2/Dota 2 maps.
-Blocked until a v49 game is installed (CS:GO, L4D2, Portal 2, SFM): checking the round 6 FRAMEANIM decoder against a real model.
+6. **Smaller CS2 follow-ups** (round 8): `skybox_reference` entities don't import the 3D skybox; unhandled CS2 entities include `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points; `generic.vfx` logs false "Unused texture" warnings (it reads textures through its own properties); two Source 2 samples log `Failed to find ... morf texture` through the root logger, which the runners don't count.
+
+Now testable with CS2, after item 1: Source 2 flex/morph animation channels, bone masks, pose-parameter blending.
+Blocked until a v49 game is installed (CS:GO, L4D2, Portal 2, SFM; CS2 ships only Source 2 content): checking the round 6 FRAMEANIM decoder against a real model.
 
 ## Verification
 
@@ -206,3 +211,26 @@ Layout references: Crowbar's v49 reader and PulseModel's studiomdl-style writer 
 | `import_static_animations` (mdl44) | Removed: it had no callers, used pose mode, and indexed animations the same broken way. |
 
 Checked by importing every sample and TF2 model before and after and comparing each armature: parents, rest matrices, collections, colours, rotation modes, pose, mesh vertices and actions are identical (bone lengths differ by float rounding). The importers now leave the user's active object as it was instead of making the armature active. mdl4/6/9/36/2531 have no samples, so the old (from git) and new builders were run side by side on random 14-bone skeletons at four scales: equal to float32 precision, and equal to the transforms the vertices are built with. `tests/blender_tests/test_armatures.py` (10 tests, run inside Blender): the helper keeps another selected armature out of edit mode and restores selection, also when the block raises; each builder's rest pose equals the accumulated MDL transforms (mdl4/6/9/10/36/2531, v6 rotation mode); `set_pose` gives the expected pose-space matrices. Unit tests: 221 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL. Smoke test (import every module, register → unregister → register): clean.
+
+## Round 8 (2026-10-08, CS2 install)
+
+```
+blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--include-animations] [--load-placeholders] [--model PATH] [--map NAME]
+```
+
+`run_game_imports.py` now also takes a Source 2 game (a folder with `gameinfo.gi`): `.vmdl_c` models go through the VMDL importer (`--include-animations` turns on *Import animations*), maps are the `maps/<name>.vpk` files through the VPK map importer. A Source 2 map import only places empties, world geometry included, so `--load-placeholders` then runs *Load Entity* on every placeholder, as a user would. Default CS2 set: agents `ctm_sas` and `tm_phoenix`, `glove_hardknuckle` arms, AK-47, Glock, Karambit, chicken, hostage, a dust crate; maps de_dust2, de_inferno, cs_office. `characters/models/*` in CS2 are stubs with a placeholder orange material; the real agents are under `agents/models/`.
+
+Result: **12 PASS / 0 WARN / 0 FAIL**. Agents import 9 meshes each; `tm_phoenix` has all 3 body morphs (its only flexes). With `--include-animations`: chicken 21 actions, AK-47 5, agents 2 (the rest live in AnimGraph 2 clips, Next item 1). With `--load-placeholders`: dust2 570/570 placeholders, 3597 meshes, 277 materials (129 s); inferno 1336/1336, 6797 meshes, 354 materials (379 s); office 636/636, 2714 meshes, 259 materials (64 s); no errors. Before the fixes: inferno WARN with 33 failed lights, dust2 WARN with a failed material and an unloadable placeholder.
+
+| Bug | Fix |
+|-----|-----|
+| Every spot-shaped `light_omni2` failed (inferno: 33) | `parse_float_vector` returned the KV3 array itself, a read-only view of the file, and the handler adjusts the angles in place. It now returns a copy (`abstract_entity_handlers.py`) |
+| Self-illuminated `csgo_vertexlitgeneric` and `csgo_static_overlay` materials failed entirely (dust2 hanging lights) | They set `g_vSelfIllumTint`/`g_flSelfIllumScale` on the `csgo_complex.vfx` group, whose inputs are `SelfIllumTint`/`Emission Strength` (as `csgo_complex.py` already used). A script that checked every `shader.inputs[...]` name against the bundled node groups found one more: `csgo_environment_blend` set `g_flDetailBlendFactor`, which `csgo_lightmappedgeneric.vfx` doesn't have, so any material with a shared colour overlay failed |
+| Normal maps reconstructed with NaN Z (AK-47 normal map) | `_normalize` took `sqrt` of a negative value where X²+Y² > 1 after compression; clamped to 0 |
+| Entities without a model got `prop_path = error.vmdl_c`, which never loads (dust2 `skybox_reference`) | No `prop_path` when there is no model or it is the engine's `error.vmdl` stand-in |
+| The Dota 2 detector claimed a CS2 install (and tagged it with the CS:GO app ID) | `backwalk_file_resolver` also accepts a bare `pak01_dir.vpk`, which every Source 2 game has; the detector now requires the `dota` folder |
+| External meshes (`m_refMeshes`): a mesh's `m_morphSet` never loaded, a mesh without MRPH would crash, a missing morph texture crashed | `if morph_set_path := ... is not None` assigned the boolean; `morph_block, = get_block(...)` unpacked a single block; no `None` check (`vmdl_loader.load_external_mesh`). CS2 doesn't use this path (agents embed their meshes); the Source 2 samples still pass |
+
+New tests: `tests/content_manager/test_detectors.py` (fails on the old Dota 2 detector), `tests/texture_tests/test_normal_reconstruction.py` (raises on the old `_normalize`). Unit tests: 225 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL.
+
+Visual check: cs_office imported with every placeholder loaded and saved with all 733 textures packed (`E:/Tests/cs_office.blend`, 786 MiB uncompressed; the importer already packs the images it creates). The user inspected it in Blender and judged the import acceptable.

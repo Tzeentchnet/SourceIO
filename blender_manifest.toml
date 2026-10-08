@@ -28,6 +28,8 @@ paths_exclude_pattern = [
   "/.git/",
   "/.github/",
   "/tests/",
+  "/samples/",
+  "/dist/",
   "/wiki/",
   "/plan.md",
   "/TODO.md",

@@ -79,6 +79,11 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 * Displacements far from the map origin could be built from the wrong corner, which rotated their grid.
 * Water materials set with `$bottommaterial` weren't found, and underwater faces got an empty material.
 * Model materials with `..` in their path, and models whose VPK path differs in case, failed to resolve.
+* CS2 maps: spot-shaped `light_omni2` lights failed to import (33 on de_inferno), and entities without a model left a placeholder that *Load Entity* couldn't load.
+* CS:GO Source 2 materials: self-illuminated `csgo_vertexlitgeneric` and `csgo_static_overlay` materials, and `csgo_environment_blend` materials with a colour overlay, failed to build.
+* Source 2 normal maps could get corrupt pixels where compression pushed the stored X/Y past length 1.
+* A CS2 install was also detected as Dota 2.
+* Morphs of Source 2 models with external meshes (`m_morphSet`) never loaded.
 * Smaller fixes:
   * duplicate *Export to VTF* menu entries after re-enabling the add-on;
   * a leaked scene property;
@@ -100,6 +105,10 @@ Current result: 88 pass, 5 warn (only because game content isn't included), 0 fa
 `tests/blender_tests/run_game_imports.py` imports models and maps straight from an installed game through its own search paths. With Team Fortress 2 (9 models, including HL2's dog, and 4 maps), all 13 pass:
 ```
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf"
+```
+It also takes a Source 2 game. With Counter-Strike 2 (9 models: agents, arms, weapons, chicken, hostage, a prop; and 3 maps), all 12 pass. `--load-placeholders` also loads every prop and world mesh a map places (de_dust2, de_inferno and cs_office load all of them without errors):
+```
+blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders]
 ```
 See [plan.md](plan.md) for details.
 

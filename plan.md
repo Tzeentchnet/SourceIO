@@ -9,7 +9,7 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): `master` is three commits ahead of `origin/master` (rounds 5–7, not pushed). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive` exists but is empty).
+State (2026-10-08): `master` is pushed; rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive` exists but is empty).
 
 Checks, with the current baseline:
 

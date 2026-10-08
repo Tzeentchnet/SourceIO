@@ -1,9 +1,30 @@
 # SourceIO → Blender 5.2 modernization plan
 
 Target: **Blender 5.2.2 LTS only.** Blender 4.x compatibility is dropped.
-Branch: `blender-5.2-modernization`.
+Branch: `master`. Round 1 was done on `blender-5.2-modernization`, rounds 2–4 on `continue-work` (now parked at the same commit as `master`).
 
 All API claims below were checked against Blender 5.2.2 running headless (`D:/Blender Foundation/Blender 5.2/blender.exe -b`).
+
+## Next
+
+Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
+
+State (2026-10-08): `master` = `origin/master` at c84254fa. Only TF2 is installed (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`); no CS2 or Dota 2.
+
+Checks, with the current baseline:
+
+```
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 194 pass
+blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 88 PASS / 5 WARN / 0 FAIL
+blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
+```
+
+1. **Bone collections and colours** on Source 1 MDL armatures. TF2's v48/v49 models are built by `create_armature` in `blender_bindings/models/mdl44/import_mdl.py`, which `mdl49` reuses. Test on the TF2 player models.
+2. **v49+ FRAMEANIM:** `_read_frame_animations` (`library/models/mdl/structs/local_animation.py:222`) asserts that constant and per-frame data never mix. Find a TF2 model that hits it (scan the VPKs for v49 models with frame animations) or build a fixture, then decode the mixed case.
+3. **`bpy.ops.object.mode_set` in the armature builders:** `mdl44` (also used by `mdl49`), `mdl4`, `mdl6`, `mdl9`, `mdl10`, `mdl36`, `mdl2531`, `source2/vmdl_loader.py`. Replace with the data API where possible. TF2 covers `mdl44`; the samples cover GoldSrc and Source 2.
+4. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
+
+Blocked until CS2 or Dota 2 is installed: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks, pose-parameter blending, real CS2/Dota 2 maps.
 
 ## Verification
 

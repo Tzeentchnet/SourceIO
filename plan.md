@@ -59,7 +59,7 @@ The baseline (before any changes) fails with:
 - File handlers for `.vmdl_c`, `.vphys_c`, `.dmx` (camera); fix the copy-pasted handler labels.
 - Collapsible `layout.panel()` sections in the import dialogs.
 
-Deferred (larger, needs test assets): replacing `bpy.ops` mode switching in MDL armature builders, the CLI import command, bone collections and colours, `Object.visible_shadow` for tool and sky geometry.
+Deferred (larger, needs test assets): replacing `bpy.ops` mode switching in MDL armature builders, bone collections and colours. The CLI command was done in round 2; `Object.visible_shadow` was dropped because material-level shadow disabling already covers sky materials.
 
 ## Execution / ownership
 
@@ -108,6 +108,22 @@ Still needs game installs: animated or flexed Source 1 models (TF2 / Source SDK 
 - [x] Phase 5 — delta → NLA COMBINE option, new file handlers, collapsible MDL import dialog (verified in the 5.2.2 UI)
 
 Follow-ups found during execution:
-- `models/mdl10/import_mdl.py` only imports the `walk1` sequence (an upstream WIP filter, left as-is).
-- Every platform zip still bundles all three native libs; per-platform `paths_exclude_pattern` would cut ~2/3 of the native payload.
+- ~~`models/mdl10/import_mdl.py` only imports the `walk1` sequence~~ — fixed in round 2 (all sequences, rest-relative).
+- ~~Every platform zip bundles all three native libs~~ — fixed in round 2 (`tools/build_extension.py`).
 - The extension still relies on a top-level `SourceIO` alias in `sys.modules`; a full switch to relative imports would be the extension-guideline-clean fix.
+
+## Round 2 (2026-10-07, branch `continue-work`)
+
+| Item | Result |
+|------|--------|
+| Source 2 animations (TODO) | Ported from VRF (MIT) into `library/source2/animation/` and `blender_bindings/source2/animation_loader.py`. All 12 segment decoders; embedded, `.vagrp`/`.vanim`, include-model and NTRO sources; delta, looping and root motion. Compared with the VRF CLI 20.0 glTF export: 192/192 animations across 9 models, max error 9.7e-5 units / 4.2e-5°. Opt-in through *Import animations* on the VMDL importer. |
+| KV3 v2 multi-frame zstd | `binary_keyvalues.py` decodes every zstd frame. The axolotl sample's ANIM block now loads (11/11 animations match VRF). |
+| NTRO external references | `_read_ex_ref` falls back to the 32-bit key the RERL table uses. The hand_l_v3 references resolve: 8/8, previously all null. |
+| GoldSrc animations | Every embedded sequence imports as a rest-relative action and respects *Load animations*. Pose matches direct FK from the MDL data to 5e-7. |
+| ETC2 / ETC2_EAC / R11_EAC / RG11_EAC | NumPy EAC decoder, native ETC2 colour decoding, block-compressed mip sizes for EAC. All 34 VRF texture fixtures import. |
+| Test runner pixel checks | Every VTF/VTEX import is compared against SourceIO's decode (bottom-up rows, 8-bit or half-float tolerance). Reintroducing the old HDR channel bug makes BC6H and RGBA16161616F FAIL. |
+| Per-platform packages | `tools/build_extension.py`; each zip carries one native lib (Windows 3.4 MB, previously 7.1 MB). Installs and imports. |
+| CLI | `blender -c sourceio import ...` (`blender_bindings/cli.py`). Tested through the installed extension: imports, `--output` .blend, exit codes. |
+| Samples | 99 files (20 more VRF textures, 3 animation samples). Suite: **88 PASS / 5 WARN / 0 FAIL**; the 5 WARN are missing game content. |
+
+Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; decals and overlays; bone collections and colours; `bpy.ops` mode switching in the armature builders; relative imports for the extension; testing against real game installs.

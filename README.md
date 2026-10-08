@@ -15,12 +15,19 @@ Current TODO list -> [TODO.md](TODO.md)
 Small WIKI -> [WIKI](https://github.com/REDxEYE/SourceIO/wiki)
 
 ## Installation (Blender 5.2+)
-SourceIO installs as a Blender extension. Build the package for your platform from a checkout of this repository:
+SourceIO installs as a Blender extension. Download the zip for your platform from the [releases page](https://github.com/Tzeentchnet/SourceIO/releases), or build it from a checkout of this repository:
 ```
-blender --command extension build --split-platforms --output-dir dist
+python tools/build_extension.py --blender path/to/blender [--platform windows-x64]
 ```
-Then use *Edit > Preferences > Get Extensions > Install from Disk...* and pick the zip for your platform from `dist/`.
+This writes one zip per platform to `dist/`, each containing only that platform's native library.
+Then use *Edit > Preferences > Get Extensions > Install from Disk...* and pick the zip for your platform.
 Installing the repository folder as a legacy add-on also still works.
+
+### Command line
+With the extension enabled, files can be imported without opening the UI. The importer is chosen from the file extension, and for `.bsp` from the file header (GoldSrc or Source):
+```
+blender -c sourceio import [--scale S] [--no-materials] [--animations] [--output out.blend] FILE [FILE ...]
+```
 
 # Usage
 In order to find the import tools you simply need to go to File>Import>Source Engine Assets
@@ -38,7 +45,19 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   * Vertex weights are assigned in batches: about 6× faster.
 * **Animation importer.** Curves are computed with NumPy, actions use the slotted-action API, and an optional *Delta animations to NLA* setting puts additive animations on muted NLA tracks set to *Combine*.
 * **UI.** The MDL import dialog has collapsible sections and now exposes *World scale* and the BVLG option. Drag-and-drop handlers were added for `.vmdl_c`, `.vphys_c` and `.dmx` cameras.
-* **Packaging.** A `blender_manifest.toml` makes SourceIO a Blender 5.2 extension (Windows x64, Linux x64, macOS x64/arm64).
+* **Packaging.** A `blender_manifest.toml` makes SourceIO a Blender 5.2 extension (Windows x64, Linux x64, macOS x64/arm64). `tools/build_extension.py` builds a separate package per platform (the Windows package is 3.4 MB instead of 7.1 MB).
+
+## New features
+* **Source 2 animations.** Enable *Import animations* in the VMDL import dialog. Supported sources:
+  * animations embedded in the model;
+  * external animation groups (`.vagrp_c` / `.vanim_c`);
+  * included models;
+  * older NTRO-format files.
+
+  All of VRF's segment decoders are ported. Position, rotation and scale channels are imported, with delta animations, looping flags and root motion. Results match VRF's own glTF export within float precision on every frame of 192 animations across 9 test models. Not yet supported: flex/morph channels, AnimGraph 2 clips (`.vnmclip_c`), bone masks and pose-parameter blending.
+* **GoldSrc animations.** All sequences embedded in a GoldSrc model are imported as actions when *Load animations* is enabled. Previously only a sequence named `walk1` was imported, and its values were wrong.
+* **More Source 2 texture formats.** ETC2, ETC2_EAC, R11_EAC and RG11_EAC.
+* **Command-line import.** `blender -c sourceio import ...` (see above).
 
 ## Bug fixes
 * Map props with a multi-frame `defaultanim` failed to pose, and GoldSrc animation import was broken (both regressions from the recent animation overhaul).
@@ -48,6 +67,8 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 * Source 2 models with an attribute-less vertex buffer no longer fail to import.
 * Map VPKs whose map isn't named after the VPK file can now be imported.
 * Brush entities in BSPs without face data no longer crash the map import.
+* KV3 v2 data compressed as several zstd frames failed to load. This affected some newer Source 2 models' animation blocks.
+* External resource references in older NTRO-format Source 2 files were read as empty.
 * Smaller fixes:
   * duplicate *Export to VTF* menu entries after re-enabling the add-on;
   * a leaked scene property;
@@ -58,13 +79,13 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   * a module that failed to import (`csgo_weapon.py`).
 
 ## Testing
-`tests/fetch_samples.py` downloads about 16 MB of hash-verified sample assets from public repositories into the git-ignored `samples/` folder.
-`tests/blender_tests/run_sample_imports.py` imports each one headlessly through the real operators:
+`tests/fetch_samples.py` downloads 99 hash-verified sample assets (about 17 MB) from public repositories into the git-ignored `samples/` folder.
+`tests/blender_tests/run_sample_imports.py` imports each one headlessly through the real operators. For every texture, it also checks that the imported pixels match SourceIO's own decode:
 ```
 python tests/fetch_samples.py
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--filter TEXT] [--json report.json]
 ```
-Current result: 66 pass, 5 warn (only because game content isn't included), 0 fail. See [plan.md](plan.md) for details.
+Current result: 88 pass, 5 warn (only because game content isn't included), 0 fail. See [plan.md](plan.md) for details.
 
 # Credits
 * [datamodel.py](https://github.com/Artfunkel/BlenderSourceTools/blob/master/io_scene_valvesource/datamodel.py) by [Artfunkel](https://github.com/Artfunkel)

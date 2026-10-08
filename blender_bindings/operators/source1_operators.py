@@ -12,7 +12,7 @@ from SourceIO.blender_bindings.models.common import put_into_collections
 from SourceIO.blender_bindings.shared.exceptions import RequiredFileNotFound
 from SourceIO.blender_bindings.source1.bsp.import_bsp import import_bsp
 from SourceIO.blender_bindings.source1.vtf import import_texture, load_skybox_texture
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material, is_blender_4_1
+from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material
 from SourceIO.blender_bindings.utils.resource_utils import serialize_mounted_content, deserialize_mounted_content
 from SourceIO.library.shared.app_id import SteamAppId
 from SourceIO.library.shared.content_manager import ContentManager
@@ -73,31 +73,28 @@ class SOURCEIO_OT_MDLImport(ImportOperatorHelper, ModelOptions):
 
     def draw(self, context):
         layout = self.layout
-        col = layout.column(align=True)
-        col.label(text='Model', icon='ARMATURE_DATA')
-        box = col.box()
-        box = box.column(align=False)
-        for prop in ['import_physics', 'load_refpose', 'import_textures', 'bodygroup_grouping', 'bodygroup_vis_switches']:
-            box.prop(self, prop)
-        layout.separator()
+        layout.use_property_split = False
 
-        col = layout.column(align=True)
-        col.label(text='Animations', icon='DECORATE_KEYFRAME')
-        box = col.box()
-        box = box.column(align=False)
-        for prop in ['import_animations', 'import_include_animations', 'compact_animations']:
-            box.prop(self, prop)
-        layout.separator()
+        header, body = layout.panel("SOURCEIO_mdl_model", default_closed=False)
+        header.label(text='Model', icon='ARMATURE_DATA')
+        if body:
+            for prop in ['scale', 'import_physics', 'load_refpose', 'import_textures', 'use_bvlg',
+                         'bodygroup_grouping', 'bodygroup_vis_switches']:
+                body.prop(self, prop)
 
-        
-        col = layout.column(align=True)
-        col.label(text='Facial Animation', icon='RESTRICT_SELECT_OFF')
-        box = col.box()
-        box = box.column(align=False)
-        for prop in ['create_flex_drivers', 'debug_stereo_balance', 'generate_wrinkle_map_node_group']:
-            box.prop(self, prop)
+        header, body = layout.panel("SOURCEIO_mdl_animations", default_closed=True)
+        header.prop(self, 'import_animations', text='')
+        header.label(text='Animations', icon='DECORATE_KEYFRAME')
+        if body:
+            body.active = self.import_animations
+            for prop in ['import_include_animations', 'compact_animations', 'delta_animations_to_nla']:
+                body.prop(self, prop)
 
-        layout.separator()
+        header, body = layout.panel("SOURCEIO_mdl_facial", default_closed=True)
+        header.label(text='Facial Animation', icon='RESTRICT_SELECT_OFF')
+        if body:
+            for prop in ['create_flex_drivers', 'debug_stereo_balance', 'generate_wrinkle_map_node_group']:
+                body.prop(self, prop)
 
         layout.prop(self, 'discover_resources')
 
@@ -145,30 +142,6 @@ class SOURCEIO_OT_BSPImport(ImportOperatorHelper, Source1BSPSettings):
 
 
 # noinspection PyUnresolvedReferences,PyPep8Naming
-class SOURCEIO_OT_DMXImporter(bpy.types.Operator):
-    """Load Source Engine DMX scene"""
-    bl_idname = "sourceio.dmx"
-    bl_label = "[!!!WIP!!!] Import Source Session file"
-    bl_options = {'UNDO'}
-
-    filepath: StringProperty(subtype="FILE_PATH")
-    files: CollectionProperty(name='File paths', type=bpy.types.OperatorFileListElement)
-    project_dir: StringProperty(default='', name='SFM project folder (usermod)')
-    filter_glob: StringProperty(default="*.dmx", options={'HIDDEN'})
-
-    def execute(self, context):
-        directory = self.get_directory()
-        for file in self.files:
-            load_session(directory / file.name, 1)
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        wm = context.window_manager
-        wm.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-
-
-# noinspection PyUnresolvedReferences,PyPep8Naming
 class SOURCEIO_OT_VTFImport(ImportOperatorHelper):
     """Load Source Engine VTF texture"""
     bl_idname = "sourceio.vtf"
@@ -182,22 +155,22 @@ class SOURCEIO_OT_VTFImport(ImportOperatorHelper):
         directory = self.get_directory()
 
         for file in self.files:
-            image = import_texture(TinyPath(file.name), (directory / file.name).open('rb'), True)
-            if is_blender_4_1():
-                if (context.region and context.region.type == 'WINDOW'
-                        and context.area and context.area.ui_type == 'ShaderNodeTree'
-                        and context.object and context.object.type == 'MESH'
-                        and context.material):
-                    node_tree = context.material.node_tree
-                    image_node = node_tree.nodes.new(type="ShaderNodeTexImage")
-                    image_node.image = image
-                    image_node.location = context.space_data.cursor_location
-                    for node in context.material.node_tree.nodes:
-                        node.select = False
-                    image_node.select = True
-                if (context.region and context.region.type == 'WINDOW'
-                        and context.area and context.area.ui_type in ["IMAGE_EDITOR", "UV"]):
-                    context.space_data.image = image
+            with (directory / file.name).open('rb') as texture_file:
+                image = import_texture(TinyPath(file.name), texture_file, True)
+            if (context.region and context.region.type == 'WINDOW'
+                    and context.area and context.area.ui_type == 'ShaderNodeTree'
+                    and context.object and context.object.type == 'MESH'
+                    and context.material):
+                node_tree = context.material.node_tree
+                image_node = node_tree.nodes.new(type="ShaderNodeTexImage")
+                image_node.image = image
+                image_node.location = context.space_data.cursor_location
+                for node in context.material.node_tree.nodes:
+                    node.select = False
+                image_node.select = True
+            if (context.region and context.region.type == 'WINDOW'
+                    and context.area and context.area.ui_type in ["IMAGE_EDITOR", "UV"]):
+                context.space_data.image = image
 
         return {'FINISHED'}
 
@@ -457,7 +430,7 @@ class SOURCEIO_OT_VMTImport(ImportOperatorHelper):
                 if self.override:
                     del mat['source_loaded']
                 else:
-                    self.report({'INFO'}, '{} material already exists')
+                    self.report({'INFO'}, f'{mat.name} material already exists')
             ShaderRegistry.source1_create_nodes(content_manager, mat, vmt, {})
             
         # content_manager.clean() # lets keep cache just in case

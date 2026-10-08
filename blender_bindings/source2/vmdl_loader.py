@@ -12,8 +12,7 @@ from mathutils import Matrix, Quaternion, Vector
 
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
 from SourceIO.blender_bindings.utils.bpy_utils import (add_material, find_layer_collection,
-                                                       get_new_unique_collection, get_or_create_material,
-                                                       is_blender_4_1)
+                                                       get_new_unique_collection, get_or_create_material)
 from SourceIO.library.shared.app_id import SteamAppId
 from SourceIO.library.shared.content_manager import ContentManager
 from SourceIO.library.source2 import (CompiledMaterialResource, CompiledModelResource, CompiledMorphResource,
@@ -32,7 +31,7 @@ from SourceIO.library.source2.compiled_resource import DATA_BLOCK
 from SourceIO.library.utils.tiny_path import TinyPath
 from .vmat_loader import load_material
 from .vphy_loader import load_physics
-from ..utils.fast_mesh import FastMesh
+from ..utils.fast_mesh import FastMesh, set_vertex_weights
 from ...library.source2.blocks.vertex_index_buffer.enums import DxgiFormat
 from ...library.utils import MemoryBuffer
 
@@ -371,12 +370,7 @@ def _add_vertex_groups(model_resource: CompiledModelResource,
     # invalid_indices = weights_array==0
     # indices_array[invalid_indices] = 0
     remapped_indices = remap_table[indices_array]
-    for n, bone_indices in enumerate(remapped_indices):
-        weights = weights_array[n]
-        for bone_index, weight in zip(bone_indices, weights):
-            if weight > 0:
-                bone_name = bones[bone_index]
-                weight_groups[bone_name].add([n], weight, 'REPLACE')
+    set_vertex_weights([weight_groups[bone] for bone in bones], remapped_indices, weights_array)
 
 
 def convert_to_float32(uv_array: np.ndarray):
@@ -592,7 +586,7 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
 
     new_indices = new_indices[keep]
 
-    mesh.from_pydata(positions, np.empty(0), new_indices)
+    mesh.from_pydata(positions, np.empty(0), new_indices, shade_flat=normals is None)
 
     material = get_or_create_material(material_stem, TinyPath(material_name).as_posix())
     add_material(material, mesh_obj)
@@ -664,10 +658,7 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
             data.foreach_set('uv', uv2[vertex_indices].reshape(-1))
 
     if normals is not None:
-        mesh.polygons.foreach_set("use_smooth", np.ones(len(mesh.polygons), dtype=np.bool_))
-        mesh.normals_split_custom_set_from_vertices(normals)
-        if not is_blender_4_1():
-            mesh.use_auto_smooth = True
+        mesh.set_custom_normals(normals)
 
     for i in range(8):
         name = "COLOR" if i == 0 else f"COLOR_{i}"
@@ -995,8 +986,6 @@ def get_physics_block(content_manager: ContentManager, model_resource: CompiledM
 #                     normals = used_vertices['NORMAL']
 #                     if normals.dtype.char == 'B' and normals.shape[1] == 4:
 #                         normals = convert_normals(normals)
-#                     mesh.normals_split_custom_set_from_vertices(normals)
-#                 mesh.use_auto_smooth = True
 #
 #                 if morphs_available:
 #                     mesh_obj.shape_key_add(name='base')

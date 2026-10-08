@@ -9,6 +9,7 @@ from SourceIO.blender_bindings.source1.bsp.entities.quake3.quake3_entity_handler
     _tessellate_face_patch
 from SourceIO.blender_bindings.source1.bsp.entities.base_entity_classes import *
 from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material
+from SourceIO.blender_bindings.utils.fast_mesh import set_custom_normals
 from SourceIO.library.shared.content_manager import ContentManager
 from SourceIO.library.source1.bsp.bsp_file import RavenBSPFile, IBSPFile
 from SourceIO.library.source1.bsp.datatypes.model import QuakeBspModel
@@ -289,8 +290,7 @@ class RavenQ3EntityHandler(QuakeEntityHandler):
             add_material(material, mesh_obj)
         mesh_data.polygons.foreach_set('material_index', material_ids)
 
-        mesh_data.polygons.foreach_set("use_smooth", np.ones(len(mesh_data.polygons), np.uint32))
-        mesh_data.normals_split_custom_set_from_vertices(vertices['normal'] * -1)
+        set_custom_normals(mesh_data, vertices['normal'] * -1)
 
         vertex_indices = np.zeros((len(mesh_data.loops, )), dtype=np.uint32)
         mesh_data.loops.foreach_get('vertex_index', vertex_indices)

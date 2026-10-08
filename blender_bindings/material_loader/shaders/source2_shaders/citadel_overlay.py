@@ -5,7 +5,6 @@ import numpy as np
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 
 
 class CitadelOverlay(Source2ShaderBase):
@@ -69,9 +68,7 @@ class CitadelOverlay(Source2ShaderBase):
         self.connect_nodes(albedo_node.outputs['Color'], shader.inputs['TextureColor'])
 
         # Blender 4.2 changed blend & shadow method, plus made hashed default.
-        if not is_blender_4_3():
-            self.bpy_material.blend_method = 'HASHED'
-            self.bpy_material.shadow_method = 'HASHED'
+        self.set_blend_mode('HASHED')
         self.connect_nodes(albedo_node.outputs['Alpha'], shader.inputs['Alpha'])
 
         normal_roughness_node = self.create_node(Nodes.ShaderNodeTexImage, 'normal')

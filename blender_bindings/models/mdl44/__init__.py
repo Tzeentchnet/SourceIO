@@ -55,7 +55,8 @@ def import_mdl44(model_path: TinyPath, buffer: Buffer,
                     options.scale,
                     options.compact_animations,
                     options.import_include_animations,
-                    armature
+                    armature,
+                    delta_animations_to_nla=getattr(options, "delta_animations_to_nla", False)
         )
 
         return ModelContainer(
@@ -94,7 +95,8 @@ def import_mdl44(model_path: TinyPath, buffer: Buffer,
             options.scale,
             options.compact_animations,
             options.import_include_animations,
-            container.armature
+            container.armature,
+            delta_animations_to_nla=getattr(options, "delta_animations_to_nla", False)
         )
 
     # useful for external python scripts using SourceIO as a module

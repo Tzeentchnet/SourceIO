@@ -55,7 +55,7 @@ def import_md3_15(model_path: TinyPath, buffer: Buffer,
         uvs[:, 1] = 1 - uvs[:, 1]
         uv_data.data.foreach_set('uv', uvs[vertex_indices].flatten())
 
-        model_mesh.normals_split_custom_set_from_vertices(surface.normals()*-1)
+        model_mesh.set_custom_normals(surface.normals()*-1)
         model_object.shape_key_add(name='base')
         for i, frame in enumerate(surface.frames[1:]):
             shape_key = model_object.shape_key_add(name=f"frame_{i}")

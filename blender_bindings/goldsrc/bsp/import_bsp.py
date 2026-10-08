@@ -11,7 +11,7 @@ from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_s
 from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode2 import GoldSrcShaderMode2
 from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode5 import GoldSrcShaderMode5
 from SourceIO.blender_bindings.utils.bpy_utils import (add_material, get_or_create_collection,
-                                                       get_or_create_material, is_blender_4_3)
+                                                       get_or_create_material)
 from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
 from SourceIO.library.goldsrc.bsp.bsp_file import BspFile
 from SourceIO.library.goldsrc.bsp.lump import LumpType
@@ -385,10 +385,8 @@ class BSP:
                     else:
                         loader = GoldSrcShader(studio_texture)
                     loader.create_nodes(mode_mat, rad_data)
-                    if not is_blender_4_3():
-                        if render_mode < 255:
-                            mode_mat.blend_method = 'HASHED'
-                            mode_mat.shadow_method = 'HASHED'
+                    if render_mode < 255:
+                        loader.set_blend_mode('HASHED' if render_mode == 4 else 'BLEND')
                 model_object.data.materials[model_material_index] = mode_mat
 
     def _get_light_angles(self, entity_data):

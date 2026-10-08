@@ -3,9 +3,9 @@ from typing import Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 
 
 class VrSkin(Source2ShaderBase):
@@ -57,15 +57,14 @@ class VrSkin(Source2ShaderBase):
         color_tint = self.color
         base_color_input = shader.inputs['Base Color']
         if color_tint[0] != 1.0 and color_tint[1] != 1.0 and color_tint[2] != 1.0:
-            color_mix = self.create_node(Nodes.ShaderNodeMixRGB)
-            color_mix.blend_type = 'MULTIPLY'
-            self.connect_nodes(albedo_node.outputs['Color'], color_mix.inputs['Color1'])
+            color_mix = self.create_mix_color('MULTIPLY')
+            self.connect_nodes(albedo_node.outputs['Color'], color_mix.inputs[MIX_A])
             color = color_tint
             if sum(color) > 3:
                 color = list(np.divide(color, 255))
-            color_mix.inputs['Color2'].default_value = color
-            color_mix.inputs['Fac'].default_value = 1.0
-            base_color_output = color_mix.outputs['Color']
+            color_mix.inputs[MIX_B].default_value = color
+            color_mix.inputs[MIX_FACTOR].default_value = 1.0
+            base_color_output = color_mix.outputs[MIX_RESULT]
         else:
             base_color_output = albedo_node.outputs['Color']
 
@@ -74,9 +73,7 @@ class VrSkin(Source2ShaderBase):
         self.connect_nodes(base_color_output, base_color_input)
 
         if self.translucent or self.alpha_test:
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'HASHED'
+            self.set_blend_mode('HASHED')
             self.connect_nodes(albedo_node.outputs['Alpha'], shader.inputs['Alpha'])
         elif self.metalness:
             self.connect_nodes(albedo_node.outputs['Alpha'], shader.inputs['Metallic'])

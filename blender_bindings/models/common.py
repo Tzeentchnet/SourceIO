@@ -13,14 +13,15 @@ from SourceIO.blender_bindings.models.import_animations import import_animations
 from SourceIO.library.utils import Buffer
 from SourceIO.library.shared.content_manager import ContentManager
 
-def import_animations_common(mdl, buffer: Buffer, content_manager: ContentManager, model_path: str, scale: float, compact_animations: bool, include_all: bool, armature: bpy.types.Object):
+def import_animations_common(mdl, buffer: Buffer, content_manager: ContentManager, model_path: str, scale: float, compact_animations: bool, include_all: bool, armature: bpy.types.Object,
+                             delta_animations_to_nla: bool = False):
     #if options.import_animations and armature:
     if include_all:
         animations = load_all_animations(mdl, buffer, content_manager, model_path)
     else:
         animations = load_mdl_animations(mdl, buffer, content_manager, model_path)
         
-    import_animations_to_armature(armature, model_path, animations, scale, compact_animations)
+    import_animations_to_armature(armature, model_path, animations, scale, compact_animations, delta_animations_to_nla)
 
 def merge_strip_groups(vtx_mesh: VtxMesh):
     indices_accumulator = []
@@ -262,13 +263,9 @@ def generate_wrinkle_map_node_group(obj: bpy.types.Object):
     links = node_group.links
     mod: bpy.types.NodesModifier = obj.modifiers.new('Wrinkle Map Data', 'NODES')
     mod.node_group = node_group
-    if bpy.app.version >= (4, 0, 0):
-        node_group.interface.new_socket(name='Output', in_out='OUTPUT', socket_type='NodeSocketGeometry')
-        node_group.interface.new_socket(name='Input', in_out='INPUT', socket_type='NodeSocketGeometry')
-    else:
-        node_group.inputs.new('NodeSocketGeometry', 'Input')
-        node_group.outputs.new('NodeSocketGeometry', 'Output')
-    
+    node_group.interface.new_socket(name='Output', in_out='OUTPUT', socket_type='NodeSocketGeometry')
+    node_group.interface.new_socket(name='Input', in_out='INPUT', socket_type='NodeSocketGeometry')
+
     input = nodes.new('NodeGroupInput')
     input.location = [400, 100]
     output = nodes.new('NodeGroupOutput')

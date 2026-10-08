@@ -45,3 +45,4 @@ def unregister_props():
     del bpy.types.Scene.mounted_resources
     del bpy.types.Scene.mounted_resources_index
     del bpy.types.Scene.import_materials
+    del bpy.types.Scene.import_physics

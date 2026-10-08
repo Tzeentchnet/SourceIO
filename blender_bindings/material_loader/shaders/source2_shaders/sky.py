@@ -82,7 +82,6 @@ class Skybox(Source2ShaderBase):
         if self.bpy_material.get('source_loaded'):
             return 'LOADED'
 
-        self.bpy_material.use_nodes = True
         self.clean_nodes()
         self.bpy_material['source_loaded'] = True
 

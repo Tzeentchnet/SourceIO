@@ -2,9 +2,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4
 from .detail import DetailSupportMixin
 
 
@@ -354,32 +354,33 @@ class Infected(DetailSupportMixin, Source1ShaderBase):
                 basetexture_node.id_data.nodes.active = basetexture_node
 
                 if self.color or self.color2:
-                    color_mix = self.create_node(Nodes.ShaderNodeMixRGB)
-                    color_mix.blend_type = 'MULTIPLY'
-                    self.connect_nodes(basetexture_node.outputs['Color'], color_mix.inputs['Color1'])
-                    color_mix.inputs['Color2'].default_value = (self.color or self.color2)
-                    color_mix.inputs['Fac'].default_value = 1.0
-                    self.connect_nodes(color_mix.outputs['Color'], shader.inputs['Base Color'])
+                    color_mix = self.create_mix_color('MULTIPLY')
+                    self.connect_nodes(basetexture_node.outputs['Color'], color_mix.inputs[MIX_A])
+                    color_mix.inputs[MIX_B].default_value = (self.color or self.color2)
+                    color_mix.inputs[MIX_FACTOR].default_value = 1.0
+                    self.connect_nodes(color_mix.outputs[MIX_RESULT], shader.inputs['Base Color'])
                 else:
                     self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Base Color'])
-                if self.translucent or self.alphatest:
+                if self.translucent:
+                    self.set_blend_mode('BLEND')
                     self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Alpha'])
+                elif self.alphatest:
+                    self.set_blend_mode('CLIP')
+                    self.connect_nodes(self.insert_alpha_clip(basetexture_node.outputs['Alpha'],
+                                                              self._vmt.get_float('$alphatestreference', 0.5)),
+                                       shader.inputs['Alpha'])
 
                 if self.additive:
                     basetexture_invert_node = self.create_node(Nodes.ShaderNodeInvert)
-                    basetexture_additive_mix_node = self.create_node(Nodes.ShaderNodeMixRGB)
-                    self.insert_node(basetexture_node.outputs['Color'], basetexture_additive_mix_node.inputs['Color1'],
-                                     basetexture_additive_mix_node.outputs['Color'])
-                    basetexture_additive_mix_node.inputs['Color2'].default_value = (1.0, 1.0, 1.0, 1.0)
+                    basetexture_additive_mix_node = self.create_mix_color()
+                    self.insert_node(basetexture_node.outputs['Color'], basetexture_additive_mix_node.inputs[MIX_A],
+                                     basetexture_additive_mix_node.outputs[MIX_RESULT])
+                    basetexture_additive_mix_node.inputs[MIX_B].default_value = (1.0, 1.0, 1.0, 1.0)
 
                     self.connect_nodes(basetexture_node.outputs['Color'], basetexture_invert_node.inputs['Color'])
-                    if is_blender_4():
-                        self.connect_nodes(basetexture_invert_node.outputs['Color'],
-                                           shader.inputs['Transmission Weight'])
-                    else:
-                        self.connect_nodes(basetexture_invert_node.outputs['Color'], shader.inputs['Transmission'])
+                    self.connect_nodes(basetexture_invert_node.outputs['Color'], shader.inputs['Transmission Weight'])
                     self.connect_nodes(basetexture_invert_node.outputs['Color'],
-                                       basetexture_additive_mix_node.inputs['Fac'])
+                                       basetexture_additive_mix_node.inputs[MIX_FACTOR])
 
             bumpmap = self.bumpmap
             if bumpmap:
@@ -403,21 +404,12 @@ class Infected(DetailSupportMixin, Source1ShaderBase):
                     else:
                         if 'Emission Strength' in shader.inputs:
                             self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Emission Strength'])
-                    if is_blender_4():
-                        self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
-                    else:
-                        self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission'])
+                    self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
 
             if not self.phong:
-                if is_blender_4():
-                    shader.inputs['Specular IOR Level'].default_value = 0
-                else:
-                    shader.inputs['Specular'].default_value = 0
+                shader.inputs['Specular IOR Level'].default_value = 0
             elif self.phongboost is not None:
-                if is_blender_4():
-                    shader.inputs['Specular IOR Level'].default_value = self.clamp_value(self.phongboost / 64)
-                else:
-                    shader.inputs['Specular'].default_value = self.clamp_value(self.phongboost / 64)
+                shader.inputs['Specular IOR Level'].default_value = self.clamp_value(self.phongboost / 64)
             phongexponenttexture = self.phongexponenttexture
             if self.phongexponent is not None and phongexponenttexture is None:
                 shader.inputs['Roughness'].default_value = self.clamp_value(self.phongexponent / 256)

@@ -2,9 +2,9 @@ from typing import Union, Optional, Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import ShaderBase, Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (ShaderBase, Nodes, ExtraMaterialParameters,
+                                                                   MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.source2.vtex_loader import import_texture
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3, is_blender_5
 from SourceIO.blender_bindings.utils.texture_utils import check_texture_cache
 from SourceIO.library.shared.content_manager import ContentManager
 from SourceIO.library.source2.keyvalues3.types import NullObject
@@ -26,8 +26,7 @@ class Source2ShaderBase(ShaderBase):
         self.unused_textures = set(self._material_resource.get_used_textures().keys())
         self.tinted = tinted
 
-        if is_blender_5():
-            self.load_source2_nodes_blender5_0()
+        self.load_source2_nodes_blender5_0()
 
     def _have_texture(self, slot_name: str) -> Optional[bpy.types.Node]:
         texture_path = self._material_resource.get_texture_property(slot_name, None)
@@ -124,20 +123,13 @@ class Source2ShaderBase(ShaderBase):
                             alpha_output_socket,
                             alpha_input_socket):
         if alpha_mode == "TEST":
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'CLIP'
-                self.bpy_material.shadow_method = 'CLIP'
-                self.bpy_material.alpha_threshold = alpha_test_ref
-            self.connect_nodes(alpha_output_socket, alpha_input_socket)
+            self.set_blend_mode('CLIP')
+            self.connect_nodes(self.insert_alpha_clip(alpha_output_socket, alpha_test_ref), alpha_input_socket)
         elif alpha_mode == "TRANSLUCENT":
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'CLIP'
+            self.set_blend_mode('HASHED')
             self.connect_nodes(alpha_output_socket, alpha_input_socket)
         elif alpha_mode == "OVERLAY":
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'CLIP'
+            self.set_blend_mode('HASHED')
             self.connect_nodes(alpha_output_socket, alpha_input_socket)
 
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
@@ -150,21 +142,19 @@ class Source2ShaderBase(ShaderBase):
                            emission_color_input, emission_strength_input
                            ):
         if self_illum_mask_output is not None:
-            color_multiply_node = self.create_node(Nodes.ShaderNodeMixRGB)
-            color_multiply_node.blend_type = 'MULTIPLY'
-            color_multiply_node.inputs[0].default_value = albedo_factor
-            self.connect_nodes(self_illum_mask_output, color_multiply_node.inputs[1])
-            self.connect_nodes(albedo_output, color_multiply_node.inputs[2])
-            emission_color_output = color_multiply_node.outputs[0]
+            color_multiply_node = self.create_mix_color('MULTIPLY')
+            color_multiply_node.inputs[MIX_FACTOR].default_value = albedo_factor
+            self.connect_nodes(self_illum_mask_output, color_multiply_node.inputs[MIX_A])
+            self.connect_nodes(albedo_output, color_multiply_node.inputs[MIX_B])
+            emission_color_output = color_multiply_node.outputs[MIX_RESULT]
         else:
             emission_color_output = albedo_output
 
         if self_illum_tint is not None:
-            color_multiply_node = self.create_node(Nodes.ShaderNodeMixRGB)
-            color_multiply_node.blend_type = 'MULTIPLY'
-            color_multiply_node.inputs[0].default_value = 1.0
-            color_multiply_node.inputs[1].default_value = self.ensure_length(self_illum_tint, 4, 1.0)
-            self.connect_nodes(emission_color_output, color_multiply_node.inputs[2])
-            emission_color_output = color_multiply_node.outputs[0]
+            color_multiply_node = self.create_mix_color('MULTIPLY')
+            color_multiply_node.inputs[MIX_FACTOR].default_value = 1.0
+            color_multiply_node.inputs[MIX_A].default_value = self.ensure_length(self_illum_tint, 4, 1.0)
+            self.connect_nodes(emission_color_output, color_multiply_node.inputs[MIX_B])
+            emission_color_output = color_multiply_node.outputs[MIX_RESULT]
         self.connect_nodes(emission_color_output, emission_color_input)
         emission_strength_input.default_value = emission_strength

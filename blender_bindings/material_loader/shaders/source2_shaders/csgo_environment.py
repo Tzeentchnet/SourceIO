@@ -4,7 +4,6 @@ import bpy
 
 from SourceIO.blender_bindings.material_loader.shader_base import ExtraMaterialParameters, Nodes
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 
 
 class CSGOEnvironment(Source2ShaderBase):

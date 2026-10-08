@@ -6,23 +6,25 @@ Supports:
   - External animations via .ani files (from include_model MDLs)
   - Per-animation Action creation
   - Name-based bone matching (handles differing bone counts across include models)
+  - Delta (additive) animations, optionally placed on NLA tracks set to Combine
 """
 from __future__ import annotations
 
-import itertools
+from math import radians
 
 import bpy
 import numpy as np
-from mathutils import Vector, Matrix, Quaternion, Euler
-from math import radians
+from mathutils import Matrix, Euler, Quaternion
 
 from SourceIO.blender_bindings.utils.bpy_utils import ActionCurveFactory
 from SourceIO.library.models.mdl.load_animations import AnimationData
-from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
 from SourceIO.logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('BlenderAnimImport')
+
+_ROOT_CORRECTION = Euler((0, 0, radians(-90))).to_matrix().to_4x4()
+_INTERPOLATION_LINEAR = 1  # bpy.types.Keyframe.interpolation enum value
 
 
 def import_animations_to_armature(
@@ -30,153 +32,128 @@ def import_animations_to_armature(
         mdl_name: str,
         animations: list[AnimationData],
         scale: float,
-        compact_animations: bool
-) -> list[bpy.types.Action]:
+        compact_animations: bool,
+        delta_animations_to_nla: bool = False,
+) -> list[tuple[bpy.types.Action, bpy.types.ActionSlot]]:
+    """Import ``animations`` and return the ``(action, slot)`` pair created for each one."""
     if not animations:
         return []
 
-    rest_matrices, rest_matrices_inv = _build_rest_pose_cache(armature_obj)
-
+    rest_matrices = {bone.name: bone.matrix_local.copy() for bone in armature_obj.data.bones}
     action_factory = ActionCurveFactory(mdl_name, armature_obj, not compact_animations)
-    action_factory
-    actions = [action_factory]
 
+    created = []
+    deltas = []
     for anim_data in animations:
         try:
-            action = _create_action(armature_obj, action_factory, anim_data, scale, rest_matrices, rest_matrices_inv)
-            if action is not None:
-                actions.append(action)
+            result = _create_action(armature_obj, action_factory, anim_data, scale, rest_matrices)
         except Exception as ex:
             logger.error(f"Failed to import animation '{anim_data.name}': {ex}")
+            continue
+        if result is None:
+            continue
+        created.append(result)
+        if anim_data.is_delta:
+            deltas.append(result)
 
-    return actions
+    if delta_animations_to_nla and deltas:
+        push_to_nla(armature_obj, deltas, blend_type='COMBINE')
+    return created
 
 
-def _build_rest_pose_cache(armature_obj: bpy.types.Object):
-    rest_matrices = {}
-    rest_matrices_inv = {}
-    for bone in armature_obj.data.bones:
-        rest_matrices[bone.name] = bone.matrix_local.copy()
-        rest_matrices_inv[bone.name] = bone.matrix_local.inverted()
-    return rest_matrices, rest_matrices_inv
+def push_to_nla(armature_obj: bpy.types.Object,
+                actions: list[tuple[bpy.types.Action, bpy.types.ActionSlot]],
+                blend_type: str = 'COMBINE'):
+    """Put each ``(action, slot)`` on its own muted NLA track, ready to be enabled and layered."""
+    adt = armature_obj.animation_data or armature_obj.animation_data_create()
+    for action, slot in actions:
+        track = adt.nla_tracks.new()
+        track.name = slot.name_display
+        strip = track.strips.new(slot.name_display, 0, action)
+        strip.action_slot = slot
+        strip.blend_type = blend_type
+        track.mute = True
+
+
+def _quat_multiply(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Hamilton product of (w, x, y, z) quaternions, broadcasting over leading axes."""
+    aw, ax, ay, az = np.moveaxis(a, -1, 0)
+    bw, bx, by, bz = np.moveaxis(b, -1, 0)
+    return np.stack([
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+    ], axis=-1)
+
+
+def _make_continuous(quats: np.ndarray) -> np.ndarray:
+    """Flip quaternion signs so consecutive frames never take the long way around."""
+    dots = np.einsum('ij,ij->i', quats[1:], quats[:-1])
+    signs = np.concatenate([[1.0], np.cumprod(np.where(dots < 0.0, -1.0, 1.0))])
+    return quats * signs[:, None]
+
+
+def _write_curves(factory: ActionCurveFactory, bone_name: str, data_path: str, values: np.ndarray, group):
+    frame_count = values.shape[0]
+    frames = np.arange(frame_count, dtype=np.float32)
+    keys = np.empty((frame_count, 2), dtype=np.float32)
+    keys[:, 0] = frames
+    interpolation = np.full(frame_count, _INTERPOLATION_LINEAR, dtype=np.int32)
+    for channel in range(values.shape[1]):
+        curve = factory.new_fcurve(data_path=f'pose.bones["{bone_name}"].{data_path}', index=channel, group=group)
+        curve.auto_smoothing = "NONE"
+        curve.keyframe_points.add(count=frame_count)
+        keys[:, 1] = values[:, channel]
+        curve.keyframe_points.foreach_set("co_ui", keys.ravel())
+        curve.keyframe_points.foreach_set("interpolation", interpolation)
+        curve.update()
 
 
 def _create_action(
         armature_obj: bpy.types.Object,
-        action_factory: ActionCurveFactory,
+        factory: ActionCurveFactory,
         anim_data: AnimationData,
         scale: float,
         rest_matrices: dict[str, Matrix],
-        rest_matrices_inv: dict[str, Matrix],
-) -> bpy.types.Action | None:
+) -> tuple[bpy.types.Action, bpy.types.ActionSlot] | None:
     if anim_data.frame_count == 0:
         return None
 
-    factory = action_factory
-    factory.new_action(anim_data.name)
-
-    def create_curve(name: str, data_path: str, channel_index: int, frame_count: int,
-                     group: bpy.types.ActionGroup) -> bpy.types.FCurve:
-        bone_string = f'pose.bones["{name}"].{data_path}'
-        curve = factory.new_fcurve(data_path=bone_string, index=channel_index, group=group)
-        curve.auto_smoothing = "NONE"
-        curve.keyframe_points.add(count=frame_count)
-        return curve
-
-    parent_map:dict[str, str] = {}
-    for bone in armature_obj.data.bones:
-        if bone.parent:
-            parent_map[bone.name] = bone.parent.name
+    result = factory.new_action(anim_data.name)
 
     for bone_name, bone_anim_data in anim_data.frames.items():
         bpy_bone: bpy.types.Bone = armature_obj.data.bones[bone_name]
-        rest_inv = rest_matrices_inv[bone_name]
-        parent_name = parent_map.get(bone_name, None)
-        if parent_name and parent_name in rest_matrices:
-            parent_rest_matrix = rest_matrices[parent_name]
-        else:
-            parent_rest_matrix = Matrix.Identity(4)
+        frame_count = min(anim_data.frame_count, len(bone_anim_data))
+        if frame_count == 0:
+            continue
+        bone_anim_data = bone_anim_data[:frame_count]
 
-        frame_dtype = np.dtype([
-            ("frame", np.float32),
-            ("value", np.float32)
-        ])
-
-        positions = np.zeros((3, anim_data.frame_count), dtype=frame_dtype)
-        rotations = np.zeros((4, anim_data.frame_count), dtype=frame_dtype)
-
-        frames = np.arange(0, anim_data.frame_count, dtype=np.float32)
-        positions["frame"] = frames[None, :]
-        rotations["frame"] = frames[None, :]
+        positions = np.asarray(bone_anim_data["pos"], dtype=np.float64).reshape(-1, 3) * scale
+        xyzw = np.asarray(bone_anim_data["rot"], dtype=np.float64).reshape(-1, 4)
+        quats = xyzw[:, [3, 0, 1, 2]]
 
         if not anim_data.is_delta:
-            for frame_id, frame_data in enumerate(bone_anim_data):
-                pos = Vector(frame_data["pos"]) * scale
-                x, y, z, w = frame_data["rot"]
-                rot = Quaternion((w, x, y, z))
-                anim_local = Matrix.Translation(pos) @ rot.to_matrix().to_4x4()
-
-                armature_space = parent_rest_matrix @ anim_local
-
-                if not bpy_bone.parent:
-                    armature_space = Euler((0, 0, radians(-90))).to_matrix().to_4x4() @ armature_space
-
-                basis = rest_inv @ armature_space
-
-                loc, quat, _ = basis.decompose()
-
-                if frame_id == 0:
-                    last_quat = quat
-
-                if quat.dot(last_quat) < 0.0: # sometimes, the transition between quaternions can take the longest way possible.
-                    quat = -quat
-
-                positions[:, frame_id]["value"] = loc
-                rotations[:, frame_id]["value"] = quat
-
-                last_quat = quat
-
+            parent_space = rest_matrices[bpy_bone.parent.name] if bpy_bone.parent else _ROOT_CORRECTION
+            transform = rest_matrices[bone_name].inverted() @ parent_space
+            linear = np.array(transform.to_3x3(), dtype=np.float64)
+            offset = np.array(transform.translation, dtype=np.float64)
+            positions = positions @ linear.T + offset
+            # Keep the sign Matrix.decompose() picks for the first frame.
+            reference = (transform @ Quaternion(quats[0]).to_matrix().to_4x4()).decompose()[1]
+            quats = _quat_multiply(np.array(transform.to_quaternion(), dtype=np.float64), quats)
+            quats /= np.linalg.norm(quats, axis=1, keepdims=True)
+            if np.dot(quats[0], np.array(reference)) < 0.0:
+                quats = -quats
         else:
-            for frame_id, frame_data in enumerate(bone_anim_data):
-                pos = Vector(frame_data["pos"]) * scale
-                x, y, z, w = frame_data["rot"]
-                quat = Quaternion((w, x, y, z))
+            if not bpy_bone.parent:
+                positions = positions @ np.array(_ROOT_CORRECTION.to_3x3(), dtype=np.float64).T
+            positions = positions @ np.array(bpy_bone.matrix.inverted(), dtype=np.float64).T
 
-                if frame_id == 0:
-                    last_quat = quat
-
-                if quat.dot(last_quat) < 0.0: # sometimes, the transition between quaternions can take the longest way possible.
-                    quat = -quat
-
-                if not bpy_bone.parent:
-                    pos = Euler((0, 0, radians(-90))).to_matrix().to_4x4() @ pos
-
-                positions[:, frame_id]["value"] = bpy_bone.matrix.inverted() @ pos
-                rotations[:, frame_id]["value"] = quat
-
-                last_quat = quat
+        quats = _make_continuous(quats)
 
         group = factory.new_group(bone_name)
-        for i in range(3):
-            curve = positions[i]
-            position_curve = create_curve(bone_name, "location", i, len(curve), group)
+        _write_curves(factory, bone_name, "location", positions.astype(np.float32), group)
+        _write_curves(factory, bone_name, "rotation_quaternion", quats.astype(np.float32), group)
 
-            keyframes = iter(position_curve.keyframe_points)
-            for _ in range(anim_data.frame_count):
-                setattr(next(keyframes), 'interpolation', 'LINEAR')
-
-            position_curve.keyframe_points.foreach_set("co_ui", curve.ravel().view(np.float32))
-            position_curve.update()
-
-        for i in range(4):
-            curve = rotations[i]
-            rotation_curve = create_curve(bone_name, "rotation_quaternion", i, len(curve), group)
-
-            keyframes = iter(rotation_curve.keyframe_points)
-            for _ in range(anim_data.frame_count):
-                setattr(next(keyframes), 'interpolation', 'LINEAR')
-
-            rotation_curve.keyframe_points.foreach_set("co_ui", curve.ravel().view(np.float32))
-            rotation_curve.update()
-
-    return
+    return result

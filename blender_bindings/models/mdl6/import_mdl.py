@@ -120,10 +120,9 @@ def import_model(mdl_file: Buffer, mdl_texture_file: Optional[Buffer], options: 
                 model_texture_info = mdl_file_textures[model_material_index]
                 remap[model_material_index] = load_material(model_texture_info, model_object)
 
-            model_mesh.from_pydata(model_vertices, [], model_indices)
+            model_mesh.from_pydata(model_vertices, [], model_indices, shade_flat=False)
             model_mesh.update()
-            model_mesh.polygons.foreach_set("use_smooth", np.ones(len(model_mesh.polygons), np.uint32))
-            model_mesh.normals_split_custom_set(model_normals)
+            model_mesh.set_custom_normals(model_normals, 'CORNER')
             model_mesh.polygons.foreach_set('material_index', [remap[a] for a in model_materials])
 
             model_mesh.uv_layers.new()
@@ -168,8 +167,8 @@ def load_animations(mdl: Mdl, armature, model_name, scale):
 
     for sequence, animation in zip(mdl.sequences, mdl.animations):
 
-        action = bpy.data.actions.new(f'{model_name}_{sequence.name}')
-        factory = ActionCurveFactory(action, armature)
+        factory = ActionCurveFactory(armature.name, armature, legacy_behavior=True)
+        factory.new_action(f'{model_name}_{sequence.name}')
 
         curve_per_bone = {}
 

@@ -1,8 +1,7 @@
 from typing import Optional
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes
+from SourceIO.blender_bindings.material_loader.shader_base import Nodes, MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT
 from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shader_base import GoldSrcShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4
 from SourceIO.library.models.mdl.v10.structs.texture import MdlTextureFlag
 
 
@@ -31,31 +30,21 @@ class GoldSrcShaderMode1(GoldSrcShaderBase):
         shader = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
         self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
 
-        mixer = self.create_node(Nodes.ShaderNodeMixRGB)
-        mixer.blend_type = 'MIX'
-        mixer.inputs['Fac'].default_value = 1.0
-        self.connect_nodes(basetexture_node.outputs['Color'], mixer.inputs['Color1'])
-        self.connect_nodes(vertex_color_color.outputs['Color'], mixer.inputs['Color2'])
+        mixer = self.create_mix_color('MIX')
+        mixer.inputs[MIX_FACTOR].default_value = 1.0
+        self.connect_nodes(basetexture_node.outputs['Color'], mixer.inputs[MIX_A])
+        self.connect_nodes(vertex_color_color.outputs['Color'], mixer.inputs[MIX_B])
 
-        self.connect_nodes(mixer.outputs['Color'], shader.inputs['Base Color'])
+        self.connect_nodes(mixer.outputs[MIX_RESULT], shader.inputs['Base Color'])
         self.connect_nodes(vertex_color_alpha.outputs['Color'], shader.inputs['Alpha'])
 
         if self._valve_material.flags & MdlTextureFlag.CHROME:
-            if is_blender_4():
-                shader.inputs['Specular IOR Level'].default_value = 0.5
-            else:
-                shader.inputs['Specular'].default_value = 0.5
+            shader.inputs['Specular IOR Level'].default_value = 0.5
             shader.inputs['Metallic'].default_value = 1
             uvs_node = self.create_node(Nodes.ShaderNodeTexCoord)
             self.connect_nodes(uvs_node.outputs['Reflection'], basetexture_node.inputs['Vector'])
         if self._valve_material.flags & MdlTextureFlag.FULL_BRIGHT:
             shader.inputs['Emission Strength'].default_value = 1
-            if is_blender_4():
-                self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
-            else:
-                self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission'])
+            self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
         else:
-            if is_blender_4():
-                shader.inputs['Specular IOR Level'].default_value = 0
-            else:
-                shader.inputs['Specular'].default_value = 0
+            shader.inputs['Specular IOR Level'].default_value = 0

@@ -8,6 +8,7 @@ import numpy as np
 from SourceIO.blender_bindings.source1.bsp.entities.base_entity_classes import Base, parse_float_vector
 from SourceIO.blender_bindings.source1.bsp.entities.abstract_entity_handlers import AbstractEntityHandler
 from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material, add_material
+from SourceIO.blender_bindings.utils.fast_mesh import set_custom_normals
 from SourceIO.library.shared.content_manager import ContentManager
 from SourceIO.library.source1.bsp.bsp_file import IBSPFile
 from SourceIO.library.source1.bsp.datatypes.model import QuakeBspModel
@@ -697,8 +698,7 @@ class QuakeEntityHandler(AbstractEntityHandler):
             add_material(material, mesh_obj)
         mesh_data.polygons.foreach_set('material_index', material_ids)
 
-        mesh_data.polygons.foreach_set("use_smooth", np.ones(len(mesh_data.polygons), np.uint32))
-        mesh_data.normals_split_custom_set_from_vertices(vertices['normal'] * -1)
+        set_custom_normals(mesh_data, vertices['normal'] * -1)
 
         vertex_indices = np.zeros((len(mesh_data.loops, )), dtype=np.uint32)
         mesh_data.loops.foreach_get('vertex_index', vertex_indices)

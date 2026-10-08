@@ -2,8 +2,8 @@ from typing import Optional
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4, is_blender_4_3
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ShaderBase, MIX_FACTOR, MIX_A, MIX_B,
+                                                                    MIX_RESULT)
 from SourceIO.blender_bindings.utils.texture_utils import check_texture_cache
 from SourceIO.library.shared.content_manager import ContentManager
 from SourceIO.library.utils.tiny_path import TinyPath
@@ -20,14 +20,10 @@ class IdTech3Shader(ShaderBase):
         if material.get('source_loaded', False):
             return False
 
-        material.use_nodes = True
         material['source_loaded'] = True
-        material.use_nodes = True
         self.clean_nodes()
-        if not is_blender_4_3():
-            material.blend_method = 'OPAQUE'
-            material.shadow_method = 'OPAQUE'
-        material.use_screen_refraction = False
+        material.surface_render_method = 'DITHERED'
+        material.use_raytrace_refraction = False
         material.refraction_depth = 0.2
         return True
 
@@ -35,11 +31,8 @@ class IdTech3Shader(ShaderBase):
         self.bpy_material = material
         self._initial_setup()
 
-        if not is_blender_4_3():
-            self.bpy_material.blend_method = 'HASHED'
-            self.bpy_material.shadow_method = 'HASHED'
-        else:
-            self.bpy_material.use_transparent_shadow = True
+        self.set_blend_mode('HASHED')
+        self.bpy_material.use_transparent_shadow = True
 
         if "fogparams" in material_data:
             material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
@@ -55,10 +48,7 @@ class IdTech3Shader(ShaderBase):
 
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         shader = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
-        if is_blender_4():
-            shader.inputs['Specular IOR Level'].default_value = 0
-        else:
-            shader.inputs['Specular'].default_value = 0
+        shader.inputs['Specular IOR Level'].default_value = 0
 
         textures = material_data["textures"]
 
@@ -77,18 +67,17 @@ class IdTech3Shader(ShaderBase):
             return n.outputs[0]
 
         def color_math_op(op, a=None, b=None, val_a=None, val_b=None):
-            n = self.create_node(Nodes.ShaderNodeMixRGB)
-            n.blend_type = op
-            n.inputs["Fac"].default_value = 1.0
+            n = self.create_mix_color(op)
+            n.inputs[MIX_FACTOR].default_value = 1.0
             if a is not None:
-                self.connect_nodes(a, n.inputs[1])
+                self.connect_nodes(a, n.inputs[MIX_A])
             if b is not None:
-                self.connect_nodes(b, n.inputs[2])
+                self.connect_nodes(b, n.inputs[MIX_B])
             if val_a is not None:
-                n.inputs[1].default_value = val_a
+                n.inputs[MIX_A].default_value = val_a
             if val_b is not None:
-                n.inputs[2].default_value = val_b
-            return n.outputs[0]
+                n.inputs[MIX_B].default_value = val_b
+            return n.outputs[MIX_RESULT]
 
         def _add_shader(acc_socket, add_socket):
             """Return a new shader socket that adds add_socket to acc_socket."""
@@ -126,15 +115,14 @@ class IdTech3Shader(ShaderBase):
 
         def _mix_color(a, b, fac):
             """Return socket of mix(a, b, fac) in color space."""
-            n = self.create_node(Nodes.ShaderNodeMixRGB)
-            n.blend_type = 'MIX'
+            n = self.create_mix_color('MIX')
             if isinstance(fac, float):
-                n.inputs['Fac'].default_value = fac
+                n.inputs[MIX_FACTOR].default_value = fac
             else:
-                self.connect_nodes(fac, n.inputs['Fac'])
-            self.connect_nodes(a, n.inputs[1])
-            self.connect_nodes(b, n.inputs[2])
-            return n.outputs[0]
+                self.connect_nodes(fac, n.inputs[MIX_FACTOR])
+            self.connect_nodes(a, n.inputs[MIX_A])
+            self.connect_nodes(b, n.inputs[MIX_B])
+            return n.outputs[MIX_RESULT]
 
         def _scale_color(c, s):
             """Return socket of c * s, where s is scalar."""
@@ -217,10 +205,7 @@ class IdTech3Shader(ShaderBase):
                     alp = _cmp_alpha('LESS_THAN', alp, 0.5)
 
                 if layer.get("alphagen", "").lower() == "lightingspecular":
-                    if is_blender_4():
-                        self.connect_nodes(alp, shader.inputs['Specular IOR Level'])
-                    else:
-                        self.connect_nodes(alp, shader.inputs['Specular'])
+                    self.connect_nodes(alp, shader.inputs['Specular IOR Level'])
                     alp = _value_const(1.0)
 
                 blend_src, blend_dst = "GL_ONE", "GL_ZERO"
@@ -282,92 +267,6 @@ class IdTech3Shader(ShaderBase):
 
         self.connect_nodes(accum_shader, material_output.inputs['Surface'])
         self.connect_nodes(acc_alpha, shader.inputs['Alpha'])
-        # self.connect_nodes(color_acc, texture_input)
-        #
-        # light_path_node = self.create_node(Nodes.ShaderNodeLightPath)
-        # if is_blender_4():
-        #     self.connect_nodes(emission_acc, shader.inputs['Emission Color'])
-        #     self.connect_nodes(light_path_node.outputs[0], shader.inputs["Emission Strength"])
-        # else:
-        #     self.connect_nodes(emission_acc, shader.inputs['Emission'])
-        #     self.connect_nodes(light_path_node.outputs[0], shader.inputs["Emission Strength"])
-        # transparent_node = self.create_node(Nodes.ShaderNodeBsdfTransparent)
-        #
-        # self.connect_nodes(alpha_acc, transparent_node.inputs['Color'])
-        # add_shaders_node = self.create_node(Nodes.ShaderNodeAddShader)
-        # self.connect_nodes(transparent_node.outputs['BSDF'], add_shaders_node.inputs[0])
-        # self.connect_nodes(shader_output, add_shaders_node.inputs[1])
-        # self.connect_nodes(add_shaders_node.outputs[0], material_output.inputs['Surface'])
-        # while textures:
-        #     texture = textures.pop(0)
-        #     texture_path = None
-        #     for k, v in texture.items():
-        #         if "map" in k and k != "animMap":
-        #             texture_path = TinyPath(v).with_suffix("")
-        #             break
-        #
-        #     if texture_path is not None:
-        #         if texture_path.startswith("$"):
-        #             continue
-        #         basetexture = self.load_texture(texture_path)
-        #         basetexture_node = self.create_node(Nodes.ShaderNodeTexImage, '$basetexture')
-        #         basetexture_node.image = basetexture
-        #         basetexture_node.id_data.nodes.active = basetexture_node
-        #         if texture_input is not None:
-        #             if texture.get("alphaFunc", "") == "GE128":
-        #                 if not is_blender_4_3():
-        #                     self.bpy_material.blend_method = 'HASHED'
-        #                     self.bpy_material.shadow_method = 'HASHED'
-        #
-        #                 mix_node = self.create_node(Nodes.ShaderNodeMixShader)
-        #                 self.connect_nodes(basetexture_node.outputs[1], mix_node.inputs[0])
-        #                 transparency_node = self.create_node(Nodes.ShaderNodeBsdfTransparent)
-        #                 self.connect_nodes(transparency_node.outputs[0], mix_node.inputs[1])
-        #                 self.connect_nodes(shader_output, mix_node.inputs[2])
-        #                 shader_output = mix_node.outputs[0]
-        #             elif texture.get("alphaFunc", "") == "LT128":
-        #                 if not is_blender_4_3():
-        #                     self.bpy_material.blend_method = 'HASHED'
-        #                     self.bpy_material.shadow_method = 'HASHED'
-        #
-        #                 mix_node = self.create_node(Nodes.ShaderNodeMixShader)
-        #                 self.connect_nodes(basetexture_node.outputs[1], mix_node.inputs[0])
-        #                 transparency_node = self.create_node(Nodes.ShaderNodeBsdfTransparent)
-        #                 self.connect_nodes(transparency_node.outputs[0], mix_node.inputs[2])
-        #                 self.connect_nodes(shader_output, mix_node.inputs[1])
-        #                 shader_output = mix_node.outputs[0]
-        #             elif texture.get("blendFunc", "") == "GL_ONE GL_ONE":
-        #
-        #                 transparency_node = self.create_node(Nodes.ShaderNodeBsdfTransparent)
-        #                 emission_node = self.create_node(Nodes.ShaderNodeEmission)
-        #                 invert_node = self.create_node(Nodes.ShaderNodeInvert)
-        #                 shader_add_node = self.create_node(Nodes.ShaderNodeAddShader)
-        #                 light_path_node = self.create_node(Nodes.ShaderNodeLightPath)
-        #                 self.connect_nodes(basetexture_node.outputs['Color'], emission_node.inputs['Color'])
-        #                 self.connect_nodes(basetexture_node.outputs['Color'], invert_node.inputs[1])
-        #                 self.connect_nodes(invert_node.outputs[0], transparency_node.inputs[0])
-        #                 self.connect_nodes(transparency_node.outputs[0], shader_add_node.inputs[0])
-        #                 self.connect_nodes(emission_node.outputs[0], shader_add_node.inputs[1])
-        #                 self.connect_nodes(light_path_node.outputs[0], emission_node.inputs["Strength"])
-        #                 self.bpy_material.node_tree.nodes.remove(shader)
-        #                 shader_output = shader_add_node.outputs[0]
-        #                 break
-        #             if False:
-        #                 pass
-        #             elif False:
-        #                 mix_node = self.create_node(Nodes.ShaderNodeMixRGB)
-        #                 self.connect_nodes(mix_node.outputs[0], texture_input)
-        #                 texture_input = mix_node.inputs[2]
-        #
-        #                 self.connect_nodes(basetexture_node.outputs['Color'], mix_node.inputs[2])
-        #             else:
-        #                 self.connect_nodes(basetexture_node.outputs['Color'], texture_input)
-        #
-        # # if rad_info is not None:
-        # #     self._emit_surface(basetexture_node, rad_info)
-        # #     return
-        # # else:
-        # self.connect_nodes(shader_output, material_output.inputs['Surface'])
 
     def load_texture(self, texture_name) -> Optional[bpy.types.Image]:
         texture_name = TinyPath(texture_name)

@@ -3,9 +3,9 @@ from typing import Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 
 
 class VrSimple(Source2ShaderBase):
@@ -100,33 +100,29 @@ class VrSimple(Source2ShaderBase):
         albedo_node.image = color_texture
 
         if self.color[0] != 1.0 and self.color[1] != 1.0 and self.color[2] != 1.0:
-            color_mix = self.create_node(Nodes.ShaderNodeMixRGB)
-            color_mix.blend_type = 'MULTIPLY'
-            self.connect_nodes(albedo_node.outputs['Color'], color_mix.inputs['Color1'])
+            color_mix = self.create_mix_color('MULTIPLY')
+            self.connect_nodes(albedo_node.outputs['Color'], color_mix.inputs[MIX_A])
             color = self.color
             if sum(color) > 3:
                 color = list(np.divide(color, 255))
-            color_mix.inputs['Color2'].default_value = color
-            color_mix.inputs['Fac'].default_value = 1.0
-            self.connect_nodes(color_mix.outputs['Color'], shader.inputs['Base Color'])
+            color_mix.inputs[MIX_B].default_value = color
+            color_mix.inputs[MIX_FACTOR].default_value = 1.0
+            self.connect_nodes(color_mix.outputs[MIX_RESULT], shader.inputs['Base Color'])
         elif self.tint_texture:
-            color_mix = self.create_node(Nodes.ShaderNodeMixRGB)
-            color_mix.blend_type = 'MULTIPLY'
-            self.connect_nodes(albedo_node.outputs['Color'], color_mix.inputs['Color1'])
+            color_mix = self.create_mix_color('MULTIPLY')
+            self.connect_nodes(albedo_node.outputs['Color'], color_mix.inputs[MIX_A])
 
             tint_texture_node = self.create_node(Nodes.ShaderNodeTexImage, 'albedo')
             tint_texture_node.image = self.tint_texture
-            self.connect_nodes(tint_texture_node.outputs['Color'], color_mix.inputs['Color2'])
-            color_mix.inputs['Fac'].default_value = 1.0
-            self.connect_nodes(color_mix.outputs['Color'], shader.inputs['Base Color'])
+            self.connect_nodes(tint_texture_node.outputs['Color'], color_mix.inputs[MIX_B])
+            color_mix.inputs[MIX_FACTOR].default_value = 1.0
+            self.connect_nodes(color_mix.outputs[MIX_RESULT], shader.inputs['Base Color'])
 
         else:
             self.connect_nodes(albedo_node.outputs['Color'], shader.inputs['Base Color'])
 
         if self.translucent or self.alpha_test:
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'HASHED'
+            self.set_blend_mode('HASHED')
             self.connect_nodes(albedo_node.outputs['Alpha'], shader.inputs['Alpha'])
         elif self.metalness:
             self.connect_nodes(albedo_node.outputs['Alpha'], shader.inputs['Metallic'])
@@ -153,7 +149,7 @@ class VrSimple(Source2ShaderBase):
         elif self.roughness_value is not None:
             shader.inputs['Roughness'].default_value = self.roughness_value
 
-        shader.inputs['Transmission'].default_value = 1.0
+        shader.inputs['Transmission Weight'].default_value = 1.0
         # if self.selfillum:
         #     selfillummask = self.selfillummask
         #     albedo_node = self.get_node('$basetexture')

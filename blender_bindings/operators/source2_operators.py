@@ -18,7 +18,7 @@ from SourceIO.blender_bindings.source2.vmdl_loader import (load_model, put_into_
 from SourceIO.blender_bindings.source2.vphy_loader import load_physics
 from SourceIO.blender_bindings.source2.vtex_loader import import_texture
 from SourceIO.blender_bindings.source2.vwrld.loader import load_map
-from SourceIO.blender_bindings.utils.bpy_utils import get_new_unique_collection, is_blender_4_1
+from SourceIO.blender_bindings.utils.bpy_utils import get_new_unique_collection
 from SourceIO.blender_bindings.utils.resource_utils import serialize_mounted_content, deserialize_mounted_content
 from SourceIO.library.source2.blocks.phys_block import PhysBlock
 
@@ -225,21 +225,20 @@ class SOURCEIO_OT_VTEXImport(ImportOperatorHelper):
                 texture_resource = CompiledTextureResource.from_buffer(f, directory / file.name)
                 image = import_texture(texture_resource, TinyPath(file.name))
 
-                if is_blender_4_1():
-                    if (context.region and context.region.type == 'WINDOW'
-                            and context.area and context.area.ui_type == 'ShaderNodeTree'
-                            and context.object and context.object.type == 'MESH'
-                            and context.material):
-                        node_tree = context.material.node_tree
-                        image_node = node_tree.nodes.new(type="ShaderNodeTexImage")
-                        image_node.image = image
-                        image_node.location = context.space_data.cursor_location
-                        for node in context.material.node_tree.nodes:
-                            node.select = False
-                        image_node.select = True
-                    if (context.region and context.region.type == 'WINDOW'
-                            and context.area and context.area.ui_type in ["IMAGE_EDITOR", "UV"]):
-                        context.space_data.image = image
+                if (context.region and context.region.type == 'WINDOW'
+                        and context.area and context.area.ui_type == 'ShaderNodeTree'
+                        and context.object and context.object.type == 'MESH'
+                        and context.material):
+                    node_tree = context.material.node_tree
+                    image_node = node_tree.nodes.new(type="ShaderNodeTexImage")
+                    image_node.image = image
+                    image_node.location = context.space_data.cursor_location
+                    for node in context.material.node_tree.nodes:
+                        node.select = False
+                    image_node.select = True
+                if (context.region and context.region.type == 'WINDOW'
+                        and context.area and context.area.ui_type in ["IMAGE_EDITOR", "UV"]):
+                    context.space_data.image = image
         return {'FINISHED'}
 
 

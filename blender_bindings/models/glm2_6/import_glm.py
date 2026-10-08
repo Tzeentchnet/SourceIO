@@ -8,7 +8,7 @@ from SourceIO.blender_bindings.material_loader.shaders.idtech3.idtech3 import Id
 from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
 from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material, add_material
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
+from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
 from SourceIO.library.models.glm import GLMModel, GLASkeleton
 from SourceIO.library.shared.content_manager import ContentManager
 from SourceIO.library.utils import Buffer, TinyPath
@@ -81,7 +81,7 @@ def import_model(name: str, mdl_buffer: Buffer, options: ModelOptions, content_m
         uvs[:, 1] = 1 - uvs[:, 1]
         uv_data.data.foreach_set('uv', uvs[vertex_indices].flatten())
 
-        obj_mesh.normals_split_custom_set_from_vertices(lod_mesh.vertices["normal"])
+        obj_mesh.set_custom_normals(lod_mesh.vertices["normal"])
         if skeleton:
             modifier = obj.modifiers.new(
                 type="ARMATURE", name="Armature")
@@ -90,12 +90,8 @@ def import_model(name: str, mdl_buffer: Buffer, options: ModelOptions, content_m
                 obj.parent = skeleton
             weight_groups = {bone.name: obj.vertex_groups.new(name=bone.name) for bone in skeleton_data.bones}
 
-            for n, (bone_indices, bone_weights) in enumerate(zip(lod_mesh.vertices['bone_indices'], lod_mesh.vertices['bone_weights'])):
-                remapped_bone_indices = lod_mesh.bones[bone_indices]
-                for bone_index, weight in zip(remapped_bone_indices, bone_weights):
-                    if weight > 0:
-                        bone_name = skeleton_data.bones[bone_index].name
-                        weight_groups[bone_name].add([n], weight, 'REPLACE')
+            set_vertex_weights([weight_groups[bone.name] for bone in skeleton_data.bones],
+                               lod_mesh.bones[lod_mesh.vertices["bone_indices"]], lod_mesh.vertices["bone_weights"])
 
 
         if hier_node.parent_id != -1:

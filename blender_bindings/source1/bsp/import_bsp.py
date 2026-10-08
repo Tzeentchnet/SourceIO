@@ -28,8 +28,7 @@ from SourceIO.library.utils.math_utilities import convert_rotation_source1_to_bl
 from SourceIO.logger import SourceLogMan, SLogger
 from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material, \
-    is_blender_4_2
+from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material
 
 from SourceIO.blender_bindings.source1.bsp.entities.base_entity_handler import BaseEntityHandler
 from SourceIO.blender_bindings.source1.bsp.entities.bms_entity_handlers import BlackMesaEntityHandler
@@ -137,10 +136,7 @@ def import_cubemaps(bsp: VBSPFile, settings: Source1BSPSettings, master_collecti
         return
     parent_collection = get_or_create_collection('cubemaps', master_collection)
     for n, cubemap in enumerate(cubemap_lump.cubemaps):
-        if is_blender_4_2():
-            refl_probe = bpy.data.lightprobes.new(f"CUBEMAP_{n}_PROBE", 'SPHERE')
-        else:
-            refl_probe = bpy.data.lightprobes.new(f"CUBEMAP_{n}_PROBE", 'CUBE')
+        refl_probe = bpy.data.lightprobes.new(f"CUBEMAP_{n}_PROBE", 'SPHERE')
         obj = bpy.data.objects.new(f"CUBEMAP_{n}", refl_probe)
         obj.location = cubemap.origin
         obj.location *= settings.scale

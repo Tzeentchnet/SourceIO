@@ -3,7 +3,8 @@ from typing import Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
 
 
@@ -146,12 +147,12 @@ class Blend(Source2ShaderBase):
         self.connect_nodes(mask_node.outputs[0], split_mask.inputs[0])
         mask_output = split_mask.outputs[0]
 
-        mix_color = self.create_node(Nodes.ShaderNodeMixRGB)
-        self.connect_nodes(mask_output,mix_color.inputs[0])
-        self.connect_nodes(albedo1_node.outputs[0],mix_color.inputs[1])
-        self.connect_nodes(albedo2_node.outputs[0],mix_color.inputs[2])
+        mix_color = self.create_mix_color()
+        self.connect_nodes(mask_output,mix_color.inputs[MIX_FACTOR])
+        self.connect_nodes(albedo1_node.outputs[0],mix_color.inputs[MIX_A])
+        self.connect_nodes(albedo2_node.outputs[0],mix_color.inputs[MIX_B])
 
-        color_output = mix_color.outputs[0]
+        color_output = mix_color.outputs[MIX_RESULT]
 
         if color_tint is not None and all(c == 1.0 for c in color_tint):
             color_output = self.insert_generic_tint(color_output, color_tint, model_tint_amount)
@@ -159,26 +160,26 @@ class Blend(Source2ShaderBase):
         if extra_parameters.get(ExtraMaterialParameters.USE_OBJECT_TINT, False):
             color_output = self.insert_object_tint(color_output)
 
-        mix_metalness = self.create_node(Nodes.ShaderNodeMixRGB)
-        self.connect_nodes(mask_output,mix_metalness.inputs[0])
-        mix_metalness.inputs[1].default_value = [metalness1] * 3 + [1.0]
-        mix_metalness.inputs[2].default_value = [metalness2] * 3 + [1.0]
+        mix_metalness = self.create_mix_color()
+        self.connect_nodes(mask_output,mix_metalness.inputs[MIX_FACTOR])
+        mix_metalness.inputs[MIX_A].default_value = [metalness1] * 3 + [1.0]
+        mix_metalness.inputs[MIX_B].default_value = [metalness2] * 3 + [1.0]
 
-        mix_normals = self.create_node(Nodes.ShaderNodeMixRGB)
-        self.connect_nodes(mask_output,mix_normals.inputs[0])
-        self.connect_nodes(normal1_node.outputs[0],mix_normals.inputs[1])
-        self.connect_nodes(normal2_node.outputs[0],mix_normals.inputs[2])
+        mix_normals = self.create_mix_color()
+        self.connect_nodes(mask_output,mix_normals.inputs[MIX_FACTOR])
+        self.connect_nodes(normal1_node.outputs[0],mix_normals.inputs[MIX_A])
+        self.connect_nodes(normal2_node.outputs[0],mix_normals.inputs[MIX_B])
 
-        mix_roughness = self.create_node(Nodes.ShaderNodeMixRGB)
-        self.connect_nodes(mask_output,mix_roughness.inputs[0])
-        self.connect_nodes(normal1_node.outputs[1],mix_roughness.inputs[1])
-        self.connect_nodes(normal2_node.outputs[1],mix_roughness.inputs[2])
+        mix_roughness = self.create_mix_color()
+        self.connect_nodes(mask_output,mix_roughness.inputs[MIX_FACTOR])
+        self.connect_nodes(normal1_node.outputs[1],mix_roughness.inputs[MIX_A])
+        self.connect_nodes(normal2_node.outputs[1],mix_roughness.inputs[MIX_B])
 
         normalmap_node = self.create_node(Nodes.ShaderNodeNormalMap)
-        self.connect_nodes(mix_normals.outputs[0], normalmap_node.inputs["Color"])
+        self.connect_nodes(mix_normals.outputs[MIX_RESULT], normalmap_node.inputs["Color"])
 
         self.connect_nodes(color_output, shader.inputs['Base Color'])
-        self.connect_nodes(mix_normals.outputs[0], normalmap_node.inputs['Color'])
-        self.connect_nodes(mix_roughness.outputs[0], shader.inputs['Roughness'])
-        self.connect_nodes(mix_metalness.outputs[0], shader.inputs['Metallic'])
+        self.connect_nodes(mix_normals.outputs[MIX_RESULT], normalmap_node.inputs['Color'])
+        self.connect_nodes(mix_roughness.outputs[MIX_RESULT], shader.inputs['Roughness'])
+        self.connect_nodes(mix_metalness.outputs[MIX_RESULT], shader.inputs['Metallic'])
         self.connect_nodes(normalmap_node.outputs[0], shader.inputs['Normal'])

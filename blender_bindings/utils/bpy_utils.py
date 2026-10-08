@@ -22,99 +22,58 @@ def pause_view_layer_update():
         _BPyOpsSubModOp._view_layer_update = view_layer_update
 
 
-def is_blender_4():
-    return bpy.app.version >= (4, 0, 0)
-
-
-def is_blender_4_1():
-    return bpy.app.version >= (4, 1, 0)
-
-
-def is_blender_4_2():
-    return bpy.app.version >= (4, 2, 0)
-
-
-def is_blender_4_3():
-    return bpy.app.version >= (4, 3, 0)
-
-
-def is_blender_5():
-    return bpy.app.version >= (5, 0, 0)
-
-
 class ActionCurveFactory:
-    """Compatibility wrapper for creating FCurves across Blender 4.x and 5.x.
+    """Creates layered (slotted) actions and their FCurves.
 
-    In Blender 5.0+ action.fcurves and action.groups were removed in favor of
-    the slotted channelbag API.
+    Compact mode stores every animation as a separate slot of one master action.
+    Otherwise each animation gets its own action, all sharing one slot name so
+    swapping actions on the armature keeps the slot binding.
     """
 
-    def __init__(self, master_name: str, armature_obj: bpy.types.Object, legacy_behavior: bool = False):
-        self._use_channelbag = is_blender_5()
+    def __init__(self, master_name: str, armature_obj: bpy.types.Object | None, legacy_behavior: bool = False):
         self._armature = armature_obj
         self._legacy_behavior = legacy_behavior
         self.master_name = master_name
         self._adt = None
+        self._channelbag = None
+        self.action: bpy.types.Action | None = None
+        self.slot: bpy.types.ActionSlot | None = None
+        self.created: list[tuple[bpy.types.Action, bpy.types.ActionSlot]] = []
 
         if self._armature:
-            adt = armature_obj.animation_data
-            if adt is None:
-                adt = armature_obj.animation_data_create()
-            self._adt = adt
+            self._adt = armature_obj.animation_data or armature_obj.animation_data_create()
 
-        if self._use_channelbag and not legacy_behavior:
-            master_action = bpy.data.actions.new(master_name)
-            master_action.use_fake_user = True
+        if not legacy_behavior:
+            self.action = bpy.data.actions.new(master_name)
+            self.action.use_fake_user = True
+            self._strip = self.action.layers.new(name='Layer').strips.new(type='KEYFRAME')
+            if self._adt is not None:
+                self._adt.action = self.action
 
-            if self._armature:
-                self._armature.animation_data.action = master_action
-
-            layer = master_action.layers.new(name='Layer')
-            strip = layer.strips.new(type='KEYFRAME')
-            adt.action = master_action
-            self.action = master_action
-            self._strip = strip
-
-        else:
-            pass
-
-    def new_action(self, name: str):
-        if self._use_channelbag and not self._legacy_behavior:
+    def new_action(self, name: str) -> tuple[bpy.types.Action, bpy.types.ActionSlot]:
+        if not self._legacy_behavior:
             slot = self.action.slots.new(id_type='OBJECT', name=name)
-
-            if self._armature:
-                self._adt.action_slot = slot
             self._channelbag = self._strip.channelbags.new(slot=slot)
-
-        elif self._use_channelbag and self._legacy_behavior:
-            action = bpy.data.actions.new(name)
-            action.use_fake_user = True
-            layer = action.layers.new(name='Layer')
-            strip = layer.strips.new(type='KEYFRAME')
-            slot = action.slots.new(
-                id_type='OBJECT',
-                name=self.master_name
-            )
-            channelbag = strip.channelbags.new(slot=slot)
-            self._channelbag = channelbag
-
-            if self._armature:
-                self._adt.action = action
-                self._adt.action_slot = slot
-
         else:
             self.action = bpy.data.actions.new(name)
+            self.action.use_fake_user = True
+            strip = self.action.layers.new(name='Layer').strips.new(type='KEYFRAME')
+            slot = self.action.slots.new(id_type='OBJECT', name=self.master_name)
+            self._channelbag = strip.channelbags.new(slot=slot)
+            if self._adt is not None:
+                self._adt.action = self.action
+
+        if self._adt is not None:
+            self._adt.action_slot = slot
+        self.slot = slot
+        self.created.append((self.action, slot))
+        return self.action, slot
 
     def new_group(self, name: str):
-        if self._use_channelbag:
-            return self._channelbag.groups.new(name=name)
-        return self.action.groups.new(name=name)
+        return self._channelbag.groups.new(name=name)
 
     def new_fcurve(self, data_path: str, index: int = 0, group=None):
-        if self._use_channelbag:
-            curve = self._channelbag.fcurves.new(data_path=data_path, index=index)
-        else:
-            curve = self.action.fcurves.new(data_path=data_path, index=index)
+        curve = self._channelbag.fcurves.new(data_path=data_path, index=index)
         if group is not None:
             curve.group = group
         return curve

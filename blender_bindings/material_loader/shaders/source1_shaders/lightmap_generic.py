@@ -2,9 +2,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4, is_blender_4_3
 from .detail import DetailSupportMixin, TCOMBINE_MOD2X_SELECT_TWO_PATTERNS
 
 
@@ -206,16 +206,15 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
 
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         if self.isskybox:
-            if not is_blender_4_3():
-                # 4.3 removed shadow_method; disabling shadow casting moved to the
-                # object level (Object.visible_shadow), which a material-level
-                # shader cannot reach, so there is no 4.3+ equivalent here.
-                self.bpy_material.shadow_method = 'NONE'
             self.bpy_material.use_backface_culling = True
 
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         shader = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
         self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
+        if self.isskybox:
+            # Skybox geometry must not cast shadows. There is no material-level shadow option, so the surface is
+            # swapped for a transparent BSDF on shadow rays instead.
+            self.disable_shadow_casting()
 
         uv_node, uv_out = self._build_uv_chain()
 
@@ -294,10 +293,9 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
 
         blend_output = self._build_blend_factor(uv_node, uv_out)
 
-        color_mix = self.create_node(Nodes.ShaderNodeMixRGB, 'basetexture blend')
-        color_mix.blend_type = 'MIX'
-        self.connect_nodes(blend_output, color_mix.inputs['Fac'])
-        albedo_output = color_mix.outputs['Color']
+        color_mix = self.create_mix_color('MIX', 'basetexture blend')
+        self.connect_nodes(blend_output, color_mix.inputs[MIX_FACTOR])
+        albedo_output = color_mix.outputs[MIX_RESULT]
 
         bs_socket = basetexture_node.outputs['Color']
         bs_socket2 = basetexture2_node.outputs['Color']
@@ -305,17 +303,17 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
         if self.detail:
             if self.detail2:
                 # Each layer gets its own detail texture before blending.
-                self.handle_detail(color_mix.inputs['Color1'], bs_socket, uv_node=uv_node)
-                self.handle_detail2(color_mix.inputs['Color2'], bs_socket2, uv_node=uv_node)
+                self.handle_detail(color_mix.inputs[MIX_A], bs_socket, uv_node=uv_node)
+                self.handle_detail2(color_mix.inputs[MIX_B], bs_socket2, uv_node=uv_node)
                 self.connect_nodes(albedo_output, shader.inputs['Base Color'])
             else:
-                self.connect_nodes(bs_socket, color_mix.inputs['Color1'])
-                self.connect_nodes(bs_socket2, color_mix.inputs['Color2'])
+                self.connect_nodes(bs_socket, color_mix.inputs[MIX_A])
+                self.connect_nodes(bs_socket2, color_mix.inputs[MIX_B])
                 albedo_output, _ = self.handle_detail(shader.inputs['Base Color'], albedo_output,
                                                      uv_node=uv_node)
         else:
-            self.connect_nodes(bs_socket, color_mix.inputs['Color1'])
-            self.connect_nodes(bs_socket2, color_mix.inputs['Color2'])
+            self.connect_nodes(bs_socket, color_mix.inputs[MIX_A])
+            self.connect_nodes(bs_socket2, color_mix.inputs[MIX_B])
             self.connect_nodes(albedo_output, shader.inputs['Base Color'])
 
         return basetexture_node, albedo_output, blend_output
@@ -390,12 +388,11 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
         if bumpmap2 and blend_output is not None:
             bumpmap2_node = self.create_texture_node(bumpmap2, '$bumpmap2')
             self._apply_transform(self.bumptransform2, bumpmap2_node, uv_node, uv_out)
-            normal_mix = self.create_node(Nodes.ShaderNodeMixRGB, 'bumpmap blend')
-            normal_mix.blend_type = 'MIX'
-            self.connect_nodes(blend_output, normal_mix.inputs['Fac'])
-            self.connect_nodes(normal_source, normal_mix.inputs['Color1'])
-            self.connect_nodes(bumpmap2_node.outputs['Color'], normal_mix.inputs['Color2'])
-            normal_source = normal_mix.outputs['Color']
+            normal_mix = self.create_mix_color('MIX', 'bumpmap blend')
+            self.connect_nodes(blend_output, normal_mix.inputs[MIX_FACTOR])
+            self.connect_nodes(normal_source, normal_mix.inputs[MIX_A])
+            self.connect_nodes(bumpmap2_node.outputs['Color'], normal_mix.inputs[MIX_B])
+            normal_source = normal_mix.outputs[MIX_RESULT]
 
         normal_map = self.create_node(Nodes.ShaderNodeNormalMap)
         self.connect_nodes(normal_source, normal_map.inputs['Color'])
@@ -432,11 +429,14 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
             return
 
         if self.alphatest:
-            self.set_blend_mode('HASHED', alpha_threshold=self.alphatestreference)
+            self.set_blend_mode('HASHED')
+            self.connect_nodes(self.insert_alpha_clip(basetexture_node.outputs['Alpha'], self.alphatestreference),
+                               shader.inputs['Alpha'])
+            return
         elif self.translucent:
             self.set_blend_mode('BLEND')
             self.bpy_material.use_backface_culling = True
-            self.bpy_material.show_transparent_back = False
+            self.bpy_material.use_transparency_overlap = False
         else:
             # Fully opaque: alpha is not a blend factor here.
             return
@@ -449,18 +449,17 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
         Base-texture alpha is the self-illumination mask, so it becomes emission
         strength and the (optionally tinted) albedo becomes emission colour.
         """
-        emission_color_input = 'Emission Color' if is_blender_4() else 'Emission'
+        emission_color_input = 'Emission Color'
         if emission_color_input not in shader.inputs:
             return
 
         tint = self.selfillumtint
         if tint is not None and tuple(tint[:3]) != (1.0, 1.0, 1.0):
-            tint_mix = self.create_node(Nodes.ShaderNodeMixRGB, 'selfillumtint')
-            tint_mix.blend_type = 'MULTIPLY'
-            tint_mix.inputs['Fac'].default_value = 1.0
-            self.connect_nodes(albedo_output, tint_mix.inputs['Color1'])
-            tint_mix.inputs['Color2'].default_value = tint
-            self.connect_nodes(tint_mix.outputs['Color'], shader.inputs[emission_color_input])
+            tint_mix = self.create_mix_color('MULTIPLY', 'selfillumtint')
+            tint_mix.inputs[MIX_FACTOR].default_value = 1.0
+            self.connect_nodes(albedo_output, tint_mix.inputs[MIX_A])
+            tint_mix.inputs[MIX_B].default_value = tint
+            self.connect_nodes(tint_mix.outputs[MIX_RESULT], shader.inputs[emission_color_input])
         else:
             self.connect_nodes(albedo_output, shader.inputs[emission_color_input])
 
@@ -478,7 +477,7 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
         Blender has no cubemap slot on Principled -- environment reflection comes
         from the world -- so only the reflection *strength* and tint are mapped.
         """
-        spec_input = 'Specular IOR Level' if is_blender_4() else 'Specular'
+        spec_input = 'Specular IOR Level'
 
         if not self.envmap:
             # No cubemap: the SDK emits diffuse only.

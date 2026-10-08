@@ -87,28 +87,14 @@ def load_prop_animations(mdl, mdl_buffer: Buffer, content_manager: ContentManage
 def apply_sequence_as_action(armature: bpy.types.Object, animation: AnimationData,
                              scale: float = 1.0) -> bpy.types.Action | None:
     """Import ``animation`` and leave it assigned to ``armature``."""
-    actions = import_animations_to_armature(armature, [animation], scale)
-    if not actions:
+    created = import_animations_to_armature(armature, armature.name, [animation], scale, compact_animations=False)
+    if not created:
         return None
-    action = actions[0]
-    if armature.animation_data is None:
-        armature.animation_data_create()
-    _assign_action(armature, action)
-    return action
-
-
-def _assign_action(armature: bpy.types.Object, action: bpy.types.Action):
-    """Assign an action, binding a slot on Blender 4.4+ where that is required."""
-    animation_data = armature.animation_data
+    action, slot = created[0]
+    animation_data = armature.animation_data or armature.animation_data_create()
     animation_data.action = action
-    # 4.4 introduced slotted actions; without a bound slot the action evaluates to
-    # nothing even though it is assigned.
-    if not hasattr(animation_data, 'action_slot'):
-        return
-    for slot in action.slots:
-        if slot.target_id_type in ('OBJECT', 'UNSPECIFIED'):
-            animation_data.action_slot = slot
-            break
+    animation_data.action_slot = slot
+    return action
 
 
 def pose_armature_from_animation(armature: bpy.types.Object, animation: AnimationData,

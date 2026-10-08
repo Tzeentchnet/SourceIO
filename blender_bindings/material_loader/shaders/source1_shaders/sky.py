@@ -4,7 +4,6 @@ import bpy
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_5
 from SourceIO.logger import SourceLogMan
 
 log_manager = SourceLogMan()
@@ -30,8 +29,6 @@ class Skybox(Source1ShaderBase):
         if self.bpy_material.get('source_loaded'):
             return 'LOADED'
 
-        if not is_blender_5():
-            self.bpy_material.use_nodes = True
         self.clean_nodes()
         self.bpy_material['source_loaded'] = True
 

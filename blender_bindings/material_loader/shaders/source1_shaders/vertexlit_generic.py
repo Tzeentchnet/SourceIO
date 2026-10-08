@@ -3,9 +3,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4, is_blender_4_3
 from .detail import DetailSupportMixin
 
 
@@ -276,8 +276,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         material_output.location = [250, 0]
         if self.alphatest or self.translucent:
-            self.set_blend_mode('BLEND' if self.translucent else 'HASHED',
-                                alpha_threshold=self.alphatestreference if self.alphatest else None)
+            self.set_blend_mode('BLEND' if self.translucent else 'HASHED')
         if self.additive:
             self.set_blend_mode('BLEND')
         uv = None
@@ -338,16 +337,16 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                     self.connect_nodes(attr.outputs[1], tension.inputs[0])
                     compress = self.create_texture_node(self.compress)
                     stretch = self.create_texture_node(self.stretch)
-                    mix_default_compress = self.create_node(Nodes.ShaderNodeMixRGB)
-                    mix_compress_stretch = self.create_node(Nodes.ShaderNodeMixRGB)
+                    mix_default_compress = self.create_mix_color()
+                    mix_compress_stretch = self.create_mix_color()
 
-                    self.connect_nodes(tension.outputs[0], mix_default_compress.inputs[0])
-                    self.connect_nodes(tension.outputs[1], mix_compress_stretch.inputs[0])
-                    self.connect_nodes(albedo, mix_default_compress.inputs[1])
-                    self.connect_nodes(compress.outputs[0], mix_default_compress.inputs[2])
-                    self.connect_nodes(mix_default_compress.outputs[0], mix_compress_stretch.inputs[1])
-                    self.connect_nodes(stretch.outputs[0], mix_compress_stretch.inputs[2])
-                    self.connect_nodes(mix_compress_stretch.outputs[0], group_node.inputs['$basetexture [texture]'])
+                    self.connect_nodes(tension.outputs[0], mix_default_compress.inputs[MIX_FACTOR])
+                    self.connect_nodes(tension.outputs[1], mix_compress_stretch.inputs[MIX_FACTOR])
+                    self.connect_nodes(albedo, mix_default_compress.inputs[MIX_A])
+                    self.connect_nodes(compress.outputs[0], mix_default_compress.inputs[MIX_B])
+                    self.connect_nodes(mix_default_compress.outputs[MIX_RESULT], mix_compress_stretch.inputs[MIX_A])
+                    self.connect_nodes(stretch.outputs[0], mix_compress_stretch.inputs[MIX_B])
+                    self.connect_nodes(mix_compress_stretch.outputs[MIX_RESULT], group_node.inputs['$basetexture [texture]'])
 
             elif self.color:
                 group_node.inputs['$basetexture [texture]'].default_value = self.color
@@ -379,16 +378,16 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                         self.connect_nodes(attr.outputs[1], tension.inputs[0])
                     compress = self.create_texture_node(self.bumpcompress)
                     stretch = self.create_texture_node(self.bumpstretch)
-                    mix_default_compress = self.create_node(Nodes.ShaderNodeMixRGB)
-                    mix_compress_stretch = self.create_node(Nodes.ShaderNodeMixRGB)
+                    mix_default_compress = self.create_mix_color()
+                    mix_compress_stretch = self.create_mix_color()
 
-                    self.connect_nodes(tension.outputs[0], mix_default_compress.inputs[0])
-                    self.connect_nodes(tension.outputs[1], mix_compress_stretch.inputs[0])
-                    self.connect_nodes(bumpmap_node.outputs[0], mix_default_compress.inputs[1])
-                    self.connect_nodes(compress.outputs[0], mix_default_compress.inputs[2])
-                    self.connect_nodes(mix_default_compress.outputs[0], mix_compress_stretch.inputs[1])
-                    self.connect_nodes(stretch.outputs[0], mix_compress_stretch.inputs[2])
-                    self.connect_nodes(mix_compress_stretch.outputs[0], group_node.inputs['$bumpmap [texture]'])
+                    self.connect_nodes(tension.outputs[0], mix_default_compress.inputs[MIX_FACTOR])
+                    self.connect_nodes(tension.outputs[1], mix_compress_stretch.inputs[MIX_FACTOR])
+                    self.connect_nodes(bumpmap_node.outputs[0], mix_default_compress.inputs[MIX_A])
+                    self.connect_nodes(compress.outputs[0], mix_default_compress.inputs[MIX_B])
+                    self.connect_nodes(mix_default_compress.outputs[MIX_RESULT], mix_compress_stretch.inputs[MIX_A])
+                    self.connect_nodes(stretch.outputs[0], mix_compress_stretch.inputs[MIX_B])
+                    self.connect_nodes(mix_compress_stretch.outputs[MIX_RESULT], group_node.inputs['$bumpmap [texture]'])
 
             if self.rimlight:
                 group_node.inputs['$rimlight [bool]'].default_value = self.rimlight
@@ -549,32 +548,30 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                 basetexture_node.id_data.nodes.active = basetexture_node
 
                 if self.color or self.color2:
-                    color_mix = self.create_node(Nodes.ShaderNodeMixRGB)
-                    color_mix.blend_type = 'MULTIPLY'
-                    self.connect_nodes(basetexture_node.outputs['Color'], color_mix.inputs['Color1'])
-                    color_mix.inputs['Color2'].default_value = (self.color or self.color2)
-                    color_mix.inputs['Fac'].default_value = 1.0
-                    self.connect_nodes(color_mix.outputs['Color'], shader.inputs['Base Color'])
+                    color_mix = self.create_mix_color('MULTIPLY')
+                    self.connect_nodes(basetexture_node.outputs['Color'], color_mix.inputs[MIX_A])
+                    color_mix.inputs[MIX_B].default_value = (self.color or self.color2)
+                    color_mix.inputs[MIX_FACTOR].default_value = 1.0
+                    self.connect_nodes(color_mix.outputs[MIX_RESULT], shader.inputs['Base Color'])
                 else:
                     self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Base Color'])
-                if self.translucent or self.alphatest:
+                if self.translucent:
                     self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Alpha'])
+                elif self.alphatest:
+                    self.connect_nodes(self.insert_alpha_clip(basetexture_node.outputs['Alpha'],
+                                                              self.alphatestreference), shader.inputs['Alpha'])
 
                 if self.additive:
                     basetexture_invert_node = self.create_node(Nodes.ShaderNodeInvert)
-                    basetexture_additive_mix_node = self.create_node(Nodes.ShaderNodeMixRGB)
-                    self.insert_node(basetexture_node.outputs['Color'], basetexture_additive_mix_node.inputs['Color1'],
-                                     basetexture_additive_mix_node.outputs['Color'])
-                    basetexture_additive_mix_node.inputs['Color2'].default_value = (1.0, 1.0, 1.0, 1.0)
+                    basetexture_additive_mix_node = self.create_mix_color()
+                    self.insert_node(basetexture_node.outputs['Color'], basetexture_additive_mix_node.inputs[MIX_A],
+                                     basetexture_additive_mix_node.outputs[MIX_RESULT])
+                    basetexture_additive_mix_node.inputs[MIX_B].default_value = (1.0, 1.0, 1.0, 1.0)
 
                     self.connect_nodes(basetexture_node.outputs['Color'], basetexture_invert_node.inputs['Color'])
-                    if is_blender_4():
-                        self.connect_nodes(basetexture_invert_node.outputs['Color'],
-                                           shader.inputs['Transmission Weight'])
-                    else:
-                        self.connect_nodes(basetexture_invert_node.outputs['Color'], shader.inputs['Transmission'])
+                    self.connect_nodes(basetexture_invert_node.outputs['Color'], shader.inputs['Transmission Weight'])
                     self.connect_nodes(basetexture_invert_node.outputs['Color'],
-                                       basetexture_additive_mix_node.inputs['Fac'])
+                                       basetexture_additive_mix_node.inputs[MIX_FACTOR])
 
             bumpmap = self.bumpmap
             if bumpmap:
@@ -598,10 +595,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                     else:
                         if 'Emission Strength' in shader.inputs:
                             self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Emission Strength'])
-                    if is_blender_4():
-                        self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
-                    else:
-                        self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission'])
+                    self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
 
             self._setup_phong(shader, self.get_node('$basetexture'))
 
@@ -626,7 +620,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         * mask x fresnel x boost -> Specular IOR Level / Roughness modulation
         * tint -> Specular Tint (same lerp as the SDK)
         """
-        spec_input = 'Specular IOR Level' if is_blender_4() else 'Specular'
+        spec_input = 'Specular IOR Level'
 
         if not self.phong:
             shader.inputs[spec_input].default_value = 0.0
@@ -705,11 +699,11 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                 # Only tint per-pixel, driven by the exponent texture's green
                 # channel. Without that channel Source has no tint amount to
                 # apply, and forcing full-albedo tint here reads far too strong.
-                albedo_tint_mix = self.create_node(Nodes.ShaderNodeMixRGB, 'phongalbedotint')
-                albedo_tint_mix.inputs['Color1'].default_value = (1.0, 1.0, 1.0, 1.0)
-                self.connect_nodes(albedo_tint_amount, albedo_tint_mix.inputs['Fac'])
-                self.connect_nodes(basetexture_node.outputs['Color'], albedo_tint_mix.inputs['Color2'])
-                self.connect_nodes(albedo_tint_mix.outputs['Color'], shader.inputs['Specular Tint'])
+                albedo_tint_mix = self.create_mix_color('MIX', 'phongalbedotint')
+                albedo_tint_mix.inputs[MIX_A].default_value = (1.0, 1.0, 1.0, 1.0)
+                self.connect_nodes(albedo_tint_amount, albedo_tint_mix.inputs[MIX_FACTOR])
+                self.connect_nodes(basetexture_node.outputs['Color'], albedo_tint_mix.inputs[MIX_B])
+                self.connect_nodes(albedo_tint_mix.outputs[MIX_RESULT], shader.inputs['Specular Tint'])
 
         # --- Phong mask ---
         # SDK: `fSpecMask = lerp( normalTexel.a, baseColor.a, $basemapalphaphongmask )`

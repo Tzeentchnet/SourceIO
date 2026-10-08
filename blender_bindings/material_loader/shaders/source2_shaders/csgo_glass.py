@@ -31,7 +31,6 @@ class CSGOGlass(Source2ShaderBase):
             normal_texture = self._get_texture("g_tNormal", (0.5, 0.5, 1, 1), True, True)
             self.connect_nodes(normal_texture.outputs[0], shader.inputs["TextureNormal"])
 
-        # self.bpy_material.use_screen_refraction = True
         # old_engine = bpy.context.scene.render.engine
         # bpy.context.scene.render.engine = 'BLENDER_EEVEE'
         # bpy.context.scene.eevee.use_ssr = True

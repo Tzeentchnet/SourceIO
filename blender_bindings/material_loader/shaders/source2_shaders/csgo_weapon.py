@@ -1,4 +1,8 @@
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes
+from typing import Any
+
+import bpy
+
+from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
 
 
@@ -34,7 +38,7 @@ class CSGOWeapon(Source2ShaderBase):
         normal_conv = self.create_node(Nodes.ShaderNodeNormalMap)
         self.connect_nodes(normal_texture.outputs[0], normal_conv.inputs[1])
         self.connect_nodes(normal_conv.outputs[0], shader.inputs["Normal"])
-        self.connect_nodes(normal_texture.outputs[1], shader.inputs["Specular"])
+        self.connect_nodes(normal_texture.outputs[1], shader.inputs["Specular IOR Level"])
 
         metalness_texture = self._get_texture("g_tMetalness", (1, 1, 1, 1), True)
         metalness_conv = self.create_node(Nodes.ShaderNodeSeparateColor)

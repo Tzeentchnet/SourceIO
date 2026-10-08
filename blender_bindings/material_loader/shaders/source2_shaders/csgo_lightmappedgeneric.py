@@ -5,7 +5,6 @@ import bpy
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 from SourceIO.library.source2.blocks.kv3_block import KVBlock
 
 
@@ -62,15 +61,8 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
         shader.inputs["Sharpness"].default_value = material_data.get_float_property("g_flBevelBlendSharpness", 4)
 
         if material_data.get_int_property("F_ALPHA_TEST", 0):
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'CLIP'
-                self.bpy_material.shadow_method = 'CLIP'
-                self.bpy_material.alpha_threshold = material_data.get_float_property("g_flAlphaTestReference", 0.5)
+            self.set_blend_mode('CLIP')
         elif material_data.get_int_property("S_TRANSLUCENT", 0):
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'CLIP'
+            self.set_blend_mode('HASHED')
         elif material_data.get_int_property("F_OVERLAY", 0):
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'CLIP'
+            self.set_blend_mode('HASHED')

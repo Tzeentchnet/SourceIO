@@ -2,7 +2,8 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                    MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
 
 
@@ -142,8 +143,7 @@ class HeroesArmor(Source1ShaderBase):
         parentnode = material_output
 
         if self.alphatest or self.translucent:
-            self.set_blend_mode('BLEND' if self.translucent else 'HASHED',
-                                alpha_threshold=self.alphatestreference if self.alphatest else None)
+            self.set_blend_mode('BLEND' if self.translucent else 'HASHED')
 
         if self.use_bvlg_status:
             self.do_arrange = False
@@ -250,28 +250,30 @@ class HeroesArmor(Source1ShaderBase):
                 basetexture_node.id_data.nodes.active = basetexture_node
 
                 if self.color or self.color2:
-                    color_mix = self.create_node(Nodes.ShaderNodeMixRGB)
-                    color_mix.blend_type = 'MULTIPLY'
-                    self.connect_nodes(basetexture_node.outputs['Color'], color_mix.inputs['Color1'])
-                    color_mix.inputs['Color2'].default_value = (self.color or self.color2)
-                    color_mix.inputs['Fac'].default_value = 1.0
-                    self.connect_nodes(color_mix.outputs['Color'], shader.inputs['Base Color'])
+                    color_mix = self.create_mix_color('MULTIPLY')
+                    self.connect_nodes(basetexture_node.outputs['Color'], color_mix.inputs[MIX_A])
+                    color_mix.inputs[MIX_B].default_value = (self.color or self.color2)
+                    color_mix.inputs[MIX_FACTOR].default_value = 1.0
+                    self.connect_nodes(color_mix.outputs[MIX_RESULT], shader.inputs['Base Color'])
                 else:
                     self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Base Color'])
-                if self.translucent or self.alphatest:
+                if self.translucent:
                     self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Alpha'])
+                elif self.alphatest:
+                    self.connect_nodes(self.insert_alpha_clip(basetexture_node.outputs['Alpha'],
+                                                              self.alphatestreference), shader.inputs['Alpha'])
 
                 if self.additive:
                     basetexture_invert_node = self.create_node(Nodes.ShaderNodeInvert)
-                    basetexture_additive_mix_node = self.create_node(Nodes.ShaderNodeMixRGB)
-                    self.insert_node(basetexture_node.outputs['Color'], basetexture_additive_mix_node.inputs['Color1'],
-                                     basetexture_additive_mix_node.outputs['Color'])
-                    basetexture_additive_mix_node.inputs['Color2'].default_value = (1.0, 1.0, 1.0, 1.0)
+                    basetexture_additive_mix_node = self.create_mix_color()
+                    self.insert_node(basetexture_node.outputs['Color'], basetexture_additive_mix_node.inputs[MIX_A],
+                                     basetexture_additive_mix_node.outputs[MIX_RESULT])
+                    basetexture_additive_mix_node.inputs[MIX_B].default_value = (1.0, 1.0, 1.0, 1.0)
 
                     self.connect_nodes(basetexture_node.outputs['Color'], basetexture_invert_node.inputs['Color'])
-                    self.connect_nodes(basetexture_invert_node.outputs['Color'], shader.inputs['Transmission'])
+                    self.connect_nodes(basetexture_invert_node.outputs['Color'], shader.inputs['Transmission Weight'])
                     self.connect_nodes(basetexture_invert_node.outputs['Color'],
-                                       basetexture_additive_mix_node.inputs['Fac'])
+                                       basetexture_additive_mix_node.inputs[MIX_FACTOR])
 
             if self.EXTRA_TEXTURE is not None and (extra_texture := self.extra_texture):
                 self.create_texture_node(extra_texture, self.EXTRA_TEXTURE[1])
@@ -298,12 +300,12 @@ class HeroesArmor(Source1ShaderBase):
                 else:
                     if 'Emission Strength' in shader.inputs:
                         self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Emission Strength'])
-                self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission'])
+                self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
 
             if not self.phong:
-                shader.inputs['Specular'].default_value = 0
+                shader.inputs['Specular IOR Level'].default_value = 0
             elif self.phongboost is not None:
-                shader.inputs['Specular'].default_value = self.clamp_value(self.phongboost / 64)
+                shader.inputs['Specular IOR Level'].default_value = self.clamp_value(self.phongboost / 64)
             phongexponenttexture = self.phongexponenttexture
             if self.phongexponent is not None and phongexponenttexture is None:
                 shader.inputs['Roughness'].default_value = self.clamp_value(self.phongexponent / 256)

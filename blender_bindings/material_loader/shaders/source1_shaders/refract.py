@@ -4,7 +4,6 @@ import bpy
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4, is_blender_4_3
 
 
 class Refract(Source1ShaderBase):
@@ -65,10 +64,8 @@ class Refract(Source1ShaderBase):
         return color_value
 
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
-        if not is_blender_4_3():
-            self.bpy_material.blend_method = 'OPAQUE'
-            self.bpy_material.shadow_method = 'NONE'
-        self.bpy_material.use_screen_refraction = True
+        self.set_blend_mode('OPAQUE')
+        self.bpy_material.use_raytrace_refraction = True
         self.bpy_material.use_backface_culling = True
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
 
@@ -90,8 +87,5 @@ class Refract(Source1ShaderBase):
             self.create_and_connect_texture_node(bumpmap, normalmap_node.inputs['Color'], name='$bumpmap')
 
             self.connect_nodes(normalmap_node.outputs['Normal'], shader.inputs['Normal'])
-            if is_blender_4():
-                shader.inputs['Transmission Weight'].default_value = 1.0
-            else:
-                shader.inputs['Transmission'].default_value = 1.0
+            shader.inputs['Transmission Weight'].default_value = 1.0
             shader.inputs['Roughness'].default_value = self.bluramount

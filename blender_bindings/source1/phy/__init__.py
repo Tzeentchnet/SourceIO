@@ -56,8 +56,7 @@ def import_physics(phy: Phy, phy_buffer: Buffer, mdl: MdlV36, container: ModelCo
             if container.armature:
                 bone = mdl.bones[mesh.bone_id - 1]
                 weight_group = mesh_obj.vertex_groups.new(name=bone.name)
-                for n in range(len(vertices)):
-                    weight_group.add([n], 1, 'REPLACE')
+                weight_group.add(list(range(len(vertices))), 1.0, 'REPLACE')
 
                 modifier = mesh_obj.modifiers.new(
                     type="ARMATURE", name="Armature")

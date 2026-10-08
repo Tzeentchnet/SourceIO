@@ -3,11 +3,11 @@ from typing import Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (ExtraMaterialParameters, MIX_FACTOR, MIX_A,
+                                                                   MIX_B, MIX_RESULT)
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3, is_blender_4
 
 
 class VrComplex(Source2ShaderBase):
@@ -103,9 +103,8 @@ class VrComplex(Source2ShaderBase):
             self.connect_nodes(detail_mask_split.outputs[0], mask_multiply_node.inputs[1])
 
             if detail_mode == 1:
-                detail_blend_node = self.create_node(Nodes.ShaderNodeMixRGB)
-                detail_blend_node.blend_type = 'MULTIPLY'
-                self.connect_nodes(mask_multiply_node.outputs[0], detail_blend_node.inputs[0])
+                detail_blend_node = self.create_mix_color('MULTIPLY')
+                self.connect_nodes(mask_multiply_node.outputs[0], detail_blend_node.inputs[MIX_FACTOR])
 
                 detail_multiply_node = self.create_node(Nodes.ShaderNodeVectorMath)
                 detail_multiply_node.operation = 'MULTIPLY'
@@ -113,19 +112,18 @@ class VrComplex(Source2ShaderBase):
                     "g_flDetailModX", 2.0)] * 3
                 self.connect_nodes(detail_node.outputs[0], detail_multiply_node.inputs[0])
 
-                self.connect_nodes(color_output_socket, detail_blend_node.inputs[1])
-                self.connect_nodes(detail_multiply_node.outputs[0], detail_blend_node.inputs[2])
+                self.connect_nodes(color_output_socket, detail_blend_node.inputs[MIX_A])
+                self.connect_nodes(detail_multiply_node.outputs[0], detail_blend_node.inputs[MIX_B])
 
-                color_output_socket = detail_blend_node.outputs[0]
+                color_output_socket = detail_blend_node.outputs[MIX_RESULT]
 
             if detail_mode == 2 or detail_mode == 4:
-                detail_blend_node = self.create_node(Nodes.ShaderNodeMixRGB)
-                detail_blend_node.blend_type = 'OVERLAY'
-                self.connect_nodes(mask_multiply_node.outputs[0], detail_blend_node.inputs[0])
-                self.connect_nodes(color_output_socket, detail_blend_node.inputs[1])
-                self.connect_nodes(detail_node.outputs[0], detail_blend_node.inputs[2])
+                detail_blend_node = self.create_mix_color('OVERLAY')
+                self.connect_nodes(mask_multiply_node.outputs[0], detail_blend_node.inputs[MIX_FACTOR])
+                self.connect_nodes(color_output_socket, detail_blend_node.inputs[MIX_A])
+                self.connect_nodes(detail_node.outputs[0], detail_blend_node.inputs[MIX_B])
 
-                color_output_socket = detail_blend_node.outputs[0]
+                color_output_socket = detail_blend_node.outputs[MIX_RESULT]
 
             if detail_mode == 3 or detail_mode == 4:
                 blend_normals_node = self.create_node_group("Blend Normals")
@@ -175,6 +173,6 @@ class VrComplex(Source2ShaderBase):
                                     self._material_resource.get_vector_property('g_vSelfIllumTint'),
                                     self._material_resource.get_float_property("'g_flSelfIllumAlbedoFactor'", 1.0),
                                     self._material_resource.get_float_property("g_flSelfIllumBrightness", 1.0),
-                                    shader_node.inputs['Emission Color'] if is_blender_4() else shader_node.inputs['Emission'],
+                                    shader_node.inputs['Emission Color'],
                                     shader_node.inputs["Emission Strength"]
                                     )

@@ -2,8 +2,8 @@ from typing import Optional, Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ShaderBase, ExtraMaterialParameters
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3, is_blender_5
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ShaderBase, ExtraMaterialParameters, MIX_FACTOR, MIX_A, MIX_B,
+                                                                MIX_RESULT)
 from SourceIO.library.models.mdl.v10.structs.texture import StudioTexture
 
 
@@ -18,13 +18,9 @@ class GoldSrcShaderBase(ShaderBase):
             return 'LOADED'
         self.logger.info(f'Creating material {repr(material.name)}')
 
-        if not is_blender_5():
-            self.bpy_material.use_nodes = True
         self.clean_nodes()
-        if not is_blender_4_3():
-            self.bpy_material.blend_method = 'OPAQUE'
-            self.bpy_material.shadow_method = 'OPAQUE'
-        self.bpy_material.use_screen_refraction = False
+        self.bpy_material.surface_render_method = 'DITHERED'
+        self.bpy_material.use_raytrace_refraction = False
         self.bpy_material.refraction_depth = 0.2
         self.bpy_material['source_loaded'] = True
 
@@ -39,13 +35,12 @@ class GoldSrcShaderBase(ShaderBase):
         shader_emit = self.create_node(Nodes.ShaderNodeEmission)
         shader_emit.inputs['Strength'].default_value = rad_info[3]
 
-        color_mix = self.create_node(Nodes.ShaderNodeMixRGB)
-        color_mix.blend_type = 'MULTIPLY'
-        color_mix.inputs['Fac'].default_value = 1.0
+        color_mix = self.create_mix_color('MULTIPLY')
+        color_mix.inputs[MIX_FACTOR].default_value = 1.0
 
-        self.connect_nodes(color_mix.outputs['Color'], shader_emit.inputs['Color'])
-        self.connect_nodes(basetexture.outputs['Color'], color_mix.inputs['Color1'])
-        color_mix.inputs['Color2'].default_value = (*rad_info[:3], 1.0)
+        self.connect_nodes(color_mix.outputs[MIX_RESULT], shader_emit.inputs['Color'])
+        self.connect_nodes(basetexture.outputs['Color'], color_mix.inputs[MIX_A])
+        color_mix.inputs[MIX_B].default_value = (*rad_info[:3], 1.0)
 
         self.connect_nodes(shader_emit.outputs['Emission'], material_output.inputs['Surface'])
 

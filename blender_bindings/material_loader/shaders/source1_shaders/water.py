@@ -3,9 +3,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4
 from SourceIO.blender_bindings.utils.texture_utils import setup_image_sequence_node
 from SourceIO.library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
 
@@ -185,10 +185,8 @@ class Water(Source1ShaderBase):
         # Water writes depth and is opaque to the rasterizer; see-through comes
         # from screen-space refraction, not from alpha blending.
         self.set_blend_mode('OPAQUE')
-        self.bpy_material.use_screen_refraction = True
+        self.bpy_material.use_raytrace_refraction = True
         self.bpy_material.use_backface_culling = True
-        if hasattr(self.bpy_material, 'use_raytrace_refraction'):
-            self.bpy_material.use_raytrace_refraction = True
 
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
 
@@ -250,9 +248,7 @@ class Water(Source1ShaderBase):
             roughness = 0.02 + 0.1 * max(self.reflectamount, self.refractamount)
         shader.inputs['Roughness'].default_value = self.clamp_value(roughness)
 
-        transmission_input = 'Transmission Weight' if is_blender_4() else 'Transmission'
-        if transmission_input in shader.inputs:
-            shader.inputs[transmission_input].default_value = 1.0
+        shader.inputs['Transmission Weight'].default_value = 1.0
 
         reflecttint = self.reflecttint
         if (reflecttint is not None and tuple(reflecttint[:3]) != (1.0, 1.0, 1.0)
@@ -451,12 +447,11 @@ class Water(Source1ShaderBase):
 
         # lerp( n1, n2, flWeight2 ) with flWeight2 = abs(2*frac(t) - 1): a triangle
         # wave that is 1 when layer 1 has just restarted and 0 mid-interval.
-        blend = self.create_node(Nodes.ShaderNodeMixRGB, 'flow crossfade')
-        blend.blend_type = 'MIX'
-        self.connect_nodes(layers[0].outputs['Color'], blend.inputs['Color1'])
-        self.connect_nodes(layers[1].outputs['Color'], blend.inputs['Color2'])
-        self.connect_nodes(self._flow_weight_output(interval), blend.inputs['Fac'])
-        return blend.outputs['Color']
+        blend = self.create_mix_color('MIX', 'flow crossfade')
+        self.connect_nodes(layers[0].outputs['Color'], blend.inputs[MIX_A])
+        self.connect_nodes(layers[1].outputs['Color'], blend.inputs[MIX_B])
+        self.connect_nodes(self._flow_weight_output(interval), blend.inputs[MIX_FACTOR])
+        return blend.outputs[MIX_RESULT]
 
     def _flow_world_uv_output(self):
         """``float2( i.worldPos.x, -i.worldPos.y )`` -- the normal layers' coordinates.

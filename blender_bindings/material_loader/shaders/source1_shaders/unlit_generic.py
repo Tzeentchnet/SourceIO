@@ -2,7 +2,8 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
 from .detail import DetailSupportMixin
 
@@ -82,8 +83,7 @@ class UnlitGeneric(DetailSupportMixin, Source1ShaderBase):
         blended = self.translucent or self.alphatest or self.additive
         mix_node = None
         if blended:
-            self.set_blend_mode('BLEND' if (self.translucent or self.additive) else 'HASHED',
-                                alpha_threshold=self.alphatestreference if self.alphatest else None)
+            self.set_blend_mode('BLEND' if (self.translucent or self.additive) else 'HASHED')
             transparent_node = self.create_node(Nodes.ShaderNodeBsdfTransparent)
             if self.additive:
                 # Additive surfaces add their emission on top of a transparent
@@ -120,22 +120,20 @@ class UnlitGeneric(DetailSupportMixin, Source1ShaderBase):
 
         color = self.color or self.color2
         if color:
-            color_mix = self.create_node(Nodes.ShaderNodeMixRGB, 'color')
-            color_mix.blend_type = 'MULTIPLY'
-            color_mix.inputs['Fac'].default_value = 1.0
-            self.connect_nodes(color_output, color_mix.inputs['Color1'])
-            color_mix.inputs['Color2'].default_value = color
-            color_output = color_mix.outputs['Color']
+            color_mix = self.create_mix_color('MULTIPLY', 'color')
+            color_mix.inputs[MIX_FACTOR].default_value = 1.0
+            self.connect_nodes(color_output, color_mix.inputs[MIX_A])
+            color_mix.inputs[MIX_B].default_value = color
+            color_output = color_mix.outputs[MIX_RESULT]
 
         if self.vertexcolor:
             # Unlit passes enable vertex colour modulation (bHasVertexColor above).
             vertex_color = self.create_node(Nodes.ShaderNodeVertexColor, 'vertexcolor')
-            vc_mix = self.create_node(Nodes.ShaderNodeMixRGB, 'vertexcolor mix')
-            vc_mix.blend_type = 'MULTIPLY'
-            vc_mix.inputs['Fac'].default_value = 1.0
-            self.connect_nodes(color_output, vc_mix.inputs['Color1'])
-            self.connect_nodes(vertex_color.outputs['Color'], vc_mix.inputs['Color2'])
-            color_output = vc_mix.outputs['Color']
+            vc_mix = self.create_mix_color('MULTIPLY', 'vertexcolor mix')
+            vc_mix.inputs[MIX_FACTOR].default_value = 1.0
+            self.connect_nodes(color_output, vc_mix.inputs[MIX_A])
+            self.connect_nodes(vertex_color.outputs['Color'], vc_mix.inputs[MIX_B])
+            color_output = vc_mix.outputs[MIX_RESULT]
 
         self.connect_nodes(color_output, shader.inputs['Color'])
 
@@ -151,6 +149,8 @@ class UnlitGeneric(DetailSupportMixin, Source1ShaderBase):
                 self.connect_nodes(alpha_output, alpha_mul.inputs[0])
                 self.connect_nodes(vertex_color.outputs['Alpha'], alpha_mul.inputs[1])
                 alpha_output = alpha_mul.outputs[0]
+            if self.alphatest and not self.translucent:
+                alpha_output = self.insert_alpha_clip(alpha_output, self.alphatestreference)
             self.connect_nodes(alpha_output, mix_node.inputs['Fac'])
 
 

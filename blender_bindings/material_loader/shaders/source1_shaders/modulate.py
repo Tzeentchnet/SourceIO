@@ -65,8 +65,7 @@ class Modulate(Source1ShaderBase):
         return self._vmt.get_int('$nocull', 0) == 1
 
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
-        self.bpy_material.blend_method = 'BLEND'
-        self.bpy_material.surface_render_method = 'BLENDED'
+        self.set_blend_mode('BLEND')
         mult = self.create_node(Nodes.ShaderNodeVectorMath)
         mult.operation = 'MULTIPLY'
         mult.inputs[0].default_value = (1, 1, 1)

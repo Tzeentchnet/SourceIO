@@ -42,6 +42,7 @@ class ModelOptions(SharedOptions, Source1SharedSettings):
     import_animations: BoolProperty(name="Load animations", default=False, subtype='UNSIGNED')
     import_include_animations: BoolProperty(name="Load include model animations", default=False, subtype='UNSIGNED')
     compact_animations: BoolProperty(name='Compact Animations', default=True, description='If True, all animations will be stored as slots under one master action. If False, all animations will be in separate actions, as per legacy behavior.', subtype='UNSIGNED')
+    delta_animations_to_nla: BoolProperty(name='Delta animations to NLA', default=False, description='Place each delta (additive) animation on its own muted NLA track with Combine blending, ready to layer on top of a base animation', subtype='UNSIGNED')
 
     create_flex_drivers: BoolProperty(name="Create drivers for flexes", default=True, subtype='UNSIGNED')
     debug_stereo_balance: BoolProperty(name='Debug Stereo Flex Balance', description='Add vertex groups to show how stereo flexes blend. If enabled, the balance will not be mixed into shape keys.', default=False, subtype='UNSIGNED')

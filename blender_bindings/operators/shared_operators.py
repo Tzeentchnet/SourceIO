@@ -78,25 +78,27 @@ class SourceIO_OT_LoadEntity(Operator):
         master_instance_lcollection.exclude = True
         win = bpy.context.window_manager
 
-        with pause_view_layer_update():
-            win.progress_begin(0, len(context.selected_objects))
-            for n, obj in enumerate(context.selected_objects):
-                print(f'Loading {obj.name}')
-                win.progress_update(n)
-                if obj.get("entity_data", None):
-                    custom_prop_data = obj['entity_data']
-                    prop_path = custom_prop_data.get('prop_path', None)
-                    if prop_path is None or custom_prop_data.get("imported", False):
-                        continue
-                    prop_path = TinyPath(prop_path)
-                    model_type = prop_path.suffix
-                    if model_type == '.vmdl_c':
-                        self.load_vmdl(content_manager, context, obj)
-                    elif model_type in ('.mdl', ".md3"):
-                        self.load_mdl(content_manager, context, obj)
-                    elif model_type == ".glm":
-                        self.load_glm(content_manager, context, obj)
-        win.progress_end()
+        win.progress_begin(0, len(context.selected_objects))
+        try:
+            with pause_view_layer_update():
+                for n, obj in enumerate(context.selected_objects):
+                    print(f'Loading {obj.name}')
+                    win.progress_update(n)
+                    if obj.get("entity_data", None):
+                        custom_prop_data = obj['entity_data']
+                        prop_path = custom_prop_data.get('prop_path', None)
+                        if prop_path is None or custom_prop_data.get("imported", False):
+                            continue
+                        prop_path = TinyPath(prop_path)
+                        model_type = prop_path.suffix
+                        if model_type == '.vmdl_c':
+                            self.load_vmdl(content_manager, context, obj)
+                        elif model_type in ('.mdl', ".md3"):
+                            self.load_mdl(content_manager, context, obj)
+                        elif model_type == ".glm":
+                            self.load_glm(content_manager, context, obj)
+        finally:
+            win.progress_end()
 
         return {'FINISHED'}
 

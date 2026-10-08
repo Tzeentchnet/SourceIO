@@ -11,7 +11,6 @@ from .operators.flex_operators import classes as flex_classes
 from .operators.goldsrc_operators import SOURCEIO_OT_GBSPImport
 from .operators.shared_operators import shared_classes
 from .operators.source1_operators import (SOURCEIO_OT_BSPImport,
-                                          SOURCEIO_OT_DMXImporter,
                                           SOURCEIO_OT_MDLImport)
 from .operators.source1_operators import (SOURCEIO_OT_SkyboxImport,
                                           SOURCEIO_OT_VMTImport,
@@ -24,8 +23,8 @@ from .operators.source2_operators import (SOURCEIO_OT_VMAPImport,
                                           SOURCEIO_OT_VPK_VMAPImport,
                                           SOURCEIO_OT_VTEXImport,
                                           SOURCEIO_OT_DMXCameraImport)
+from .operators.dragndrop import file_handler_classes
 from .ui.export_nodes import register_nodes, unregister_nodes
-from .utils.bpy_utils import is_blender_4_1
 
 
 custom_icons = {}
@@ -134,7 +133,6 @@ classes = [
     # Source1 stuff
     SOURCEIO_OT_MDLImport,
     SOURCEIO_OT_BSPImport,
-    SOURCEIO_OT_DMXImporter,
 
     # Source2 stuff
     SOURCEIO_OT_DMXCameraImport,
@@ -158,27 +156,8 @@ classes = [
     # *vpk_classes,
     *shared_classes,
     *flex_classes,
+    *file_handler_classes,
 ]
-if is_blender_4_1():
-    from .operators.dragndrop import (
-        IMAGE_FH_vtf_import,
-        IMAGE_FH_vtex_import,
-        OBJECT_FH_mdl_import,
-        MATERIAL_FH_vmt_import,
-        OBJECT_FH_bsp_import,
-        OBJECT_FH_vmap_import,
-        OBJECT_FH_vmap_vpk_import,
-        MATERIAL_FH_vmat_import,
-    )
-
-    classes.append(IMAGE_FH_vtf_import)
-    classes.append(IMAGE_FH_vtex_import)
-    classes.append(OBJECT_FH_mdl_import)
-    classes.append(MATERIAL_FH_vmt_import)
-    classes.append(OBJECT_FH_bsp_import)
-    classes.append(OBJECT_FH_vmap_import)
-    classes.append(OBJECT_FH_vmap_vpk_import)
-    classes.append(MATERIAL_FH_vmat_import)
 
 register_, unregister_ = bpy.utils.register_classes_factory(classes)
 
@@ -221,6 +200,7 @@ def register():
 
 def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
+    bpy.types.IMAGE_MT_image.remove(vtf_export)
 
     # Taken from https://github.com/lasa01/Plumber/blob/master/plumber/__init__.py
     # if is_windows and False:

@@ -20,7 +20,6 @@ from .shaders.source2_shaders.dummy import DummyShader
 from .shaders import source1_shaders, source2_shaders, goldsrc_shaders
 from SourceIO.library.source2.blocks.kv3_block import KVBlock
 from SourceIO.library.utils.perf_sampler import timed
-from ..utils.bpy_utils import is_blender_4_3, is_blender_5
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('MaterialLoader')
@@ -130,13 +129,9 @@ class ShaderRegistry:
             return False
 
         material['source_loaded'] = True
-        if not is_blender_5():
-            material.use_nodes = True
         cls._clean_nodes(material)
-        if not is_blender_4_3():
-            material.blend_method = 'OPAQUE'
-            material.shadow_method = 'OPAQUE'
-        material.use_screen_refraction = False
+        material.surface_render_method = 'DITHERED'
+        material.use_raytrace_refraction = False
         material.refraction_depth = 0.2
         return True
 

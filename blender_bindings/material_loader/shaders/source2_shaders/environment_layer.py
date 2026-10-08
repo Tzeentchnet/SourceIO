@@ -5,7 +5,6 @@ import numpy as np
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 
 
 class CitadelEnvironmentLayer(Source2ShaderBase):
@@ -85,9 +84,7 @@ class CitadelEnvironmentLayer(Source2ShaderBase):
         self.connect_nodes(tint_node.outputs[0], shader.inputs['Base Color'])
 
         # Blender 4.2 changed blend & shadow method, plus made hashed default.
-        if not is_blender_4_3():
-            self.bpy_material.blend_method = 'HASHED'
-            self.bpy_material.shadow_method = 'HASHED'
+        self.set_blend_mode('HASHED')
         self.connect_nodes(albedo_node.outputs['Alpha'], tint_node.inputs['TintMask'])
 
         normal_roughness_node = self.create_node(Nodes.ShaderNodeTexImage, 'normal')

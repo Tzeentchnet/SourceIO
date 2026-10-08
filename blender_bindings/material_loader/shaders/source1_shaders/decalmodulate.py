@@ -4,7 +4,6 @@ import bpy
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 
 
 class DecalModulate(Source1ShaderBase):
@@ -38,15 +37,14 @@ class DecalModulate(Source1ShaderBase):
 
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
 
-        if not is_blender_4_3():
-            self.bpy_material.blend_method = 'BLEND'
-            self.bpy_material.shadow_method = 'NONE'
+        self.set_blend_mode('BLEND')
 
         self.bpy_material['DECAL'] = True
 
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         shader = self.create_node(Nodes.ShaderNodeBsdfTransparent, self.SHADER)
         self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
+        self.disable_shadow_casting()
 
         basetexture = self.basetexture
         print(basetexture)

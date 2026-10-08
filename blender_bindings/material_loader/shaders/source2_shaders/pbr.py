@@ -5,7 +5,6 @@ import numpy as np
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4, is_blender_4_3
 
 
 class PBR(Source2ShaderBase):
@@ -134,9 +133,7 @@ class PBR(Source2ShaderBase):
             color_map_node = self.create_texture_node(color_texture, "color")
             if self.flag_alpha_test:
                 self.connect_nodes(color_map_node.outputs[1], shader.inputs["Alpha"])
-                if not is_blender_4_3():
-                    self.bpy_material.blend_method = 'HASHED'
-                    self.bpy_material.shadow_method = 'HASHED'
+                self.set_blend_mode('HASHED')
             else:
                 self.connect_nodes(color_map_node.outputs[1],shader.inputs["Metallic"])
             uv_mapping = self.setup_uv_transform(self.albedo_texcoord_offset1, self.albedo_texcoord_scale1)
@@ -171,10 +168,7 @@ class PBR(Source2ShaderBase):
 
         if self.flag_self_illum and self.selfillum_scale > 0:
             selfillum_mask = self.selfillum_mask_texture
-            if is_blender_4():
-                e_color_socket = shader.inputs["Emission Color"]
-            else:
-                e_color_socket = shader.inputs["Emission"]
+            e_color_socket = shader.inputs["Emission Color"]
             if self.selfillum_albedo_factor == 1.0:
                 self.connect_nodes(color_map_output, e_color_socket)
             elif self.selfillum_albedo_factor > 0:

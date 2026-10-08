@@ -2,7 +2,8 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
 
 
@@ -92,22 +93,20 @@ class UnlitTwoTexture(Source1ShaderBase):
                 if self.texture2transform:
                     self.handle_transform(self.texture2transform, texture2_node.inputs[0])
                 # result = baseColor * baseColor2
-                twotex = self.create_node(Nodes.ShaderNodeMixRGB, 'twotex_mult')
-                twotex.blend_type = 'MULTIPLY'
-                twotex.inputs['Fac'].default_value = 1.0
-                self.connect_nodes(color_output, twotex.inputs['Color1'])
-                self.connect_nodes(texture2_node.outputs['Color'], twotex.inputs['Color2'])
-                color_output = twotex.outputs['Color']
+                twotex = self.create_mix_color('MULTIPLY', 'twotex_mult')
+                twotex.inputs[MIX_FACTOR].default_value = 1.0
+                self.connect_nodes(color_output, twotex.inputs[MIX_A])
+                self.connect_nodes(texture2_node.outputs['Color'], twotex.inputs[MIX_B])
+                color_output = twotex.outputs[MIX_RESULT]
 
             # ... * g_DiffuseModulation ($color)
             color = self.color or self.color2
             if color is not None and tuple(color[:3]) != (1.0, 1.0, 1.0):
-                color_mix = self.create_node(Nodes.ShaderNodeMixRGB, 'color_mult')
-                color_mix.blend_type = 'MULTIPLY'
-                color_mix.inputs['Fac'].default_value = 1.0
-                self.connect_nodes(color_output, color_mix.inputs['Color1'])
-                color_mix.inputs['Color2'].default_value = self.ensure_length(list(color[:3]), 4, 1.0)
-                color_output = color_mix.outputs['Color']
+                color_mix = self.create_mix_color('MULTIPLY', 'color_mult')
+                color_mix.inputs[MIX_FACTOR].default_value = 1.0
+                self.connect_nodes(color_output, color_mix.inputs[MIX_A])
+                color_mix.inputs[MIX_B].default_value = self.ensure_length(list(color[:3]), 4, 1.0)
+                color_output = color_mix.outputs[MIX_RESULT]
 
             self.connect_nodes(color_output, shader.inputs['Color'])
         else:

@@ -1,6 +1,6 @@
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes
+from SourceIO.blender_bindings.material_loader.shader_base import Nodes, MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
 from SourceIO.logger import SourceLogMan
 
@@ -159,15 +159,14 @@ class DetailSupportMixin(Source1ShaderBase):
         self.connect_nodes(mod2x.outputs[0], blend.inputs['B'])
 
         # baseColor.rgb *= that
-        multiply = self.create_node(Nodes.ShaderNodeMixRGB, 'DetailBlend')
-        multiply.blend_type = 'MULTIPLY'
-        multiply.inputs['Fac'].default_value = 1.0
-        self.connect_nodes(albedo_socket, multiply.inputs['Color1'])
-        self.connect_nodes(blend.outputs[0], multiply.inputs['Color2'])
+        multiply = self.create_mix_color('MULTIPLY', 'DetailBlend')
+        multiply.inputs[MIX_FACTOR].default_value = 1.0
+        self.connect_nodes(albedo_socket, multiply.inputs[MIX_A])
+        self.connect_nodes(blend.outputs[0], multiply.inputs[MIX_B])
         multiply.location = [-500, -60]
 
-        self.connect_nodes(multiply.outputs['Color'], next_socket)
-        return multiply.outputs['Color'], detail
+        self.connect_nodes(multiply.outputs[MIX_RESULT], next_socket)
+        return multiply.outputs[MIX_RESULT], detail
 
     def handle_detail(self, next_socket: bpy.types.NodeSocket, albedo_socket: bpy.types.NodeSocket, *, uv_node=None):
         if self.detailmode == TCOMBINE_MOD2X_SELECT_TWO_PATTERNS:

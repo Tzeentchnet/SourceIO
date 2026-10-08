@@ -12,8 +12,8 @@ from SourceIO.blender_bindings.models.common import merge_meshes, create_eyeball
 from SourceIO.blender_bindings.models.mdl44.import_mdl import create_armature
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
 from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, is_blender_4_1, get_or_create_material, ActionCurveFactory
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
+from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material, ActionCurveFactory
+from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
 from SourceIO.library.models.mdl.structs.header import StudioHDRFlags
 from SourceIO.library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
 from SourceIO.library.models.mdl.v49.flex_expressions import *
@@ -83,13 +83,10 @@ def import_model(content_manager: ContentManager, mdl: MdlV49, vtx: Vtx, vvd: Vv
             vertices = model_vertices[vtx_vertices]
             vertices_vertex = vertices['vertex']
 
-            mesh_data.from_pydata(vertices_vertex * scale, [], np.flip(indices_array).reshape((-1, 3)))
+            mesh_data.from_pydata(vertices_vertex * scale, [], np.flip(indices_array).reshape((-1, 3)), shade_flat=False)
             mesh_data.update()
 
-            mesh_data.polygons.foreach_set("use_smooth", np.ones(len(mesh_data.polygons), np.uint32))
-            mesh_data.normals_split_custom_set_from_vertices(vertices['normal'])
-            if not is_blender_4_1():
-                mesh_data.use_auto_smooth = True
+            mesh_data.set_custom_normals(vertices['normal'])
 
             material_remapper = np.zeros((material_indices_array.max() + 1,), dtype=np.uint32)
             for mat_id in np.unique(material_indices_array):
@@ -130,11 +127,7 @@ def import_model(content_manager: ContentManager, mdl: MdlV49, vtx: Vtx, vvd: Vv
 
                 weight_groups = {bone.name: mesh_obj.vertex_groups.new(name=bone.name) for bone in mdl.bones}
 
-                for n, (bone_indices, bone_weights) in enumerate(zip(vertices['bone_id'], vertices['weight'])):
-                    for bone_index, weight in zip(bone_indices, bone_weights):
-                        if weight > 0:
-                            bone_name = mdl.bones[bone_index].name
-                            weight_groups[bone_name].add([n], weight, 'REPLACE')
+                set_vertex_weights([weight_groups[bone.name] for bone in mdl.bones], vertices["bone_id"], vertices["weight"])
 
                 flexes = []
                 for mesh in model.meshes:

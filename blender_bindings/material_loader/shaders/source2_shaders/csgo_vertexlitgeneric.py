@@ -5,7 +5,6 @@ import bpy
 
 from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import is_blender_4_3
 from SourceIO.library.source2.blocks.kv3_block import KVBlock
 
 
@@ -112,20 +111,14 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
                 "g_flMetalness", 0)
 
         if material_data.get_int_property("F_ALPHA_TEST", 0) and alpha_output is not None:
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'CLIP'
-                self.bpy_material.shadow_method = 'CLIP'
-                self.bpy_material.alpha_threshold = material_data.get_float_property("g_flAlphaTestReference", 0.5)
+            self.set_blend_mode('CLIP')
+            alpha_test_ref = material_data.get_float_property("g_flAlphaTestReference", 0.5)
+            self.connect_nodes(self.insert_alpha_clip(alpha_output, alpha_test_ref), shader.inputs["Alpha"])
+
+        elif material_data.get_int_property("S_TRANSLUCENT", 0) and alpha_output is not None:
+            self.set_blend_mode('HASHED')
             self.connect_nodes(alpha_output, shader.inputs["Alpha"])
 
         elif material_data.get_int_property("S_TRANSLUCENT", 0) and alpha_output is not None:
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'CLIP'
-            self.connect_nodes(alpha_output, shader.inputs["Alpha"])
-
-        elif material_data.get_int_property("S_TRANSLUCENT", 0) and alpha_output is not None:
-            if not is_blender_4_3():
-                self.bpy_material.blend_method = 'HASHED'
-                self.bpy_material.shadow_method = 'CLIP'
+            self.set_blend_mode('HASHED')
             self.connect_nodes(alpha_output, shader.inputs["Alpha"])

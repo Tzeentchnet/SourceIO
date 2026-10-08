@@ -2,7 +2,8 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import ExtraMaterialParameters, Nodes
+from SourceIO.blender_bindings.material_loader.shader_base import (ExtraMaterialParameters, Nodes, MIX_FACTOR,
+                                                                   MIX_A, MIX_B, MIX_RESULT)
 from SourceIO.library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
 from .lightmap_generic import LightmapGeneric
 
@@ -554,12 +555,11 @@ class Lightmapped4WayBlend(LightmapGeneric):
             factor = self._blend_factors[layer - 1]
             if factor is None:
                 continue
-            mix = self.create_node(Nodes.ShaderNodeMixRGB, f'$basetexture{layer + 1} blend')
-            mix.blend_type = 'MIX'
-            self.connect_nodes(factor, mix.inputs['Fac'])
-            self.connect_nodes(albedo_output, mix.inputs['Color1'])
-            self.connect_nodes(nodes[layer].outputs['Color'], mix.inputs['Color2'])
-            albedo_output = mix.outputs['Color']
+            mix = self.create_mix_color('MIX', f'$basetexture{layer + 1} blend')
+            self.connect_nodes(factor, mix.inputs[MIX_FACTOR])
+            self.connect_nodes(albedo_output, mix.inputs[MIX_A])
+            self.connect_nodes(nodes[layer].outputs['Color'], mix.inputs[MIX_B])
+            albedo_output = mix.outputs[MIX_RESULT]
 
             if blend_alpha:
                 alpha_mix = self.create_node(Nodes.ShaderNodeMix,
@@ -625,40 +625,36 @@ class Lightmapped4WayBlend(LightmapGeneric):
                               self.detailtexturetransform, uv_node)
 
         # 2.0 * detailColor
-        mod2x = self.create_node(Nodes.ShaderNodeMixRGB, 'detail mod2x')
-        mod2x.blend_type = 'MULTIPLY'
-        mod2x.inputs['Fac'].default_value = 1.0
-        self.connect_nodes(detail_node.outputs['Color'], mod2x.inputs['Color1'])
-        mod2x.inputs['Color2'].default_value = (2.0, 2.0, 2.0, 1.0)
+        mod2x = self.create_mix_color('MULTIPLY', 'detail mod2x')
+        mod2x.inputs[MIX_FACTOR].default_value = 1.0
+        self.connect_nodes(detail_node.outputs['Color'], mod2x.inputs[MIX_A])
+        mod2x.inputs[MIX_B].default_value = (2.0, 2.0, 2.0, 1.0)
 
         # lerp( 1.0, that, fBlendFactor )
-        strength = self.create_node(Nodes.ShaderNodeMixRGB, '$detailblendfactor')
-        strength.blend_type = 'MIX'
+        strength = self.create_mix_color('MIX', '$detailblendfactor')
         if isinstance(factor, float):
-            strength.inputs['Fac'].default_value = factor
+            strength.inputs[MIX_FACTOR].default_value = factor
         else:
-            self.connect_nodes(factor, strength.inputs['Fac'])
-        strength.inputs['Color1'].default_value = (1.0, 1.0, 1.0, 1.0)
-        self.connect_nodes(mod2x.outputs['Color'], strength.inputs['Color2'])
+            self.connect_nodes(factor, strength.inputs[MIX_FACTOR])
+        strength.inputs[MIX_A].default_value = (1.0, 1.0, 1.0, 1.0)
+        self.connect_nodes(mod2x.outputs[MIX_RESULT], strength.inputs[MIX_B])
 
-        combine = self.create_node(Nodes.ShaderNodeMixRGB, 'DetailBlend')
-        combine.blend_type = 'MULTIPLY'
-        combine.inputs['Fac'].default_value = 1.0
-        self.connect_nodes(albedo_output, combine.inputs['Color1'])
-        self.connect_nodes(strength.outputs['Color'], combine.inputs['Color2'])
-        return combine.outputs['Color']
+        combine = self.create_mix_color('MULTIPLY', 'DetailBlend')
+        combine.inputs[MIX_FACTOR].default_value = 1.0
+        self.connect_nodes(albedo_output, combine.inputs[MIX_A])
+        self.connect_nodes(strength.outputs[MIX_RESULT], combine.inputs[MIX_B])
+        return combine.outputs[MIX_RESULT]
 
     def _apply_color2(self, albedo_output):
         """``baseColor *= $color2`` -- diffuse modulation, values may exceed 1."""
         color2 = self.color2
         if color2 is None or tuple(color2[:3]) == (1.0, 1.0, 1.0):
             return albedo_output
-        modulate = self.create_node(Nodes.ShaderNodeMixRGB, '$color2')
-        modulate.blend_type = 'MULTIPLY'
-        modulate.inputs['Fac'].default_value = 1.0
-        self.connect_nodes(albedo_output, modulate.inputs['Color1'])
-        modulate.inputs['Color2'].default_value = color2
-        return modulate.outputs['Color']
+        modulate = self.create_mix_color('MULTIPLY', '$color2')
+        modulate.inputs[MIX_FACTOR].default_value = 1.0
+        self.connect_nodes(albedo_output, modulate.inputs[MIX_A])
+        modulate.inputs[MIX_B].default_value = color2
+        return modulate.outputs[MIX_RESULT]
 
     def _setup_normals(self, shader, uv_node, uv_out, blend_output):
         """The four-layer normal chain, scaled by ``$textureN_bumpblendfactor``.
@@ -693,25 +689,24 @@ class Lightmapped4WayBlend(LightmapGeneric):
                     normal_source = node.outputs['Color']
                 continue
 
-            mix = self.create_node(Nodes.ShaderNodeMixRGB, f'layer{layer + 1} normal blend')
-            mix.blend_type = 'MIX'
+            mix = self.create_mix_color('MIX', f'layer{layer + 1} normal blend')
             bump_factor = self._bumpblendfactor(layer)
             if bump_factor == 1.0:
-                self.connect_nodes(factor, mix.inputs['Fac'])
+                self.connect_nodes(factor, mix.inputs[MIX_FACTOR])
             else:
                 scaled = self.create_node(Nodes.ShaderNodeMath,
                                           f'$texture{layer + 1}_bumpblendfactor')
                 scaled.operation = 'MULTIPLY'
                 scaled.inputs[1].default_value = bump_factor
                 self.connect_nodes(factor, scaled.inputs[0])
-                self.connect_nodes(scaled.outputs[0], mix.inputs['Fac'])
+                self.connect_nodes(scaled.outputs[0], mix.inputs[MIX_FACTOR])
             if normal_source is None:
                 # Nothing below this layer supplies a normal; lerp up from flat.
-                mix.inputs['Color1'].default_value = FLAT_NORMAL
+                mix.inputs[MIX_A].default_value = FLAT_NORMAL
             else:
-                self.connect_nodes(normal_source, mix.inputs['Color1'])
-            self.connect_nodes(node.outputs['Color'], mix.inputs['Color2'])
-            normal_source = mix.outputs['Color']
+                self.connect_nodes(normal_source, mix.inputs[MIX_A])
+            self.connect_nodes(node.outputs['Color'], mix.inputs[MIX_B])
+            normal_source = mix.outputs[MIX_RESULT]
 
         normal_map = self.create_node(Nodes.ShaderNodeNormalMap)
         self.connect_nodes(normal_source, normal_map.inputs['Color'])

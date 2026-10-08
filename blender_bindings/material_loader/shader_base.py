@@ -23,7 +23,6 @@ class Nodes:
     ShaderNodeBsdfAnisotropic = 'ShaderNodeBsdfAnisotropic'
     ShaderNodeBsdfDiffuse = 'ShaderNodeBsdfDiffuse'
     ShaderNodeBsdfGlass = 'ShaderNodeBsdfGlass'
-    ShaderNodeBsdfGlossy = 'ShaderNodeBsdfGlossy'
     ShaderNodeBsdfHair = 'ShaderNodeBsdfHair'
     ShaderNodeBsdfHairPrincipled = 'ShaderNodeBsdfHairPrincipled'
     ShaderNodeBsdfPrincipled = 'ShaderNodeBsdfPrincipled'
@@ -31,7 +30,6 @@ class Nodes:
     ShaderNodeBsdfToon = 'ShaderNodeBsdfToon'
     ShaderNodeBsdfTranslucent = 'ShaderNodeBsdfTranslucent'
     ShaderNodeBsdfTransparent = 'ShaderNodeBsdfTransparent'
-    ShaderNodeBsdfVelvet = 'ShaderNodeBsdfVelvet'
     ShaderNodeBump = 'ShaderNodeBump'
     ShaderNodeCameraData = 'ShaderNodeCameraData'
     ShaderNodeClamp = 'ShaderNodeClamp'
@@ -55,7 +53,6 @@ class Nodes:
     ShaderNodeMapping = 'ShaderNodeMapping'
     ShaderNodeMath = 'ShaderNodeMath'
     ShaderNodeMix = 'ShaderNodeMix'
-    ShaderNodeMixRGB = 'ShaderNodeMixRGB'
     ShaderNodeMixShader = 'ShaderNodeMixShader'
     ShaderNodeNewGeometry = 'ShaderNodeNewGeometry'
     ShaderNodeNormal = 'ShaderNodeNormal'
@@ -85,9 +82,7 @@ class Nodes:
     ShaderNodeTexIES = 'ShaderNodeTexIES'
     ShaderNodeTexImage = 'ShaderNodeTexImage'
     ShaderNodeTexMagic = 'ShaderNodeTexMagic'
-    ShaderNodeTexMusgrave = 'ShaderNodeTexMusgrave'
     ShaderNodeTexNoise = 'ShaderNodeTexNoise'
-    ShaderNodeTexPointDensity = 'ShaderNodeTexPointDensity'
     ShaderNodeTexSky = 'ShaderNodeTexSky'
     ShaderNodeTexVoronoi = 'ShaderNodeTexVoronoi'
     ShaderNodeTexWave = 'ShaderNodeTexWave'
@@ -109,6 +104,12 @@ class Nodes:
     ShaderNodeWavelength = 'ShaderNodeWavelength'
     ShaderNodeWireframe = 'ShaderNodeWireframe'
 
+
+# Socket indices of ShaderNodeMix with data_type='RGBA'
+MIX_FACTOR = 0
+MIX_A = 6
+MIX_B = 7
+MIX_RESULT = 2
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('MaterialLoader')
@@ -148,30 +149,28 @@ class ShaderBase:
             append_blend(str(asset_path), "node_groups")
 
     def insert_object_tint(self, color_output_socket, tint_amount=1.0, tint_mask_output: None | object = None):
-        color_multiply_node = self.create_node(Nodes.ShaderNodeMixRGB)
-        color_multiply_node.blend_type = 'MULTIPLY'
+        color_multiply_node = self.create_mix_color('MULTIPLY')
         if tint_mask_output is None:
-            color_multiply_node.inputs[0].default_value = tint_amount
+            color_multiply_node.inputs[MIX_FACTOR].default_value = tint_amount
         else:
-            self.connect_nodes(tint_mask_output, color_multiply_node.inputs[0])
-        self.connect_nodes(color_output_socket, color_multiply_node.inputs[1])
+            self.connect_nodes(tint_mask_output, color_multiply_node.inputs[MIX_FACTOR])
+        self.connect_nodes(color_output_socket, color_multiply_node.inputs[MIX_A])
         object_color = self.create_node(Nodes.ShaderNodeObjectInfo)
-        self.connect_nodes(object_color.outputs["Color"], color_multiply_node.inputs[2])
+        self.connect_nodes(object_color.outputs["Color"], color_multiply_node.inputs[MIX_B])
 
-        return color_multiply_node.outputs[0]
+        return color_multiply_node.outputs[MIX_RESULT]
 
     def insert_generic_tint(self, color_output_socket, tint: tuple[float, ...], tint_amount=1.0,
                             tint_mask_output=None | object):
-        color_multiply_node = self.create_node(Nodes.ShaderNodeMixRGB)
-        color_multiply_node.blend_type = 'MULTIPLY'
+        color_multiply_node = self.create_mix_color('MULTIPLY')
         if tint_mask_output is None:
-            color_multiply_node.inputs[0].default_value = tint_amount
+            color_multiply_node.inputs[MIX_FACTOR].default_value = tint_amount
         else:
-            self.connect_nodes(tint_mask_output, color_multiply_node.inputs[0])
-        self.connect_nodes(color_output_socket, color_multiply_node.inputs[1])
-        color_multiply_node.inputs[2].default_value = tint
+            self.connect_nodes(tint_mask_output, color_multiply_node.inputs[MIX_FACTOR])
+        self.connect_nodes(color_output_socket, color_multiply_node.inputs[MIX_A])
+        color_multiply_node.inputs[MIX_B].default_value = tint
 
-        return color_multiply_node.outputs[0]
+        return color_multiply_node.outputs[MIX_RESULT]
 
     @staticmethod
     def ensure_length(array: list, length, filler):
@@ -220,11 +219,8 @@ class ShaderBase:
 
     @staticmethod
     def split_to_channels(image):
-        if bpy.app.version > (2, 83, 0):
-            buffer = np.zeros(image.size[0] * image.size[1] * 4, np.float32)
-            image.pixels.foreach_get(buffer)
-        else:
-            buffer = np.array(image.pixels[:])
+        buffer = np.zeros(image.size[0] * image.size[1] * 4, np.float32)
+        image.pixels.foreach_get(buffer)
         return buffer[0::4], buffer[1::4], buffer[2::4], buffer[3::4],
 
     def load_texture_or_default(self, file: str, default_color: tuple = (1.0, 1.0, 1.0, 1.0)):
@@ -247,40 +243,43 @@ class ShaderBase:
         old_name = TinyPath(old_name)
         return f'{old_name.with_name(old_name.stem)}_{suffix}.{ext}'
 
-    def set_blend_mode(self, mode: str, alpha_threshold: float | None = None):
-        """Configure material transparency across Blender 4.0 - 5.2.
+    def set_blend_mode(self, mode: str):
+        """Configure material transparency.
 
-        The relevant API changed twice:
-
-        * 4.2 added ``surface_render_method`` (DITHERED/BLENDED) and made
-          ``blend_method`` a deprecated no-op for rendering -- setting it alone has
-          no visible effect from 4.2 onwards.
-        * 4.3 removed ``shadow_method`` entirely (absent in 5.x).
-
-        ``mode`` is one of ``'OPAQUE'``, ``'CLIP'``, ``'HASHED'`` or ``'BLEND'``
-        using the legacy vocabulary; it is translated to whichever API the running
-        Blender actually honours.
+        ``mode`` is ``'OPAQUE'``, ``'CLIP'``, ``'HASHED'`` or ``'BLEND'``. Only ``'BLEND'`` produces true alpha
+        blending, everything else is dithered. Alpha clipping has to be built in nodes, see ``insert_alpha_clip``.
         """
-        material = self.bpy_material
+        self.bpy_material.surface_render_method = 'BLENDED' if mode == 'BLEND' else 'DITHERED'
 
-        # 4.2+: the only property that actually affects rendering.
-        # DITHERED covers OPAQUE/CLIP/HASHED (stochastic), BLENDED is true alpha
-        # blending. Feature-detect rather than trusting the version alone, since
-        # these properties were added/removed independently of each other.
-        if hasattr(material, 'surface_render_method'):
-            material.surface_render_method = 'BLENDED' if mode == 'BLEND' else 'DITHERED'
+    def insert_alpha_clip(self, alpha_socket, threshold: float):
+        clip_node = self.create_node(Nodes.ShaderNodeMath)
+        clip_node.operation = 'GREATER_THAN'
+        self.connect_nodes(alpha_socket, clip_node.inputs[0])
+        clip_node.inputs[1].default_value = threshold
+        return clip_node.outputs[0]
 
-        # Pre-4.2 this is what EEVEE honoured; on 4.2+ it is a deprecated alias
-        # that is harmless to keep in sync.
-        if hasattr(material, 'blend_method'):
-            material.blend_method = mode
+    def disable_shadow_casting(self):
+        """Make the material invisible to shadow rays. Must be called after the surface shader is connected."""
+        nodes = self.bpy_material.node_tree.nodes
+        output = next((node for node in nodes if node.bl_idname == Nodes.ShaderNodeOutputMaterial
+                       and node.is_active_output), None)
+        if output is None:
+            return
+        surface = output.inputs['Surface']
+        light_path = self.create_node(Nodes.ShaderNodeLightPath)
+        transparent = self.create_node(Nodes.ShaderNodeBsdfTransparent)
+        shadow_mix = self.create_node(Nodes.ShaderNodeMixShader)
+        self.connect_nodes(light_path.outputs['Is Shadow Ray'], shadow_mix.inputs[0])
+        if surface.links:
+            self.connect_nodes(surface.links[0].from_socket, shadow_mix.inputs[1])
+        self.connect_nodes(transparent.outputs[0], shadow_mix.inputs[2])
+        self.connect_nodes(shadow_mix.outputs[0], surface)
 
-        # Removed in 4.3.
-        if hasattr(material, 'shadow_method'):
-            material.shadow_method = 'OPAQUE' if mode == 'OPAQUE' else 'HASHED'
-
-        if alpha_threshold is not None and hasattr(material, 'alpha_threshold'):
-            material.alpha_threshold = alpha_threshold
+    def create_mix_color(self, blend_type: str = 'MIX', name: str = None):
+        node = self.create_node(Nodes.ShaderNodeMix, name)
+        node.data_type = 'RGBA'
+        node.blend_type = blend_type
+        return node
 
     def clean_nodes(self):
         for node in self.bpy_material.node_tree.nodes:

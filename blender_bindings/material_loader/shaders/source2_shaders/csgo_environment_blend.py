@@ -80,7 +80,6 @@ class CSGOEnvironmentBlend(Source2ShaderBase):
             self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail0"])
             self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail1"])
             shader.inputs["F_DETAIL_TEXTURE"].default_value = 2.0
-            shader.inputs["g_flDetailBlendFactor"].default_value = 2
 
         if ExtraMaterialParameters.USE_OBJECT_TINT in extra_parameters:
             object_color = self.create_node(Nodes.ShaderNodeObjectInfo)

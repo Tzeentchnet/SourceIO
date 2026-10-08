@@ -82,10 +82,10 @@ class CSGOStaticOverlay(Source2ShaderBase):
             tint_texture = self._get_texture("g_tSelfIllumMask", (0, 0, 0, 1), True, False)
             self.connect_nodes(tint_texture.outputs[0], shader.inputs["TextureSelfIllumMask"])
 
-            shader.inputs["g_vSelfIllumTint"].default_value = material_data.get_vector_property(
+            shader.inputs["SelfIllumTint"].default_value = material_data.get_vector_property(
                 "g_vSelfIllumTint", (1, 1, 1, 1))
 
-            shader.inputs["g_flSelfIllumScale"].default_value = material_data.get_float_property(
+            shader.inputs["Emission Strength"].default_value = material_data.get_float_property(
                 "g_flSelfIllumScale", 1)
 
         tint = material_data.get_vector_property("g_vColorTint", None)

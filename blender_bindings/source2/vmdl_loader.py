@@ -270,17 +270,18 @@ def load_external_mesh(content_manager: ContentManager, model_resource: Compiled
     morph_block = None
     texture = None
     if ("m_morphSet", "m_pMorphSet") in data_block:
-        if morph_set_path := data_block['m_morphSet', "m_pMorphSet"] is not None:
+        if (morph_set_path := data_block['m_morphSet', "m_pMorphSet"]) is not None:
             morph_resource = mesh_resource.get_child_resource(morph_set_path, content_manager, CompiledMorphResource)
             if morph_resource is not None:
                 morph_block = morph_resource.get_block(MorphBlock, block_name='DATA')
     else:
-        morph_block, = mesh_resource.get_block(MorphBlock, block_name='MRPH')
+        morph_block = mesh_resource.get_block(MorphBlock, block_name='MRPH')
 
     if morph_block:
         morph_texture = model_resource.get_child_resource(morph_block['m_pTextureAtlas'], content_manager,
                                                           CompiledTextureResource)
-        texture, _ = morph_texture.get_texture_data(0)
+        if morph_texture is not None:
+            texture, _ = morph_texture.get_texture_data(0)
         if texture is None:
             logging.error(f'Failed to find {morph_block["m_pTextureAtlas"]!r} morf texture')
 

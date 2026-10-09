@@ -60,7 +60,7 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   * *Graph clips* in the VMDL import dialog (with *Import animations*) takes the model's clips whose path or name matches the patterns, for example `idle*, run_n_*`, or `*` for all of them (about a minute for a CS2 agent).
   * *File > Import > Source Engine Assets > Source2 animation clip* puts clip files onto the selected armature. Weapons need this route, because their animation comes from the second track set of viewmodel and menu clips, which the weapon's own model doesn't list.
 
-  Additive clips and root motion are supported, and each action records the clip's path. On 138 clips (the chicken, a CT agent and an AK-47), the result matches VRF's glTF export within 1e-4 units and 0.002°.
+  Additive clips and root motion are supported, and each action records the clip's path. The clip's events (sounds, particles, gameplay IDs) become pose markers on the action at their start frame. On 138 clips (the chicken, a CT agent and an AK-47), the result matches VRF's glTF export within 1e-4 units and 0.002°.
 * **GoldSrc animations.** All sequences embedded in a GoldSrc model are imported as actions when *Load animations* is enabled. Previously only a sequence named `walk1` was imported, and its values were wrong.
 * **More Source 2 texture formats.** ETC2, ETC2_EAC, R11_EAC and RG11_EAC.
 * **Command-line import.** `blender -c sourceio import ...` (see above).
@@ -106,7 +106,7 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 python tests/fetch_samples.py
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--filter TEXT] [--json report.json]
 ```
-Current result: 88 pass, 5 warn (only because game content isn't included), 0 fail.
+Current result: 87 pass, 6 warn (only because game content isn't included), 0 fail.
 
 `tests/blender_tests/run_game_imports.py` imports models and maps straight from an installed game through its own search paths. With Team Fortress 2 (9 models, including HL2's dog, and 4 maps), all 13 pass:
 ```

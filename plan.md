@@ -11,10 +11,16 @@ Start here in a new session. Keep this section current: when an item is done, re
 
 State (2026-10-08): rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2), round 8 as [5.7.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.1-blender5.2), and round 9 (AnimGraph 2 clips) as [5.7.2-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.2-blender5.2); and rounds 10 (relative imports), 11 (clip events, small fixes), 12 (upstream #477 adaptations) and 13 (flex sliders, rim light, custom normals) as [5.8.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.8.0-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). Rounds 14 (CS2 materials, KNOWN sample status), 15 (CS2 texture gaps), 16 (generic.vfx, UV transforms), 17 (3D skyboxes, aggregate fragments) and 18 (full-resolution alpha clips, light blockers, world-node names) are released as [5.9.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.9.0-blender5.2) (the Windows package was installed in a clean profile and imported the HL2 dog and de_dust2 with its skybox). Rounds 19 (CS2 unlit materials, shadow-only light blockers) and 20 (CS2 sky, sun direction and light units) are on `master`, unreleased. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
 
-Checks, with the current baseline:
+Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
 
 ```
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 265 pass
+blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 442/442 modules, register/unregister/register OK
+blender -b --factory-startup --python tests/e2e/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
+blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders with the 3D skybox, 2 hidden collections (140–155 s)
+blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 263 pass (tests/archive left out)
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_flex_controllers', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_skins', argv=['x'], exit=False)"   # 7 pass
@@ -23,12 +29,6 @@ cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 26 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 6 pass
-blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
-blender -b --factory-startup --python tests/blender_tests/run_renamed_smoke.py                                       # 442/442 modules, register/unregister/register OK
-blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
-blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
-blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders with the 3D skybox, 2 hidden collections (140–155 s)
-blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 ```
 
 ### Actionable
@@ -74,13 +74,15 @@ The Source 1 / Source 2 export plan in [TODO.md](TODO.md); not started.
 
 ## Verification
 
-Every change must pass the unit tests and `run_renamed_smoke.py` from the checks under Next. The smoke test loads the shipped files under another package name, imports every module, then runs register → unregister → register; it exits with 1 on any failure. Run the sample, game and Blender test suites when the change touches what they cover.
+The end-to-end runners in `tests/e2e/` are the main gate: `run_renamed_smoke.py` (the shipped files under another package name: every module imported, then register → unregister → register), `run_sample_imports.py` (every fetched sample through the real operators) and `run_game_imports.py` (models and maps from an installed game). They fail when an import raises, logs an unexpected error, creates nothing or decodes a texture's top mip wrongly; they don't compare counts or values. Every change must pass the smoke test and the unit tests; run the sample, game and Blender suites when the change touches what they cover.
+
+Unit tests that an E2E run already covers move to `tests/archive/` (its README says why each one moved). A plain `pytest SourceIO/tests` leaves the archive out (`tests/conftest.py`); `pytest SourceIO/tests/archive` runs it (2 pass).
 
 Real-asset samples (hash-verified downloads into the git-ignored `samples/`):
 
 ```
 "<blender>/5.2/python/bin/python.exe" -I tests/fetch_samples.py
-blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--filter TEXT] [--json report.json]
+blender -b --factory-startup --python tests/e2e/run_sample_imports.py -- [--filter TEXT] [--json report.json]
 ```
 
 ## Round 1 (branch `blender-5.2-modernization`)
@@ -407,3 +409,11 @@ From the Next list, item 2 (no sky, uncalibrated lights). Surveyed `env_sky` and
 | Tint helper | `insert_generic_tint`'s `tint_mask_output=None \| object` made the default a `types.UnionType`, so a call without a mask (`blend.vfx` with a color tint) connected a type. Now `= None`. |
 
 `tests/blender_tests/test_source2_lights.py` (6 tests): the sun along the Source forward axis at π × brightness × brightnessscale with its angular diameter; EV brightness for the three CS2 lights; an omni2 spot with a roll along the forward axis; the visible sky as the world (strength, yaw, tint) over a disabled one, and a disabled one used without a visible one; and a Cycles render of a compass sky looking level toward several azimuths, with and without a 90° yaw. All 6 fail on the round 19 code. Unit tests: 265 pass. Blender tests: armatures 10, flex 10, skins 7, material paths 7, custom normals 3, Source 2 materials 26, Source 2 maps 10, Source 2 lights 6. Smoke test: 442/442 modules, clean. CS2: 12 PASS / 0 WARN / 0 FAIL. de_dust2 with every placeholder: PASS, 698/698, 4679 objects, 155.5 s (139.7 s; the test suites ran alongside). Scene saved as `E:/Tests/de_dust2_round20.blend`. Samples and TF2 not rerun (no Source 1 code changed; the `shader_base.py` change only fixes a default).
+
+## Round 21 (2026-10-09, end-to-end tests first)
+
+The E2E runners (`run_sample_imports.py`, `run_game_imports.py`, `run_renamed_smoke.py`) move from `tests/blender_tests/` to `tests/e2e/`, so `tests/blender_tests/` holds only the Blender unit tests; Checks under Next lists them first. Unit tests that an E2E run already covers move to `tests/archive/`, runnable on demand.
+
+The rule for archiving: a regression in what the test checks would fail an E2E run. Without stored baselines, those runs fail only on a raised import, a logged error, an import that creates nothing, a top-mip pixel mismatch or a broken renamed-package import or register, so two tests qualify: `kv1/test_kv1_r.py` (CS2 gameinfo search paths with duplicate keys; every CS2 game run mounts through the real `gameinfo.gi`, and `test_kv1_parser.py` covers duplicate keys) and `test_relative_imports.py` (a static scan that the smoke test's `SourceIO` import hook supersedes). The rest check values the runs don't compare (animation and block counts, bone roles, transforms, node wiring), code no sample reaches (v49 frame animations, synthetic clips, BSP overlays), parser and decoder edge cases, or the isolated import order. Comparing E2E results with stored baselines would let more move (the dog `.ani` counts, for instance); not done.
+
+`tests/conftest.py` skips `tests/archive/` unless it is named on the command line. Unit tests: 263 pass (265 before; the archive's 2 pass on their own). From `tests/e2e/`: smoke test 442/442 modules, clean; samples 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL; CS2 12 PASS / 0 WARN / 0 FAIL; TF2 13 PASS / 0 WARN / 0 FAIL. Blender tests unchanged: armatures 10, flex 10, skins 7, material paths 7, custom normals 3, Source 2 materials 26, Source 2 maps 10, Source 2 lights 6.

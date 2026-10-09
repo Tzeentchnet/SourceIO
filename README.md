@@ -123,20 +123,20 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 
 ## Testing
 `tests/fetch_samples.py` downloads 104 hash-verified sample assets (about 17 MB) from public repositories into the git-ignored `samples/` folder.
-`tests/blender_tests/run_sample_imports.py` imports each one headlessly through the real operators. For every texture, it also checks that the imported pixels match SourceIO's own decode:
+`tests/e2e/run_sample_imports.py` imports each one headlessly through the real operators. For every texture, it also checks that the imported pixels match SourceIO's own decode:
 ```
 python tests/fetch_samples.py
-blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--filter TEXT] [--json report.json]
+blender -b --factory-startup --python tests/e2e/run_sample_imports.py -- [--filter TEXT] [--json report.json]
 ```
 Current result: 87 pass, 6 warn (only because game content isn't included), 0 fail.
 
-`tests/blender_tests/run_game_imports.py` imports models and maps straight from an installed game through its own search paths. With Team Fortress 2 (9 models, including HL2's dog, and 4 maps), all 13 pass:
+`tests/e2e/run_game_imports.py` imports models and maps straight from an installed game through its own search paths. With Team Fortress 2 (9 models, including HL2's dog, and 4 maps), all 13 pass:
 ```
-blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf"
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf"
 ```
 It also takes a Source 2 game. With Counter-Strike 2 (9 models: agents, arms, weapons, chicken, hostage, a prop; and 3 maps), all 12 pass. `--load-placeholders` also loads every prop and world mesh a map places (de_dust2, de_inferno and cs_office load all of them without errors). `--clips "*"` imports every graph clip as well; all 9 models still pass:
 ```
-blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders] [--clips PATTERNS]
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders] [--clips PATTERNS]
 ```
 See [plan.md](plan.md) for details.
 

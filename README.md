@@ -66,9 +66,12 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 * **Command-line import.** `blender -c sourceio import ...` (see above).
 * **Source 1 overlays.** `info_overlay` decals (signs, posters, road markings) are imported into an `overlays` collection, clipped to the faces and displacements they cover. They were previously not imported at all. Controlled by *Load overlays* (on by default).
 * **Bone collections and colours** for Source 1 models (MDL v44–v52). Bones are sorted by what the engine uses them for: *Deform*, *Procedural*, *Bone merge*, *Attachments* and *Other*. Deform bones are coloured by side (left blue, right red, centre yellow), and the others by role.
+* **Flex controller panel** for Source 1 models with flexes (*SourceIO utils > Flex controllers* in the 3D view sidebar): a slider per face controller, with a left/right balance for stereo controllers, keying and reset buttons. Adapted from [REDxEYE/SourceIO#477](https://github.com/REDxEYE/SourceIO/pull/477) by hisprofile.
+* **One compact action per include model.** With *Include animations* and *Compact animations*, a character's animations are split into one action per source model (`heavy.mdl`, `heavy_animations.mdl`, `heavy_workshop_animations.mdl`), so animations that share a name across them keep it. Also from #477.
 * **`custom/*` search paths.** Every folder and VPK in a game's `custom` folder is mounted ahead of the game, as the engine does, so community content and workshop items resolve.
 
 ## Bug fixes
+* Combo flexes were clamped before being scaled back by *Flex Scale*, so they were too weak at a Flex Scale other than 1 (from #477).
 * Map props with a multi-frame `defaultanim` failed to pose, and GoldSrc animation import was broken (both regressions from the recent animation overhaul).
 * GoldSrc animations of 128 or more frames were decoded incorrectly. This broke models whose textures live in a separate `*T.mdl` file.
 * HDR Source 2 textures (BC6H, RGBA16161616F) were imported with reversed colour channels and squeezed into an 8-bit image. They are now pixel-exact.

@@ -5,22 +5,22 @@ from typing import NamedTuple
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.source1.bsp.entities.base_entity_classes import Base, parse_float_vector
-from SourceIO.blender_bindings.source1.bsp.entities.abstract_entity_handlers import AbstractEntityHandler
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material, add_material
-from SourceIO.blender_bindings.utils.fast_mesh import set_custom_normals
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.bsp.bsp_file import IBSPFile
-from SourceIO.library.source1.bsp.datatypes.model import QuakeBspModel
-from SourceIO.library.source1.bsp.lumps import Quake3BrushLump
-from SourceIO.library.source1.bsp.lumps.brush_lump import Quake3BrushSidesLump
-from SourceIO.library.source1.bsp.lumps.face_lump import Quake3FaceLump
-from SourceIO.library.source1.bsp.lumps.model_lump import Quake3ModelLump
-from SourceIO.library.source1.bsp.lumps.plane_lump import Quake3PlaneLump
-from SourceIO.library.source1.bsp.lumps.surf_edge_lump import Quake3IndicesLump
-from SourceIO.library.source1.bsp.lumps.texture_lump import Quake3TextureInfoLump
-from SourceIO.library.source1.bsp.lumps.vertex_lump import Quake3VertexLump
-from SourceIO.library.utils import SOURCE1_HAMMER_UNIT_TO_METERS, path_stem
+from ..base_entity_classes import Base, parse_float_vector
+from ..abstract_entity_handlers import AbstractEntityHandler
+from .....utils.bpy_utils import get_or_create_material, add_material
+from .....utils.fast_mesh import set_custom_normals
+from ......library.shared.content_manager import ContentManager
+from ......library.source1.bsp.bsp_file import IBSPFile
+from ......library.source1.bsp.datatypes.model import QuakeBspModel
+from ......library.source1.bsp.lumps import Quake3BrushLump
+from ......library.source1.bsp.lumps.brush_lump import Quake3BrushSidesLump
+from ......library.source1.bsp.lumps.face_lump import Quake3FaceLump
+from ......library.source1.bsp.lumps.model_lump import Quake3ModelLump
+from ......library.source1.bsp.lumps.plane_lump import Quake3PlaneLump
+from ......library.source1.bsp.lumps.surf_edge_lump import Quake3IndicesLump
+from ......library.source1.bsp.lumps.texture_lump import Quake3TextureInfoLump
+from ......library.source1.bsp.lumps.vertex_lump import Quake3VertexLump
+from ......library.utils import SOURCE1_HAMMER_UNIT_TO_METERS, path_stem
 
 
 # This file uses a more precise value for the <= than other games, not sure if intentional.

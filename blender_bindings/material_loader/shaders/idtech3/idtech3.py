@@ -2,11 +2,11 @@ from typing import Optional
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ShaderBase, MIX_FACTOR, MIX_A, MIX_B,
+from ...shader_base import (Nodes, ShaderBase, MIX_FACTOR, MIX_A, MIX_B,
                                                                     MIX_RESULT)
-from SourceIO.blender_bindings.utils.texture_utils import check_texture_cache
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils.tiny_path import TinyPath
+from ....utils.texture_utils import check_texture_cache
+from .....library.shared.content_manager import ContentManager
+from .....library.utils.tiny_path import TinyPath
 
 class IdTech3Shader(ShaderBase):
     SHADER: str = 'idtech3_shader'

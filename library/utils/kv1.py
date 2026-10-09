@@ -15,8 +15,8 @@ to one entry per part and duplicate keys survive in order. Escapes are off by de
 from enum import Enum
 from typing import Any, Iterator, Mapping, NamedTuple, Sequence, Union
 
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from .tiny_path import TinyPath
+from ...logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('KV1')

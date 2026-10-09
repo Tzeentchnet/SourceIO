@@ -6,9 +6,9 @@ from typing import Optional, Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.utils.bpy_utils import append_blend
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ..utils.bpy_utils import append_blend
+from ...library.utils.tiny_path import TinyPath
+from ...logger import SourceLogMan
 from .node_arranger import nodes_iterate
 
 

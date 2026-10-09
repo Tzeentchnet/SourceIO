@@ -1,15 +1,15 @@
 import traceback
 from dataclasses import dataclass, field
 
-from SourceIO.library.utils.file_utils import Buffer
-from SourceIO.library.models.mdl import Mdl
-from SourceIO.library.models.mdl.structs.attachment import Attachment
-from SourceIO.library.models.mdl.structs.bodygroup import BodyPart
-from SourceIO.library.models.mdl.structs.bone import Bone
-from SourceIO.library.models.mdl.structs.flex import FlexController, FlexOpType, FlexRule
-from SourceIO.library.models.mdl.structs.header import MdlHeaderV2531
-from SourceIO.library.models.mdl.structs.material import MaterialV2531
-from SourceIO.library.models.mdl.v49.flex_expressions import *
+from ....utils.file_utils import Buffer
+from .. import Mdl
+from ..structs.attachment import Attachment
+from ..structs.bodygroup import BodyPart
+from ..structs.bone import Bone
+from ..structs.flex import FlexController, FlexOpType, FlexRule
+from ..structs.header import MdlHeaderV2531
+from ..structs.material import MaterialV2531
+from ..v49.flex_expressions import *
 
 
 @dataclass(slots=True)

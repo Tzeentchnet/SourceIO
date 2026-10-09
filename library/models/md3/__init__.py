@@ -2,9 +2,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from SourceIO.library.shared.vector_types import Vector3
-from SourceIO.library.utils import Buffer
-from SourceIO.logger import SourceLogMan
+from ...shared.vector_types import Vector3
+from ...utils import Buffer
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger("MD3")

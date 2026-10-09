@@ -1,11 +1,11 @@
 import fnmatch
 from typing import Iterator, Optional, Union
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.archives import HFS
-from SourceIO.library.archives import HFSv2
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.utils import Buffer, TinyPath
+from ...app_id import SteamAppId
+from ....archives import HFS
+from ....archives import HFSv2
+from ..provider import ContentProvider
+from ....utils import Buffer, TinyPath
 
 
 class HFS2ContentProvider(ContentProvider):

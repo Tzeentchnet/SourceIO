@@ -6,7 +6,7 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.utils import Buffer, FileBuffer, TinyPath
+from ..utils import Buffer, FileBuffer, TinyPath
 
 
 def make_texture(indices, palette, use_alpha: bool = False) -> npt.NDArray[np.float32]:

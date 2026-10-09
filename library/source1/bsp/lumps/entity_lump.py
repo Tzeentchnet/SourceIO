@@ -1,11 +1,11 @@
 import charset_normalizer
 
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils import kv1
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ....utils import Buffer
+from ....utils import kv1
+from ....utils.tiny_path import TinyPath
+from .....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 

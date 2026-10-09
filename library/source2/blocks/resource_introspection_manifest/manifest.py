@@ -1,8 +1,8 @@
 
-from SourceIO.library.source2.blocks.base import BaseBlock
-from SourceIO.library.source2.blocks.resource_introspection_manifest.types import Struct, Enum
-from SourceIO.library.source2.utils.ntro_reader import NTROBuffer, ResourceIntrospectionInfo
-from SourceIO.library.utils import Buffer
+from ..base import BaseBlock
+from .types import Struct, Enum
+from ...utils.ntro_reader import NTROBuffer, ResourceIntrospectionInfo
+from ....utils import Buffer
 
 
 class ResourceIntrospectionManifest(BaseBlock):

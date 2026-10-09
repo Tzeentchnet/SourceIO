@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
-from SourceIO.library.shared.vector_types import Vector3
-from SourceIO.library.utils.file_utils import Buffer
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.lumps.face_lump import FaceLump
+from ....shared.vector_types import Vector3
+from ....utils.file_utils import Buffer
+from ..bsp_file import VBSPFile
+from ..lumps.face_lump import FaceLump
 
 DISP_INFO_FLAG_HAS_MULTIBLEND = 0x40000000
 DISP_INFO_FLAG_MAGIC = 0x80000000

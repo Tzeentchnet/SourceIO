@@ -2,14 +2,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from SourceIO.library.source2 import CompiledResource
-from SourceIO.library.source2.blocks.binary_blob import BinaryBlob
-from SourceIO.library.source2.keyvalues3.binary_keyvalues import write_valve_keyvalue3
-from SourceIO.library.source2.keyvalues3.enums import KV3Encodings, KV3Signature
-from SourceIO.library.source2.keyvalues3.types import Object, UInt32, Bool
-from SourceIO.library.utils import Buffer, MemoryBuffer
-from SourceIO.library.utils.pylib.compression import zstd_decompress
-from SourceIO.library.utils.pylib.mesh import decode_index_buffer
+from ... import CompiledResource
+from ..binary_blob import BinaryBlob
+from ...keyvalues3.binary_keyvalues import write_valve_keyvalue3
+from ...keyvalues3.enums import KV3Encodings, KV3Signature
+from ...keyvalues3.types import Object, UInt32, Bool
+from ....utils import Buffer, MemoryBuffer
+from ....utils.pylib.compression import zstd_decompress
+from ....utils.pylib.mesh import decode_index_buffer
 
 
 @dataclass(slots=True)

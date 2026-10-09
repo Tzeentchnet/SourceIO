@@ -4,8 +4,8 @@ from enum import IntEnum
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.shared.vector_types import Vector4
-from SourceIO.library.utils import Buffer
+from ....shared.vector_types import Vector4
+from ....utils import Buffer
 
 
 class FlexOpType(IntEnum):

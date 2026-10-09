@@ -1,8 +1,8 @@
 import numpy as np
 
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.utils import Buffer
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ....utils import Buffer
 
 
 @lump_tag(0x62, 'LUMP_LIGHTMAP_DATA_SKY')

@@ -4,7 +4,7 @@ from typing import Iterator, Mapping, Union
 
 __all__ = ["KVLexerException", "KVParserException", "ValveKeyValueParser", "KeyValuePair", "KVDataProxy"]
 
-from SourceIO.library.utils.tiny_path import TinyPath
+from .tiny_path import TinyPath
 
 KeyValuePair = tuple[str, Union[str, 'KeyValuePair', list['KeyValuePair']]]
 

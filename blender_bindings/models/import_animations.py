@@ -16,9 +16,9 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Euler, Quaternion, Vector
 
-from SourceIO.blender_bindings.utils.bpy_utils import ActionCurveFactory
-from SourceIO.library.models.mdl.load_animations import AnimationData
-from SourceIO.logger import SourceLogMan
+from ..utils.bpy_utils import ActionCurveFactory
+from ...library.models.mdl.load_animations import AnimationData
+from ...logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('BlenderAnimImport')

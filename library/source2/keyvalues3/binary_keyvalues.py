@@ -4,8 +4,8 @@ from typing import Any, Callable
 
 import numpy as np
 
-from SourceIO.library.utils import Buffer, MemoryBuffer, WritableMemoryBuffer
-from SourceIO.library.utils.pylib.compression import LZ4ChainDecoder, lz4_decompress, zstd_decompress_stream, \
+from ...utils import Buffer, MemoryBuffer, WritableMemoryBuffer
+from ...utils.pylib.compression import LZ4ChainDecoder, lz4_decompress, zstd_decompress_stream, \
     zstd_decompress, zstd_compress_stream, lz4_compress, zstd_compress, LZ4ChainEncoder
 from .enums import *
 from .types import *

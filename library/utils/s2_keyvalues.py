@@ -3,7 +3,7 @@ import typing
 import uuid
 from pathlib import Path
 
-from SourceIO.library.utils import TinyPath
+from . import TinyPath
 
 
 class Lexer:

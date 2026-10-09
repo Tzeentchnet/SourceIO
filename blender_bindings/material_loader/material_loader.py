@@ -4,11 +4,11 @@ from typing import Type, Any
 
 import bpy
 
-from SourceIO.library.models.mdl.v10.structs.texture import StudioTexture
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.source2 import CompiledMaterialResource
-from SourceIO.logger import SourceLogMan
+from ...library.models.mdl.v10.structs.texture import StudioTexture
+from ...library.shared.content_manager import ContentManager
+from ...library.source1.vmt import VMT
+from ...library.source2 import CompiledMaterialResource
+from ...logger import SourceLogMan
 from .node_arranger import nodes_iterate
 from .shader_base import ShaderBase, ExtraMaterialParameters
 from .shaders.goldsrc_shader_base import GoldSrcShaderBase
@@ -18,8 +18,8 @@ from .shaders.source2_shaders.dummy import DummyShader
 
 # noinspection PyUnresolvedReferences
 from .shaders import source1_shaders, source2_shaders, goldsrc_shaders
-from SourceIO.library.source2.blocks.kv3_block import KVBlock
-from SourceIO.library.utils.perf_sampler import timed
+from ...library.source2.blocks.kv3_block import KVBlock
+from ...library.utils.perf_sampler import timed
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('MaterialLoader')

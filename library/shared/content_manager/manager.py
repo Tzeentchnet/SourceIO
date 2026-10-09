@@ -2,20 +2,20 @@ from collections import Counter, OrderedDict
 from hashlib import md5
 from typing import Optional, TypeVar, Union, Iterator, Hashable
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors import detect_game
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers import register_provider
-from SourceIO.library.shared.content_manager.providers.hfs_provider import HFS1ContentProvider, HFS2ContentProvider
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
-from SourceIO.library.shared.content_manager.providers.source1_gameinfo_provider import Source1GameInfoProvider
-from SourceIO.library.shared.content_manager.providers.source2_gameinfo_provider import Source2GameInfoProvider
-from SourceIO.library.shared.content_manager.providers.vpk_provider import VPKContentProvider
-from SourceIO.library.shared.content_manager.providers.zip_content_provider import ZIPContentProvider
-from SourceIO.library.utils import Buffer, FileBuffer, TinyPath, backwalk_file_resolver, corrected_path
-from SourceIO.library.utils.path_utilities import get_mod_path
-from SourceIO.library.utils.singleton import SingletonMeta
-from SourceIO.logger import SourceLogMan
+from ..app_id import SteamAppId
+from .detectors import detect_game
+from .provider import ContentProvider
+from .providers import register_provider
+from .providers.hfs_provider import HFS1ContentProvider, HFS2ContentProvider
+from .providers.loose_files import LooseFilesContentProvider
+from .providers.source1_gameinfo_provider import Source1GameInfoProvider
+from .providers.source2_gameinfo_provider import Source2GameInfoProvider
+from .providers.vpk_provider import VPKContentProvider
+from .providers.zip_content_provider import ZIPContentProvider
+from ...utils import Buffer, FileBuffer, TinyPath, backwalk_file_resolver, corrected_path
+from ...utils.path_utilities import get_mod_path
+from ...utils.singleton import SingletonMeta
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('ContentManager')

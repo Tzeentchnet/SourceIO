@@ -3,7 +3,7 @@ import math
 import bpy
 from mathutils import Euler, Quaternion, Vector
 
-from SourceIO.library.utils.datamodel import load
+from ....library.utils.datamodel import load
 
 
 def load_camera(dmx_camera_path, scale):

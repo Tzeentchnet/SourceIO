@@ -5,7 +5,7 @@ from mathutils import Euler
 
 from .bms_entity_classes import *
 from .halflife2_entity_handler import HalfLifeEntityHandler
-from SourceIO.library.utils.math_utilities import srgb_to_linear
+from .....library.utils.math_utilities import srgb_to_linear
 
 local_entity_lookup_table = HalfLifeEntityHandler.entity_lookup_table.copy()
 local_entity_lookup_table.update(entity_class_handle)

@@ -1,4 +1,4 @@
-from SourceIO.blender_bindings.source1.bsp.entities.base_entity_classes import Targetname, RenderFields
+from .base_entity_classes import Targetname, RenderFields
 
 
 def parse_source_value(value):

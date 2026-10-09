@@ -3,11 +3,11 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+from ...shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
                                                                    MIX_A, MIX_B, MIX_RESULT)
-from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.texture_utils import setup_image_sequence_node
-from SourceIO.library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
+from ..source1_shader_base import Source1ShaderBase
+from ....utils.texture_utils import setup_image_sequence_node
+from .....library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
 
 #: Water's index of refraction. The SDK hardcodes the air/water Fresnel term
 #: rather than exposing it, and 1.333 is the physical value Blender expects.

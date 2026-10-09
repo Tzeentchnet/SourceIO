@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional
 
-from SourceIO.library.utils import Buffer, MemoryBuffer
+from ...utils import Buffer, MemoryBuffer
 from .xor_key import xor_decode
 
 

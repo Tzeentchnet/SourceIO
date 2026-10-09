@@ -1,6 +1,6 @@
 import numpy as np
 
-from SourceIO.library.utils.perf_sampler import timed
+from ..utils.perf_sampler import timed
 
 
 def lerp(a, b, f):

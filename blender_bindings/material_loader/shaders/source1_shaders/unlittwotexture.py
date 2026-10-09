@@ -2,9 +2,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+from ...shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
                                                                    MIX_A, MIX_B, MIX_RESULT)
-from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
+from ..source1_shader_base import Source1ShaderBase
 
 
 class UnlitTwoTexture(Source1ShaderBase):

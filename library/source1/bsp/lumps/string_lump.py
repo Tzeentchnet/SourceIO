@@ -2,10 +2,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.utils import Buffer
+from ....shared.app_id import SteamAppId
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ....utils import Buffer
 
 
 @lump_tag(44, 'LUMP_TEXDATA_STRING_DATA')

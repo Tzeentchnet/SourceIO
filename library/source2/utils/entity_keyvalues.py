@@ -1,7 +1,7 @@
 from enum import IntEnum
 from typing import Any
 
-from SourceIO.library.utils import Buffer
+from ...utils import Buffer
 from .entity_keyvalues_keys import EntityKeyValuesKeys
 
 

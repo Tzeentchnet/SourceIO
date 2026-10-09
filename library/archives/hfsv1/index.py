@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from SourceIO.library.utils import Buffer
+from ...utils import Buffer
 from .xor_key import xor_decode
 
 

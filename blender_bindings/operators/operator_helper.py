@@ -1,7 +1,7 @@
 import bpy
 from bpy.props import StringProperty, CollectionProperty
 
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...library.utils.tiny_path import TinyPath
 
 
 class ImportOperatorHelper(bpy.types.Operator):

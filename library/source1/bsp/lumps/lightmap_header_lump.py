@@ -1,7 +1,7 @@
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.lightmap_header import LightmapHeader
-from SourceIO.library.utils import Buffer
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ..datatypes.lightmap_header import LightmapHeader
+from ....utils import Buffer
 
 
 @lump_tag(0x53, 'LUMP_LIGHTMAP_HEADERS', bsp_version=29)

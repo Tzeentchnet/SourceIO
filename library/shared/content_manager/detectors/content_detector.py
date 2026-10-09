@@ -1,9 +1,9 @@
 import abc
 from typing import Type, Collection
 
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers import register_provider
-from SourceIO.library.utils import TinyPath
+from ..provider import ContentProvider
+from ..providers import register_provider
+from ....utils import TinyPath
 
 
 class ContentDetector(abc.ABC):

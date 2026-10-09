@@ -1,7 +1,7 @@
-from SourceIO.library.goldsrc.bsp.bsp_file import BspFile
-from SourceIO.library.goldsrc.bsp.lump import Lump, LumpInfo, LumpType
-from SourceIO.library.goldsrc.bsp.structs.texture import TextureInfo
-from SourceIO.library.utils import Buffer
+from ..bsp_file import BspFile
+from ..lump import Lump, LumpInfo, LumpType
+from ..structs.texture import TextureInfo
+from ....utils import Buffer
 
 
 class TextureInfoLump(Lump):

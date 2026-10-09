@@ -2,8 +2,8 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
-from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
+from ...shader_base import Nodes, ExtraMaterialParameters
+from ..source2_shader_base import Source2ShaderBase
 
 
 class CSGOWeapon(Source2ShaderBase):

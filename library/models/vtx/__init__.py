@@ -1,10 +1,10 @@
 from typing import Union
 
-from SourceIO.library.utils import Buffer, FileBuffer
+from ...utils import Buffer, FileBuffer
 from .v6.vtx import Vtx as Vtx6
 from .v7.vtx import Vtx as Vtx7
 from .v107.vtx import Vtx as Vtx107
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...utils.tiny_path import TinyPath
 
 
 def open_vtx(filepath_or_object: Union[TinyPath, Buffer]) -> Vtx6:

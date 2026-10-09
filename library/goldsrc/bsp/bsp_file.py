@@ -1,7 +1,7 @@
 from typing import Optional
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils import Buffer, FileBuffer, TinyPath
+from ...shared.content_manager import ContentManager
+from ...utils import Buffer, FileBuffer, TinyPath
 from .lump import Lump, LumpInfo, LumpType
 
 

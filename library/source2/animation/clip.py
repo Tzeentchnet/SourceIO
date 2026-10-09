@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from SourceIO.library.source2.animation.animation import DecodedAnimation, Skeleton, _quat_multiply_xyzw
+from .animation import DecodedAnimation, Skeleton, _quat_multiply_xyzw
 
 _QUAT_RANGE_MIN = np.float32(-1.0 / np.sqrt(2.0))
 _QUAT_RANGE_LENGTH = np.float32(2.0 / np.sqrt(2.0))

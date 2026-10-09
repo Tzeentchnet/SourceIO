@@ -1,12 +1,12 @@
 from typing import Collection
-from SourceIO.library.archives.gma import check_gma
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors.source1 import Source1Detector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.gma_provider import GMAContentProvider
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
-from SourceIO.library.shared.content_manager.providers.source1_gameinfo_provider import Source1GameInfoProvider
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
+from ....archives.gma import check_gma
+from ...app_id import SteamAppId
+from .source1 import Source1Detector
+from ..provider import ContentProvider
+from ..providers.gma_provider import GMAContentProvider
+from ..providers.loose_files import LooseFilesContentProvider
+from ..providers.source1_gameinfo_provider import Source1GameInfoProvider
+from ....utils import backwalk_file_resolver, TinyPath
 
 
 class GModDetector(Source1Detector):

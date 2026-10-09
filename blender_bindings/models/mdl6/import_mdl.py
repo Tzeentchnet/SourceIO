@@ -5,16 +5,16 @@ import bpy
 import numpy as np
 from mathutils import Euler, Matrix, Vector
 
-from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader import \
+from ...material_loader.shaders.goldsrc_shaders.goldsrc_shader import \
     GoldSrcShader
-from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, edit_armature, get_or_create_material, ActionCurveFactory
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
-from SourceIO.library.models.mdl.v6.mdl_file import Mdl
-from SourceIO.library.models.mdl.v6.structs.texture import StudioTexture
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils.path_utilities import path_stem
+from ...operators.import_settings_base import ModelOptions
+from ...shared.model_container import ModelContainer
+from ...utils.bpy_utils import add_material, edit_armature, get_or_create_material, ActionCurveFactory
+from ...utils.fast_mesh import FastMesh
+from ....library.models.mdl.v6.mdl_file import Mdl
+from ....library.models.mdl.v6.structs.texture import StudioTexture
+from ....library.utils import Buffer
+from ....library.utils.path_utilities import path_stem
 
 
 def create_armature(mdl: Mdl, scale):

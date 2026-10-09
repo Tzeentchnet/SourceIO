@@ -5,12 +5,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, Type, Union
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.utils.file_utils import Buffer, MemoryBuffer
-from SourceIO.library.utils.math_utilities import sizeof_fmt
+from ...shared.app_id import SteamAppId
+from ...utils.file_utils import Buffer, MemoryBuffer
+from ...utils.math_utilities import sizeof_fmt
 
 if typing.TYPE_CHECKING:
-    from SourceIO.library.source1.bsp.bsp_file import BSPFile
+    from .bsp_file import BSPFile
 else:
     BSPFile = object
 

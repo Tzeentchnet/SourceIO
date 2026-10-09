@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
-from SourceIO.library.shared.vector_types import Vector2, Vector3
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.game_lump_header import GameLumpHeader
-from SourceIO.library.utils.file_utils import Buffer
+from ....shared.vector_types import Vector2, Vector3
+from ..bsp_file import VBSPFile
+from .game_lump_header import GameLumpHeader
+from ....utils.file_utils import Buffer
 
 
 class DetailPropLump:

@@ -2,8 +2,8 @@ import bpy
 import numpy as np
 from bpy.types import Node
 
-from SourceIO.blender_bindings.ui.export_nodes.nodes.base_node import SourceIOTextureTreeNode
-from SourceIO.library.utils.math_utilities import ensure_f32, srgb_to_linear, linear_to_srgb
+from ..base_node import SourceIOTextureTreeNode
+from ......library.utils.math_utilities import ensure_f32, srgb_to_linear, linear_to_srgb
 
 
 def _is_texture(a):

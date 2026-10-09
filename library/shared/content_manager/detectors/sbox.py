@@ -1,10 +1,10 @@
 from typing import Collection
 
-from SourceIO.library.shared.content_manager.detectors.source2 import Source2Detector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.sbox_content_provider import SBoxAddonProvider, \
+from .source2 import Source2Detector
+from ..provider import ContentProvider
+from ..providers.sbox_content_provider import SBoxAddonProvider, \
     SBoxDownloadsProvider
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
+from ....utils import backwalk_file_resolver, TinyPath
 
 
 class SBoxDetector(Source2Detector):

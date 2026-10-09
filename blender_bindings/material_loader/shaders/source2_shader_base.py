@@ -2,16 +2,16 @@ from typing import Union, Optional, Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import (ShaderBase, Nodes, ExtraMaterialParameters,
+from ..shader_base import (ShaderBase, Nodes, ExtraMaterialParameters,
                                                                    MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT)
-from SourceIO.blender_bindings.source2.vtex_loader import import_texture
-from SourceIO.blender_bindings.utils.texture_utils import check_texture_cache
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2.keyvalues3.types import NullObject
-from SourceIO.library.source2.resource_types import CompiledMaterialResource, CompiledTextureResource
-from SourceIO.library.utils.perf_sampler import timed
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ...source2.vtex_loader import import_texture
+from ...utils.texture_utils import check_texture_cache
+from ....library.shared.content_manager import ContentManager
+from ....library.source2.keyvalues3.types import NullObject
+from ....library.source2.resource_types import CompiledMaterialResource, CompiledTextureResource
+from ....library.utils.perf_sampler import timed
+from ....library.utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
 
 logger = SourceLogMan().get_logger("Source2::Shader")
 

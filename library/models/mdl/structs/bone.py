@@ -5,9 +5,9 @@ from enum import Enum, IntEnum, IntFlag
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.shared.vector_types import Vector3, Vector4
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils.math_utilities import quat_to_matrix
+from ....shared.vector_types import Vector3, Vector4
+from ....utils import Buffer
+from ....utils.math_utilities import quat_to_matrix
 from .axis_interp_rule import AxisInterpRule
 from .jiggle_bone import JiggleRule
 from .quat_interp_bone import QuatInterpRule

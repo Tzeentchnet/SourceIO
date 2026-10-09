@@ -3,18 +3,18 @@ from typing import Any, Type
 import bpy
 from mathutils import Matrix
 
-from SourceIO.blender_bindings.shared.exceptions import RequiredFileNotFound
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_collection, pause_view_layer_update
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2 import CompiledWorldResource, CompiledResource
-from SourceIO.library.source2.keyvalues3.types import Object, NullObject
-from SourceIO.library.source2.resource_types import CompiledManifestResource
-from SourceIO.library.source2.resource_types.compiled_world_resource import CompiledEntityLumpResource, \
+from ...shared.exceptions import RequiredFileNotFound
+from ...utils.bpy_utils import get_or_create_collection, pause_view_layer_update
+from ....library.shared.app_id import SteamAppId
+from ....library.shared.content_manager import ContentManager
+from ....library.source2 import CompiledWorldResource, CompiledResource
+from ....library.source2.keyvalues3.types import Object, NullObject
+from ....library.source2.resource_types import CompiledManifestResource
+from ....library.source2.resource_types.compiled_world_resource import CompiledEntityLumpResource, \
     CompiledMapResource
-from SourceIO.library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
+from ....library.utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
 
 from .entities.base_entity_handlers import BaseEntityHandler
 from .entities.cs2_entity_handlers import CS2EntityHandler

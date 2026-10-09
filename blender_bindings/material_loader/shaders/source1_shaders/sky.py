@@ -2,9 +2,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
-from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.logger import SourceLogMan
+from ...shader_base import Nodes, ExtraMaterialParameters
+from ..source1_shader_base import Source1ShaderBase
+from .....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 

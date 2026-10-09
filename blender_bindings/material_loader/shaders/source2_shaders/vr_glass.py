@@ -3,9 +3,9 @@ from typing import Any
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
+from ...shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
                                                                    MIX_A, MIX_B, MIX_RESULT)
-from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
+from ..source2_shader_base import Source2ShaderBase
 
 
 class VrSimple(Source2ShaderBase):

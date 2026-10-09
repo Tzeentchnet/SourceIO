@@ -1,8 +1,8 @@
 from typing import Optional
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT
-from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shader_base import GoldSrcShaderBase
-from SourceIO.library.models.mdl.v10.structs.texture import MdlTextureFlag
+from ...shader_base import Nodes, MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT
+from ..goldsrc_shader_base import GoldSrcShaderBase
+from .....library.models.mdl.v10.structs.texture import MdlTextureFlag
 
 
 class GoldSrcShaderMode1(GoldSrcShaderBase):

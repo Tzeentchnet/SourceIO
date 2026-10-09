@@ -1,7 +1,7 @@
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.brush import Quake3Brush, RavenBrushSide, Quake3BrushSide
-from SourceIO.library.utils import Buffer
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ..datatypes.brush import Quake3Brush, RavenBrushSide, Quake3BrushSide
+from ....utils import Buffer
 
 
 @lump_tag(8, 'LUMP_BRUSHES', bsp_ident="IBSP", bsp_version=(46, 0))

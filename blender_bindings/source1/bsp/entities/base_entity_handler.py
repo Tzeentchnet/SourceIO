@@ -6,16 +6,16 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
-from SourceIO.blender_bindings.material_loader.shaders.source1_shaders.sky import Skybox
-from SourceIO.blender_bindings.source1.vtf import load_skybox_texture
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.source1.vtf import SkyboxException
-from SourceIO.library.utils.math_utilities import ensure_length, lerp_vec, srgb_to_linear
-from SourceIO.library.utils.path_utilities import path_stem, strip_vmt_extension
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ....material_loader.material_loader import ShaderRegistry
+from ....material_loader.shaders.source1_shaders.sky import Skybox
+from ...vtf import load_skybox_texture
+from ....utils.bpy_utils import add_material, get_or_create_material
+from .....library.source1.vmt import VMT
+from .....library.source1.vtf import SkyboxException
+from .....library.utils.math_utilities import ensure_length, lerp_vec, srgb_to_linear
+from .....library.utils.path_utilities import path_stem, strip_vmt_extension
+from .....library.utils.tiny_path import TinyPath
+from .....logger import SourceLogMan
 from .abstract_entity_handlers import AbstractEntityHandler, register_entity_handlers
 from .base_entity_classes import *
 from .base_entity_classes import entity_class_handle as base_entity_classes

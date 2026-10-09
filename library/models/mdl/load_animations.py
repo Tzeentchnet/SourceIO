@@ -13,13 +13,13 @@ from typing import Optional
 
 import numpy.typing as npt
 
-from SourceIO.library.models.mdl.structs.ani_file import AniFile, AnimBlockEntry, read_anim_block_table
-from SourceIO.library.models.mdl.structs.local_animation import StudioAnimDesc, ANIM_DTYPE
-from SourceIO.library.models.mdl.v49.mdl_file import MdlV49
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils import Buffer, FileBuffer
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from .structs.ani_file import AniFile, AnimBlockEntry, read_anim_block_table
+from .structs.local_animation import StudioAnimDesc, ANIM_DTYPE
+from .v49.mdl_file import MdlV49
+from ...shared.content_manager import ContentManager
+from ...utils import Buffer, FileBuffer
+from ...utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('AnimLoader')

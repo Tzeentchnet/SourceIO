@@ -4,12 +4,12 @@ import typing
 from dataclasses import dataclass
 from enum import IntEnum
 
-from SourceIO.library.shared.vector_types import Vector2, Vector3
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile, IBSPFile
-from SourceIO.library.utils.file_utils import Buffer
+from ....shared.vector_types import Vector2, Vector3
+from ..bsp_file import VBSPFile, IBSPFile
+from ....utils.file_utils import Buffer
 
 if typing.TYPE_CHECKING:
-    from SourceIO.library.source1.bsp.lumps import TextureInfoLump, DispInfoLump
+    from ..lumps import TextureInfoLump, DispInfoLump
 
 
 @dataclass(slots=True)

@@ -2,9 +2,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from SourceIO.library.utils import Buffer, FileBuffer
-from SourceIO.library.utils.exceptions import InvalidFileMagic
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...utils import Buffer, FileBuffer
+from ...utils.exceptions import InvalidFileMagic
+from ...utils.tiny_path import TinyPath
 
 
 def check_gma(filepath: TinyPath):

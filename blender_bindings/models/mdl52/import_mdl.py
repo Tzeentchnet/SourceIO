@@ -1,25 +1,25 @@
-from SourceIO.blender_bindings.models.materials import get_model_material_names
+from ..materials import get_model_material_names
 from collections import defaultdict
 
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.models.common import merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors
-from SourceIO.blender_bindings.models.mdl49.import_mdl import create_armature, create_attachments, create_flex_drivers
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
-from SourceIO.library.models.mdl.structs.header import StudioHDRFlags
-from SourceIO.library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
-from SourceIO.library.models.mdl.v52.mdl_file import MdlV52
-from SourceIO.library.models.vtx.v7.vtx import Vtx
-from SourceIO.library.models.vvc import Vvc
-from SourceIO.library.models.vvd import Vvd
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.utils.common import get_slice
-from SourceIO.library.utils.path_utilities import path_stem
-from SourceIO.logger import SourceLogMan
+from ..common import merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors
+from ..mdl49.import_mdl import create_armature, create_attachments, create_flex_drivers
+from ...shared.model_container import ModelContainer
+from ...operators.import_settings_base import ModelOptions
+from ...utils.bpy_utils import add_material, get_or_create_material
+from ...utils.fast_mesh import FastMesh, set_vertex_weights
+from ....library.models.mdl.structs.header import StudioHDRFlags
+from ....library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
+from ....library.models.mdl.v52.mdl_file import MdlV52
+from ....library.models.vtx.v7.vtx import Vtx
+from ....library.models.vvc import Vvc
+from ....library.models.vvd import Vvd
+from ....library.shared.content_manager.provider import ContentProvider
+from ....library.utils.common import get_slice
+from ....library.utils.path_utilities import path_stem
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::ModelLoader')

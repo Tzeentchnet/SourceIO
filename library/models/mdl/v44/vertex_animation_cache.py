@@ -1,9 +1,9 @@
 import numpy as np
 
-from SourceIO.library.models.mdl.structs.header import StudioHDRFlags
-from SourceIO.library.models.mdl.structs.mesh import Mesh
-from SourceIO.library.models.vvd import Vvd
-from SourceIO.logger import SourceLogMan
+from ..structs.header import StudioHDRFlags
+from ..structs.mesh import Mesh
+from ...vvd import Vvd
+from .....logger import SourceLogMan
 from .mdl_file import MdlV44
 
 logger = SourceLogMan().get_logger("Source1::VertexAnimationCache")

@@ -6,13 +6,13 @@ from typing import Optional, Type
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.source2.blocks.resource_edit_info import ResourceEditInfo, ResourceEditInfo2
-from SourceIO.library.utils.perf_sampler import timed
-from SourceIO.library.utils.pylib.compression import lz4_decompress
-from SourceIO.library.utils.pylib.image import decode_texture
-from SourceIO.library.source2.blocks.texture_data import CompressedMip, TextureData, VTexExtraData, \
+from ..blocks.resource_edit_info import ResourceEditInfo, ResourceEditInfo2
+from ...utils.perf_sampler import timed
+from ...utils.pylib.compression import lz4_decompress
+from ...utils.pylib.image import decode_texture
+from ..blocks.texture_data import CompressedMip, TextureData, VTexExtraData, \
     VTexFlags, VTexFormat
-from SourceIO.library.source2.compiled_resource import CompiledResource
+from ..compiled_resource import CompiledResource
 
 logger = logging.getLogger('CompiledTextureResource')
 

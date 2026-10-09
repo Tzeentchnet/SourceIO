@@ -1,14 +1,14 @@
 import numpy as np
 import zlib
 
-from SourceIO.library.utils import Buffer, MemoryBuffer
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.utils import TinyPath
-from SourceIO.library.utils.pylib.vtf import load_vtf_texture
-from SourceIO.logger import SourceLogMan
-from SourceIO.library.utils.thirdparty.equilib.cube2equi_numpy import run as convert_to_eq
-from SourceIO.library.utils.pylib.vtf import load_vtf_texture_frames
+from ...utils import Buffer, MemoryBuffer
+from ...shared.content_manager import ContentManager
+from ..vmt import VMT
+from ...utils import TinyPath
+from ...utils.pylib.vtf import load_vtf_texture
+from ....logger import SourceLogMan
+from ...utils.thirdparty.equilib.cube2equi_numpy import run as convert_to_eq
+from ...utils.pylib.vtf import load_vtf_texture_frames
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::VTF')

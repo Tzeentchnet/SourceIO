@@ -1,5 +1,5 @@
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.utils import TinyPath
+from ..provider import ContentProvider
+from ....utils import TinyPath
 
 ALL_PROVIDERS = {}
 

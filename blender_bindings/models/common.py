@@ -1,18 +1,18 @@
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import get_new_unique_collection
-from SourceIO.library.models.mdl.structs.model import Model
-from SourceIO.library.models.vtx.v7.structs.lod import ModelLod as VtxModel
-from SourceIO.library.models.vtx.v7.structs.mesh import Mesh as VtxMesh
-from SourceIO.library.models.mdl import Mdl
-from SourceIO.library.models.mdl.structs.bone import Bone, BoneRole
+from ..shared.model_container import ModelContainer
+from ..utils.bpy_utils import get_new_unique_collection
+from ...library.models.mdl.structs.model import Model
+from ...library.models.vtx.v7.structs.lod import ModelLod as VtxModel
+from ...library.models.vtx.v7.structs.mesh import Mesh as VtxMesh
+from ...library.models.mdl import Mdl
+from ...library.models.mdl.structs.bone import Bone, BoneRole
 
-from SourceIO.library.models.mdl.load_animations import load_all_animations, load_mdl_animations
-from SourceIO.blender_bindings.models.import_animations import import_animations_to_armature
-from SourceIO.library.utils import Buffer
-from SourceIO.library.shared.content_manager import ContentManager
+from ...library.models.mdl.load_animations import load_all_animations, load_mdl_animations
+from .import_animations import import_animations_to_armature
+from ...library.utils import Buffer
+from ...library.shared.content_manager import ContentManager
 
 # Deform bones are coloured by side (left blue, right red, centre yellow); the rest by role.
 BONE_SIDE_COLORS = {'L': 'THEME04', 'R': 'THEME01', None: 'THEME09'}
@@ -349,7 +349,7 @@ def generate_wrinkle_map_node_group(obj: bpy.types.Object):
 
 def create_flex_drivers(obj, mdl):
     from string import ascii_lowercase
-    from SourceIO.library.models.mdl.structs.flex import FlexController, FlexControllerUI, FlexOpType, FlexRule
+    from ...library.models.mdl.structs.flex import FlexController, FlexControllerUI, FlexOpType, FlexRule
     if not obj.data.shape_keys:
         return
     

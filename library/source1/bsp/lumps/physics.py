@@ -1,7 +1,7 @@
-from SourceIO.library.models.phy.phy import SolidHeader
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.utils import Buffer
+from ....models.phy.phy import SolidHeader
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ....utils import Buffer
 
 
 class SolidBlock:

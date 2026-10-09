@@ -1,14 +1,14 @@
 from typing import Iterator, Optional
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2.blocks.kv3_block import KVBlock, custom_type_kvblock
-from SourceIO.library.utils import MemoryBuffer
-from SourceIO.library.source2.keyvalues3.types import Object
-from SourceIO.library.source2.utils.entity_keyvalues import EntityKeyValues
-from SourceIO.library.source2.compiled_resource import CompiledResource, DATA_BLOCK
-from SourceIO.library.utils.perf_sampler import timed
+from ...shared.content_manager import ContentManager
+from ..blocks.kv3_block import KVBlock, custom_type_kvblock
+from ...utils import MemoryBuffer
+from ..keyvalues3.types import Object
+from ..utils.entity_keyvalues import EntityKeyValues
+from ..compiled_resource import CompiledResource, DATA_BLOCK
+from ...utils.perf_sampler import timed
 
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...utils.tiny_path import TinyPath
 
 
 class CompiledEntityLumpResource(CompiledResource):

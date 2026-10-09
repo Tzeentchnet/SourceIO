@@ -5,32 +5,32 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-from SourceIO.blender_bindings.goldsrc.bsp.entity_handlers import entity_handlers
-from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader import GoldSrcShader
-from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode1 import GoldSrcShaderMode1
-from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode2 import GoldSrcShaderMode2
-from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode5 import GoldSrcShaderMode5
-from SourceIO.blender_bindings.utils.bpy_utils import (add_material, get_or_create_collection,
+from .entity_handlers import entity_handlers
+from ...material_loader.shaders.goldsrc_shaders.goldsrc_shader import GoldSrcShader
+from ...material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode1 import GoldSrcShaderMode1
+from ...material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode2 import GoldSrcShaderMode2
+from ...material_loader.shaders.goldsrc_shaders.goldsrc_shader_mode5 import GoldSrcShaderMode5
+from ...utils.bpy_utils import (add_material, get_or_create_collection,
                                                        get_or_create_material)
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
-from SourceIO.library.goldsrc.bsp.bsp_file import BspFile
-from SourceIO.library.goldsrc.bsp.lump import LumpType
-from SourceIO.library.goldsrc.bsp.lumps.edge_lump import EdgeLump
-from SourceIO.library.goldsrc.bsp.lumps.entity_lump import EntityLump
-from SourceIO.library.goldsrc.bsp.lumps.face_lump import FaceLump
-from SourceIO.library.goldsrc.bsp.lumps.model_lump import ModelLump
-from SourceIO.library.goldsrc.bsp.lumps.surface_edge_lump import SurfaceEdgeLump
-from SourceIO.library.goldsrc.bsp.lumps.texture_data import TextureDataLump
-from SourceIO.library.goldsrc.bsp.lumps.texture_info import TextureInfoLump
-from SourceIO.library.goldsrc.bsp.lumps.vertex_lump import VertexLump
-from SourceIO.library.goldsrc.bsp.structs.texture import TextureInfo
-from SourceIO.library.goldsrc.rad import convert_light_value, parse_rad
-from SourceIO.library.models.mdl.v10.structs.texture import StudioTexture
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.shared.content_manager.providers.goldsrc_content_provider import GoldSrcWADContentProvider
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
-from SourceIO.library.utils.math_utilities import deg2rad, parse_hammer_vector
-from SourceIO.logger import SourceLogMan
+from ...utils.fast_mesh import FastMesh
+from ....library.goldsrc.bsp.bsp_file import BspFile
+from ....library.goldsrc.bsp.lump import LumpType
+from ....library.goldsrc.bsp.lumps.edge_lump import EdgeLump
+from ....library.goldsrc.bsp.lumps.entity_lump import EntityLump
+from ....library.goldsrc.bsp.lumps.face_lump import FaceLump
+from ....library.goldsrc.bsp.lumps.model_lump import ModelLump
+from ....library.goldsrc.bsp.lumps.surface_edge_lump import SurfaceEdgeLump
+from ....library.goldsrc.bsp.lumps.texture_data import TextureDataLump
+from ....library.goldsrc.bsp.lumps.texture_info import TextureInfoLump
+from ....library.goldsrc.bsp.lumps.vertex_lump import VertexLump
+from ....library.goldsrc.bsp.structs.texture import TextureInfo
+from ....library.goldsrc.rad import convert_light_value, parse_rad
+from ....library.models.mdl.v10.structs.texture import StudioTexture
+from ....library.shared.content_manager import ContentManager
+from ....library.shared.content_manager.providers.goldsrc_content_provider import GoldSrcWADContentProvider
+from ....library.utils import backwalk_file_resolver, TinyPath
+from ....library.utils.math_utilities import deg2rad, parse_hammer_vector
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 

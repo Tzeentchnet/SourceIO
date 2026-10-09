@@ -1,11 +1,11 @@
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.detail_prop_lump import DetailPropLump
-from SourceIO.library.source1.bsp.datatypes.game_lump_header import (GameLumpHeader, VindictusGameLumpHeader,
+from ....shared.app_id import SteamAppId
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ..datatypes.detail_prop_lump import DetailPropLump
+from ..datatypes.game_lump_header import (GameLumpHeader, VindictusGameLumpHeader,
                                                                      DMGameLumpHeader)
-from SourceIO.library.source1.bsp.datatypes.static_prop_lump import StaticPropLump
-from SourceIO.library.utils import Buffer
+from ..datatypes.static_prop_lump import StaticPropLump
+from ....utils import Buffer
 
 
 @lump_tag(35, 'LUMP_GAME_LUMP')

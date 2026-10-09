@@ -5,20 +5,20 @@ import bpy
 import numpy as np
 from mathutils import Vector, geometry
 
-from SourceIO.blender_bindings.source1.bsp.entities.quake3.quake3_entity_handler import QuakeEntityHandler, \
+from .quake3_entity_handler import QuakeEntityHandler, \
     _tessellate_face_patch
-from SourceIO.blender_bindings.source1.bsp.entities.base_entity_classes import *
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material
-from SourceIO.blender_bindings.utils.fast_mesh import set_custom_normals
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.bsp.bsp_file import RavenBSPFile, IBSPFile
-from SourceIO.library.source1.bsp.datatypes.model import QuakeBspModel
-from SourceIO.library.source1.bsp.datatypes.plane import Quake3Plane
-from SourceIO.library.source1.bsp.lumps import RavenFaceLump, VertexLump, ShadersLump
-from SourceIO.library.source1.bsp.lumps.surf_edge_lump import Quake3IndicesLump
-from SourceIO.library.utils.math_utilities import ensure_length, SOURCE1_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.path_utilities import path_stem
-from SourceIO.logger import SourceLogMan
+from ..base_entity_classes import *
+from .....utils.bpy_utils import add_material, get_or_create_material
+from .....utils.fast_mesh import set_custom_normals
+from ......library.shared.content_manager import ContentManager
+from ......library.source1.bsp.bsp_file import RavenBSPFile, IBSPFile
+from ......library.source1.bsp.datatypes.model import QuakeBspModel
+from ......library.source1.bsp.datatypes.plane import Quake3Plane
+from ......library.source1.bsp.lumps import RavenFaceLump, VertexLump, ShadersLump
+from ......library.source1.bsp.lumps.surf_edge_lump import Quake3IndicesLump
+from ......library.utils.math_utilities import ensure_length, SOURCE1_HAMMER_UNIT_TO_METERS
+from ......library.utils.path_utilities import path_stem
+from ......logger import SourceLogMan
 
 strip_patch_coordinates = re.compile(r"_-?\d+_-?\d+_-?\d+.*$")
 log_manager = SourceLogMan()

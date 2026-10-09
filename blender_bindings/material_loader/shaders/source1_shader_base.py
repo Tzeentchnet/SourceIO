@@ -1,13 +1,13 @@
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import ShaderBase
-from SourceIO.blender_bindings.source1.vtf import import_texture
-from SourceIO.blender_bindings.utils.texture_utils import check_texture_cache
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.blender_bindings.source1.vtf import import_animated_texture, import_texture, import_texture_tth
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.utils.tiny_path import TinyPath
+from ..shader_base import ShaderBase
+from ...source1.vtf import import_texture
+from ...utils.texture_utils import check_texture_cache
+from ....library.shared.content_manager import ContentManager
+from ...source1.vtf import import_animated_texture, import_texture, import_texture_tth
+from ....library.source1.vmt import VMT
+from ....library.utils.tiny_path import TinyPath
 
 
 class Source1ShaderBase(ShaderBase):

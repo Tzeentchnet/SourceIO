@@ -3,7 +3,7 @@ from logging import DEBUG, Filter, Formatter, Logger, LogRecord, StreamHandler
 
 import bpy
 
-from SourceIO.library.utils.singleton import SingletonMeta
+from ...library.utils.singleton import SingletonMeta
 
 
 def get_log_file(filename):

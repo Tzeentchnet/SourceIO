@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import IntEnum
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 
 
 @dataclass(slots=True)

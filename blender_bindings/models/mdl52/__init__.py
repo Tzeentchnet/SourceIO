@@ -1,25 +1,25 @@
 from typing import Optional
 
-from SourceIO.blender_bindings.models.model_tags import register_model_importer
-from SourceIO.blender_bindings.models.mdl49 import import_materials
-from SourceIO.blender_bindings.models.mdl52.import_mdl import import_model
-from SourceIO.blender_bindings.models.common import import_animations_common
-from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.shared.exceptions import RequiredFileNotFound
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.source1.phy import import_physics
-from SourceIO.library.models.mdl.v52.mdl_file import MdlV52
-from SourceIO.library.models.phy.phy import Phy
-from SourceIO.library.models.vtx import open_vtx
-from SourceIO.library.models.vvc import Vvc
-from SourceIO.library.models.vvd import Vvd
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils.path_utilities import find_vtx_cm
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ..model_tags import register_model_importer
+from ..mdl49 import import_materials
+from .import_mdl import import_model
+from ..common import import_animations_common
+from ...operators.import_settings_base import ModelOptions
+from ...shared.exceptions import RequiredFileNotFound
+from ...shared.model_container import ModelContainer
+from ...source1.phy import import_physics
+from ....library.models.mdl.v52.mdl_file import MdlV52
+from ....library.models.phy.phy import Phy
+from ....library.models.vtx import open_vtx
+from ....library.models.vvc import Vvc
+from ....library.models.vvd import Vvd
+from ....library.shared.content_manager import ContentManager
+from ....library.utils import Buffer
+from ....library.utils.path_utilities import find_vtx_cm
+from ....library.utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
 
-from SourceIO.blender_bindings.models.mdl44.import_mdl import create_armature
+from ..mdl44.import_mdl import create_armature
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('MDL loader')

@@ -5,12 +5,12 @@ from enum import IntFlag
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.shared.vector_types import Vector4, Vector3
-from SourceIO.library.utils.math_utilities import euler_to_quat
+from ....shared.vector_types import Vector4, Vector3
+from ....utils.math_utilities import euler_to_quat
 from .bone import Bone
 from .compressed_vectors import Quat64, Quat48, Quat48S, decode_quat48, decode_quat48s
 from .frame_anim import StudioFrameAnim
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 
 ANIM_DTYPE = np.dtype([
     ("pos", np.float32, (3,)),

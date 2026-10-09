@@ -1,9 +1,9 @@
 from typing import Type, cast
 
-from SourceIO.library.source2.keyvalues3.binary_keyvalues import read_valve_keyvalue3, write_valve_keyvalue3
-from SourceIO.library.source2.keyvalues3.enums import KV3Signature, KV3CompressionMethod, KV3Format
-from SourceIO.library.source2.keyvalues3.types import AnyKVType, Object, Array, NullObject
-from SourceIO.library.source2.utils.ntro_reader import NTROBuffer
+from ..keyvalues3.binary_keyvalues import read_valve_keyvalue3, write_valve_keyvalue3
+from ..keyvalues3.enums import KV3Signature, KV3CompressionMethod, KV3Format
+from ..keyvalues3.types import AnyKVType, Object, Array, NullObject
+from ..utils.ntro_reader import NTROBuffer
 from .base import BaseBlock
 from ...utils import Buffer
 

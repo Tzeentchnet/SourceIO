@@ -1,4 +1,4 @@
-from SourceIO.library.source2.utils.ntro_reader import NTROBuffer
+from ..utils.ntro_reader import NTROBuffer
 from .kv3_block import KVBlock
 
 

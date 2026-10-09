@@ -1,9 +1,9 @@
 import bpy
 
-from SourceIO.blender_bindings.utils.texture_utils import create_and_cache_texture, create_texture_from_encoded_image
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.library.source2.resource_types import CompiledTextureResource
-from SourceIO.logger import SourceLogMan
+from ..utils.texture_utils import create_and_cache_texture, create_texture_from_encoded_image
+from ...library.utils.tiny_path import TinyPath
+from ...library.source2.resource_types import CompiledTextureResource
+from ...logger import SourceLogMan
 
 logger = SourceLogMan().get_logger("Source2::Texture")
 

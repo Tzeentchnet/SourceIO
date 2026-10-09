@@ -7,9 +7,9 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.face import Face
-from SourceIO.library.source1.bsp.datatypes.overlay import Overlay
+from .bsp_file import VBSPFile
+from .datatypes.face import Face
+from .datatypes.overlay import Overlay
 
 # Overlays are drawn with a depth bias in the engine; here they are lifted off the surface
 # instead, one step further for each render order so stacked overlays keep their order.

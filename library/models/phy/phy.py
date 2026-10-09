@@ -3,9 +3,9 @@ from typing import Optional
 
 import numpy as np
 
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.library.shared.vector_types import Vector3, Vector4
-from SourceIO.library.utils import Buffer, FileBuffer
+from ...utils.tiny_path import TinyPath
+from ...shared.vector_types import Vector3, Vector4
+from ...utils import Buffer, FileBuffer
 
 
 @dataclass(slots=True)

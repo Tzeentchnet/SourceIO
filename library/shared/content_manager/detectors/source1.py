@@ -2,13 +2,13 @@ import traceback
 from abc import ABCMeta
 from typing import Type, Collection
 
-from SourceIO.library.shared.content_manager.detectors.content_detector import ContentDetector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
-from SourceIO.library.shared.content_manager.providers.source1_gameinfo_provider import Source1GameInfoProvider
-from SourceIO.library.shared.content_manager.providers.vpk_provider import VPKContentProvider
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
-from SourceIO.logger import SourceLogMan
+from .content_detector import ContentDetector
+from ..provider import ContentProvider
+from ..providers.loose_files import LooseFilesContentProvider
+from ..providers.source1_gameinfo_provider import Source1GameInfoProvider
+from ..providers.vpk_provider import VPKContentProvider
+from ....utils import backwalk_file_resolver, TinyPath
+from .....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1DetectorBase')

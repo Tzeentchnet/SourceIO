@@ -19,14 +19,14 @@ import bpy
 import numpy as np
 from mathutils import Matrix
 
-from SourceIO.blender_bindings.models.import_animations import _make_continuous, _quat_multiply, _write_curves
-from SourceIO.blender_bindings.utils.bpy_utils import ActionCurveFactory
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2.animation import (AnimationClip, ClipAnimation, ClipLoader, DecodedAnimation,
+from ..models.import_animations import _make_continuous, _quat_multiply, _write_curves
+from ..utils.bpy_utils import ActionCurveFactory
+from ...library.shared.content_manager import ContentManager
+from ...library.source2.animation import (AnimationClip, ClipAnimation, ClipLoader, DecodedAnimation,
                                                 SequenceAnimation, Skeleton, clip_names, load_graph_clips,
                                                 load_model_animations, model_skeleton)
-from SourceIO.library.source2.compiled_resource import CompiledResource
-from SourceIO.logger import SourceLogMan
+from ...library.source2.compiled_resource import CompiledResource
+from ...logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source2::AnimImport')

@@ -1,8 +1,8 @@
 from enum import Enum
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils.fgd_parser.fgd_classes import FGDEntity
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...shared.content_manager import ContentManager
+from .fgd_classes import FGDEntity
+from ..tiny_path import TinyPath
 
 
 class FGDLexerException(Exception):

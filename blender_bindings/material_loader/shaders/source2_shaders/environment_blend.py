@@ -5,11 +5,11 @@ from enum import StrEnum
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
-from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.library.source2.blocks.kv3_block import KVBlock
-from SourceIO.library.utils.math_utilities import srgb_to_linear, SOURCE2_HAMMER_UNIT_TO_METERS
-from SourceIO.blender_bindings.operators.import_settings_base import SharedOptions
+from ...shader_base import Nodes, ExtraMaterialParameters
+from ..source2_shader_base import Source2ShaderBase
+from .....library.source2.blocks.kv3_block import KVBlock
+from .....library.utils.math_utilities import srgb_to_linear, SOURCE2_HAMMER_UNIT_TO_METERS
+from ....operators.import_settings_base import SharedOptions
 
 
 # Todo List

@@ -1,12 +1,12 @@
 from typing import Collection
 
-from SourceIO.library.global_config import GoldSrcConfig
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors.content_detector import ContentDetector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.goldsrc_content_provider import (GoldSrcContentProvider,
+from ....global_config import GoldSrcConfig
+from ...app_id import SteamAppId
+from .content_detector import ContentDetector
+from ..provider import ContentProvider
+from ..providers.goldsrc_content_provider import (GoldSrcContentProvider,
                                                                                         GoldSrcWADContentProvider)
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
+from ....utils import backwalk_file_resolver, TinyPath
 
 
 class GoldSrcDetector(ContentDetector):

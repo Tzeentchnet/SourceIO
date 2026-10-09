@@ -2,29 +2,29 @@ import bpy
 from bpy.props import (BoolProperty, FloatProperty,
                        IntProperty, StringProperty)
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.shared.content_manager.providers.vpk_provider import VPKContentProvider
-from SourceIO.library.source2 import (CompiledMaterialResource, CompiledModelResource,
+from ...library.shared.content_manager import ContentManager
+from ...library.shared.content_manager.providers.vpk_provider import VPKContentProvider
+from ...library.source2 import (CompiledMaterialResource, CompiledModelResource,
                                       CompiledTextureResource, CompiledPhysicsResource)
-from SourceIO.library.source2.resource_types.compiled_world_resource import CompiledMapResource
-from SourceIO.library.utils import FileBuffer
-from SourceIO.library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...library.source2.resource_types.compiled_world_resource import CompiledMapResource
+from ...library.utils import FileBuffer
+from ...library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
+from ...library.utils.tiny_path import TinyPath
 from .operator_helper import ImportOperatorHelper
-from SourceIO.blender_bindings.source2.dmx.camera_loader import load_camera
-from SourceIO.blender_bindings.source2.vmat_loader import load_material
-from SourceIO.blender_bindings.source2.vmdl_loader import (load_model, put_into_collections,
+from ..source2.dmx.camera_loader import load_camera
+from ..source2.vmat_loader import load_material
+from ..source2.vmdl_loader import (load_model, put_into_collections,
                                                            get_physics_block, ImportContext)
-from SourceIO.blender_bindings.source2.vphy_loader import load_physics
-from SourceIO.blender_bindings.source2.vtex_loader import import_texture
-from SourceIO.blender_bindings.source2.animation_loader import import_clips
-from SourceIO.library.source2.animation.loader import clip_from_resource
-from SourceIO.library.source2.blocks.kv3_block import KVBlock
-from SourceIO.library.source2.compiled_resource import CompiledResource, DATA_BLOCK
-from SourceIO.blender_bindings.source2.vwrld.loader import load_map
-from SourceIO.blender_bindings.utils.bpy_utils import get_new_unique_collection
-from SourceIO.blender_bindings.utils.resource_utils import serialize_mounted_content, deserialize_mounted_content
-from SourceIO.library.source2.blocks.phys_block import PhysBlock
+from ..source2.vphy_loader import load_physics
+from ..source2.vtex_loader import import_texture
+from ..source2.animation_loader import import_clips
+from ...library.source2.animation.loader import clip_from_resource
+from ...library.source2.blocks.kv3_block import KVBlock
+from ...library.source2.compiled_resource import CompiledResource, DATA_BLOCK
+from ..source2.vwrld.loader import load_map
+from ..utils.bpy_utils import get_new_unique_collection
+from ..utils.resource_utils import serialize_mounted_content, deserialize_mounted_content
+from ...library.source2.blocks.phys_block import PhysBlock
 
 
 # noinspection PyPep8Naming

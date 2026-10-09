@@ -1,10 +1,10 @@
 import nodeitems_utils
 from nodeitems_utils import NodeCategory, NodeItem
 
-from SourceIO.blender_bindings.ui.export_nodes import nodes, sockets
-from SourceIO.blender_bindings.ui.export_nodes.model_tree_nodes import SourceIO_NT_ModelTree, \
+from . import nodes, sockets
+from .model_tree_nodes import SourceIO_NT_ModelTree, \
     SourceIO_OP_EvaluateNodeTree
-from SourceIO.blender_bindings.ui.export_nodes.nodes.textures.texture_preview import SourceIO_OP_EvaluatePreview
+from .nodes.textures.texture_preview import SourceIO_OP_EvaluatePreview
 
 
 ### Node Categories ###

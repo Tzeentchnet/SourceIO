@@ -1,7 +1,7 @@
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.cubemap import Cubemap
-from SourceIO.library.utils import Buffer
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ..datatypes.cubemap import Cubemap
+from ....utils import Buffer
 
 
 @lump_tag(42, 'LUMP_CUBEMAPS')

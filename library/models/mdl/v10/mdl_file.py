@@ -2,13 +2,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 from .structs.bodypart import StudioBodypart
 from .structs.bone import StudioBone
 from .structs.sequence import StudioSequence
 from .structs.studioheader import StudioHeader
 from .structs.texture import StudioTexture
-from SourceIO.library.shared.vector_types import Vector3
+from ....shared.vector_types import Vector3
 
 
 @dataclass(slots=True)

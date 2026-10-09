@@ -1,9 +1,9 @@
-from SourceIO.library.source1.bsp import Lump, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import BSPFile, RespawnBSPFile, IBSPFile
-from SourceIO.library.source1.bsp.datatypes.texture_data import RespawnTextureData, TextureData
-from SourceIO.library.source1.bsp.datatypes.texture_info import TextureInfo, QuakeTextureInfo
-from SourceIO.library.source1.bsp.lump import AbstractLump
-from SourceIO.library.utils import Buffer
+from .. import Lump, lump_tag
+from ..bsp_file import BSPFile, RespawnBSPFile, IBSPFile
+from ..datatypes.texture_data import RespawnTextureData, TextureData
+from ..datatypes.texture_info import TextureInfo, QuakeTextureInfo
+from ..lump import AbstractLump
+from ....utils import Buffer
 
 
 @lump_tag(6, 'LUMP_TEXINFO')

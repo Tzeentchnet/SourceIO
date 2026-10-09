@@ -5,16 +5,16 @@ from pprint import pformat
 import bpy
 from mathutils import Euler
 
-from SourceIO.blender_bindings.utils.texture_utils import check_texture_cache
-from SourceIO.library.source2.blocks.kv3_block import KVBlock
+from ....utils.texture_utils import check_texture_cache
+from .....library.source2.blocks.kv3_block import KVBlock
 from .base_entity_classes import *
-from SourceIO.blender_bindings.source2.vtex_loader import import_texture
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_collection
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2 import CompiledMaterialResource, CompiledTextureResource
-from SourceIO.library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ...vtex_loader import import_texture
+from ....utils.bpy_utils import get_or_create_collection
+from .....library.shared.content_manager import ContentManager
+from .....library.source2 import CompiledMaterialResource, CompiledTextureResource
+from .....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
+from .....library.utils.tiny_path import TinyPath
+from .....logger import SourceLogMan
 
 strip_patch_coordinates = re.compile(r"_-?\d+_-?\d+_-?\d+.*$")
 log_manager = SourceLogMan()

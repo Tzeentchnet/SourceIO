@@ -4,15 +4,15 @@ import bpy
 import numpy as np
 from mathutils import Matrix
 
-from SourceIO.blender_bindings.material_loader.shaders.idtech3.idtech3 import IdTech3Shader
-from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import edit_armature, get_or_create_material, add_material
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
-from SourceIO.library.models.glm import GLMModel, GLASkeleton
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils import Buffer, TinyPath
-from SourceIO.library.utils.idtech3_shader_parser import parse_shader_materials
+from ...material_loader.shaders.idtech3.idtech3 import IdTech3Shader
+from ...operators.import_settings_base import ModelOptions
+from ...shared.model_container import ModelContainer
+from ...utils.bpy_utils import edit_armature, get_or_create_material, add_material
+from ...utils.fast_mesh import FastMesh, set_vertex_weights
+from ....library.models.glm import GLMModel, GLASkeleton
+from ....library.shared.content_manager import ContentManager
+from ....library.utils import Buffer, TinyPath
+from ....library.utils.idtech3_shader_parser import parse_shader_materials
 
 
 def _import_skeleton(name: str, skeleton: GLASkeleton):

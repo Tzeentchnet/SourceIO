@@ -4,13 +4,13 @@ from typing import Union, Optional
 
 import numpy as np
 
-from SourceIO.library.source2.blocks.resource_introspection_manifest.types import StructMember, KeyValueDataType, \
+from ..blocks.resource_introspection_manifest.types import StructMember, KeyValueDataType, \
     Struct, Enum
-from SourceIO.library.source2.keyvalues3.enums import Specifier, KV3Type
-from SourceIO.library.source2.keyvalues3.types import Object, NullObject, TypedArray, String, UInt32, Int32, UInt64, \
+from ..keyvalues3.enums import Specifier, KV3Type
+from ..keyvalues3.types import Object, NullObject, TypedArray, String, UInt32, Int32, UInt64, \
     Int64, Double, Bool
-from SourceIO.library.utils import MemoryBuffer, Buffer
-from SourceIO.library.utils.file_utils import MemorySlice
+from ...utils import MemoryBuffer, Buffer
+from ...utils.file_utils import MemorySlice
 
 
 @dataclass

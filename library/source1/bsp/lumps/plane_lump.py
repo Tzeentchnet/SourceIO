@@ -1,7 +1,7 @@
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile, BSPFile
-from SourceIO.library.source1.bsp.datatypes.plane import ValvePlane, Quake3Plane
-from SourceIO.library.utils import Buffer
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile, BSPFile
+from ..datatypes.plane import ValvePlane, Quake3Plane
+from ....utils import Buffer
 
 
 @lump_tag(1, 'LUMP_PLANES')

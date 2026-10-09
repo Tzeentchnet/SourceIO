@@ -1,6 +1,6 @@
 import numpy as np
 
-from SourceIO.library.utils import Buffer
+from .....utils import Buffer
 from .mesh import StudioMesh
 
 

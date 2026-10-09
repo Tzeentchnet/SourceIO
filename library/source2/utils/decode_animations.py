@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from SourceIO.library.utils import Buffer, MemoryBuffer
+from ...utils import Buffer, MemoryBuffer
 
 
 class _Decoder:

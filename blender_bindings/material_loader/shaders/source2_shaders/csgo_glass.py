@@ -3,9 +3,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, ExtraMaterialParameters
-from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
-from SourceIO.library.source2.blocks.kv3_block import KVBlock
+from ...shader_base import Nodes, ExtraMaterialParameters
+from ..source2_shader_base import Source2ShaderBase
+from .....library.source2.blocks.kv3_block import KVBlock
 
 
 class CSGOGlass(Source2ShaderBase):

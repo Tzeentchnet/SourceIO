@@ -1,8 +1,8 @@
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.overlay import Overlay, VOverlay
-from SourceIO.library.utils import Buffer
+from ....shared.app_id import SteamAppId
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ..datatypes.overlay import Overlay, VOverlay
+from ....utils import Buffer
 
 
 @lump_tag(45, 'LUMP_OVERLAYS')

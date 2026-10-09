@@ -5,44 +5,44 @@ from typing import Any, Optional, Type
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.source1.bsp.entities.abstract_entity_handlers import AbstractEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.quake3.quake3_entity_handler import QuakeEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.quake3.sof_entity_handler import RavenQ3EntityHandler
-from SourceIO.blender_bindings.material_loader.shaders.idtech3.idtech3 import IdTech3Shader
-from SourceIO.blender_bindings.operators.import_settings_base import Source1BSPSettings
-from SourceIO.blender_bindings.source1.bsp.entities.quake3.swjk2 import StarWarsJediKnights2
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.bsp.bsp_file import open_bsp, VBSPFile
-from SourceIO.library.source1.bsp.datatypes.static_prop_lump import StaticPropLump
-from SourceIO.library.source1.bsp.datatypes.face import Face
-from SourceIO.library.source1.bsp.datatypes.texture_data import TextureData
-from SourceIO.library.source1.bsp.datatypes.texture_info import TextureInfo
-from SourceIO.library.source1.bsp.geometry import OverlayBuilder, displacement_mesh
-from SourceIO.library.source1.bsp.lumps import *
-from SourceIO.library.source1.bsp.lumps.texture_lump import Quake3TextureInfoLump
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.utils import Buffer, TinyPath, path_stem, strip_vmt_extension, SOURCE1_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.idtech3_shader_parser import parse_shader_materials
-from SourceIO.library.utils.math_utilities import convert_rotation_source1_to_blender
-from SourceIO.logger import SourceLogMan, SLogger
-from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
-from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material
+from .entities.abstract_entity_handlers import AbstractEntityHandler
+from .entities.quake3.quake3_entity_handler import QuakeEntityHandler
+from .entities.quake3.sof_entity_handler import RavenQ3EntityHandler
+from ...material_loader.shaders.idtech3.idtech3 import IdTech3Shader
+from ...operators.import_settings_base import Source1BSPSettings
+from .entities.quake3.swjk2 import StarWarsJediKnights2
+from ...utils.fast_mesh import FastMesh
+from ....library.shared.app_id import SteamAppId
+from ....library.shared.content_manager import ContentManager
+from ....library.source1.bsp.bsp_file import open_bsp, VBSPFile
+from ....library.source1.bsp.datatypes.static_prop_lump import StaticPropLump
+from ....library.source1.bsp.datatypes.face import Face
+from ....library.source1.bsp.datatypes.texture_data import TextureData
+from ....library.source1.bsp.datatypes.texture_info import TextureInfo
+from ....library.source1.bsp.geometry import OverlayBuilder, displacement_mesh
+from ....library.source1.bsp.lumps import *
+from ....library.source1.bsp.lumps.texture_lump import Quake3TextureInfoLump
+from ....library.source1.vmt import VMT
+from ....library.utils import Buffer, TinyPath, path_stem, strip_vmt_extension, SOURCE1_HAMMER_UNIT_TO_METERS
+from ....library.utils.idtech3_shader_parser import parse_shader_materials
+from ....library.utils.math_utilities import convert_rotation_source1_to_blender
+from ....logger import SourceLogMan, SLogger
+from ...material_loader.material_loader import ShaderRegistry
+from ...material_loader.shaders.source1_shader_base import Source1ShaderBase
+from ...utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material
 
-from SourceIO.blender_bindings.source1.bsp.entities.base_entity_handler import BaseEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.bms_entity_handlers import BlackMesaEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.csgo_entity_handlers import CSGOEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.halflife2_entity_handler import HalfLifeEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.left4dead2_entity_handlers import Left4dead2EntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.portal2_entity_handlers import Portal2EntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.p2ce_entity_handlers import Portal2CEEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.portal_entity_handlers import PortalEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.tf2_entity_handler import TF2EntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.titanfall_entity_handler import TitanfallEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.vindictus_entity_handler import VindictusEntityHandler
-from SourceIO.blender_bindings.source1.bsp.entities.vampire_entity_handler import VampireEntityHandler
+from .entities.base_entity_handler import BaseEntityHandler
+from .entities.bms_entity_handlers import BlackMesaEntityHandler
+from .entities.csgo_entity_handlers import CSGOEntityHandler
+from .entities.halflife2_entity_handler import HalfLifeEntityHandler
+from .entities.left4dead2_entity_handlers import Left4dead2EntityHandler
+from .entities.portal2_entity_handlers import Portal2EntityHandler
+from .entities.p2ce_entity_handlers import Portal2CEEntityHandler
+from .entities.portal_entity_handlers import PortalEntityHandler
+from .entities.tf2_entity_handler import TF2EntityHandler
+from .entities.titanfall_entity_handler import TitanfallEntityHandler
+from .entities.vindictus_entity_handler import VindictusEntityHandler
+from .entities.vampire_entity_handler import VampireEntityHandler
 
 strip_patch_coordinates = re.compile(r"_-?\d+_-?\d+_-?\d+.*$")
 log_manager = SourceLogMan()

@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
 from typing import Optional, Type, TypeVar
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.bsp.lump import Quake3LumpInfo, LumpTag, ValveLumpInfo, Lump, AbstractLump
-from SourceIO.library.utils import Buffer, FileBuffer
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ...shared.app_id import SteamAppId
+from ...shared.content_manager import ContentManager
+from .lump import Quake3LumpInfo, LumpTag, ValveLumpInfo, Lump, AbstractLump
+from ...utils import Buffer, FileBuffer
+from ...utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 

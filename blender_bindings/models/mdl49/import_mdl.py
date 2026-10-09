@@ -1,4 +1,4 @@
-from SourceIO.blender_bindings.models.materials import get_model_material_names
+from ..materials import get_model_material_names
 import itertools
 import warnings
 from collections import defaultdict
@@ -8,23 +8,23 @@ import numpy as np
 from mathutils import Euler, Matrix, Quaternion, Vector
 from math import atan
 
-from SourceIO.blender_bindings.models.common import merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors, create_flex_drivers
-from SourceIO.blender_bindings.models.mdl44.import_mdl import create_armature
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_material, ActionCurveFactory
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
-from SourceIO.library.models.mdl.structs.header import StudioHDRFlags
-from SourceIO.library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
-from SourceIO.library.models.mdl.v49.flex_expressions import *
-from SourceIO.library.models.mdl.v49.mdl_file import MdlV49
-from SourceIO.library.models.vtx.v7.vtx import Vtx
-from SourceIO.library.models.vvd import Vvd
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.utils.common import get_slice
-from SourceIO.library.utils.path_utilities import path_stem
-from SourceIO.logger import SourceLogMan
+from ..common import merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors, create_flex_drivers
+from ..mdl44.import_mdl import create_armature
+from ...shared.model_container import ModelContainer
+from ...operators.import_settings_base import ModelOptions
+from ...utils.bpy_utils import add_material, get_or_create_material, ActionCurveFactory
+from ...utils.fast_mesh import FastMesh, set_vertex_weights
+from ....library.models.mdl.structs.header import StudioHDRFlags
+from ....library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
+from ....library.models.mdl.v49.flex_expressions import *
+from ....library.models.mdl.v49.mdl_file import MdlV49
+from ....library.models.vtx.v7.vtx import Vtx
+from ....library.models.vvd import Vvd
+from ....library.shared.content_manager import ContentManager
+from ....library.shared.content_manager.provider import ContentProvider
+from ....library.utils.common import get_slice
+from ....library.utils.path_utilities import path_stem
+from ....logger import SourceLogMan
 #from string import ascii_lowercase
 
 log_manager = SourceLogMan()

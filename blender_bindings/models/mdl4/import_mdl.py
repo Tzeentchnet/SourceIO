@@ -5,18 +5,18 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 
-from SourceIO.blender_bindings.operators.import_settings_base import ModelOptions
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh
-from SourceIO.library.models.mdl.v4.mdl_file import Mdl
-from SourceIO.library.models.mdl.v4.structs.sequence import euler_to_quat
-from SourceIO.library.models.mdl.v4.structs.texture import StudioTexture
-from SourceIO.library.utils import Buffer
-from SourceIO.blender_bindings.material_loader.shaders.goldsrc_shaders.goldsrc_shader import \
+from ...operators.import_settings_base import ModelOptions
+from ...utils.fast_mesh import FastMesh
+from ....library.models.mdl.v4.mdl_file import Mdl
+from ....library.models.mdl.v4.structs.sequence import euler_to_quat
+from ....library.models.mdl.v4.structs.texture import StudioTexture
+from ....library.utils import Buffer
+from ...material_loader.shaders.goldsrc_shaders.goldsrc_shader import \
     GoldSrcShader
-from SourceIO.blender_bindings.utils.bpy_utils import ActionCurveFactory
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, edit_armature, get_or_create_material
-from SourceIO.library.utils.path_utilities import path_stem
+from ...utils.bpy_utils import ActionCurveFactory
+from ...shared.model_container import ModelContainer
+from ...utils.bpy_utils import add_material, edit_armature, get_or_create_material
+from ....library.utils.path_utilities import path_stem
 
 
 def get_name(mdl_file: BinaryIO):

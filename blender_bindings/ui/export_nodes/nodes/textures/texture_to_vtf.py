@@ -2,10 +2,10 @@ import bpy
 import numpy as np
 from bpy.types import Node
 
-from SourceIO.blender_bindings.operators.source1_operators import get_formats, get_filters
-from SourceIO.blender_bindings.ui.export_nodes.nodes.base_node import SourceIOTextureTreeNode
-from SourceIO.library.utils.pylib.vtf import ImageFormat, MipFilter
-from SourceIO.library.utils.pylib.vtf import VTFFile
+from .....operators.source1_operators import get_formats, get_filters
+from ..base_node import SourceIOTextureTreeNode
+from ......library.utils.pylib.vtf import ImageFormat, MipFilter
+from ......library.utils.pylib.vtf import VTFFile
 
 
 class SourceIOTextureToVTFNode(SourceIOTextureTreeNode):

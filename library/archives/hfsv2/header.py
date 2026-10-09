@@ -1,4 +1,4 @@
-from SourceIO.library.utils import Buffer
+from ...utils import Buffer
 
 
 class Header:

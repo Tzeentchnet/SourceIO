@@ -2,7 +2,7 @@ import struct
 from dataclasses import dataclass
 
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 from ..v6.structs.header import Header
 from ..v6.vtx import Vtx as Vtx6
 from .structs.bodypart import BodyPart

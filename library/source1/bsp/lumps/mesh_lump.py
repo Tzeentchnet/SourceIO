@@ -1,7 +1,7 @@
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.source1.bsp.datatypes.mesh import Mesh
-from SourceIO.library.utils import Buffer
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ..datatypes.mesh import Mesh
+from ....utils import Buffer
 
 
 @lump_tag(0x50, 'LUMP_MESHES', bsp_version=29)

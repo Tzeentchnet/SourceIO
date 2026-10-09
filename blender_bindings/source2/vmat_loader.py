@@ -1,9 +1,9 @@
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material
-from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry, ExtraMaterialParameters
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2 import CompiledMaterialResource
-from SourceIO.library.utils.perf_sampler import timed
-from SourceIO.library.utils.tiny_path import TinyPath
+from ..utils.bpy_utils import get_or_create_material
+from ..material_loader.material_loader import ShaderRegistry, ExtraMaterialParameters
+from ...library.shared.content_manager import ContentManager
+from ...library.source2 import CompiledMaterialResource
+from ...library.utils.perf_sampler import timed
+from ...library.utils.tiny_path import TinyPath
 
 
 

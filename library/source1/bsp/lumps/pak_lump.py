@@ -1,12 +1,12 @@
 import zipfile
 from io import BytesIO
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.providers.zip_content_provider import ZIPContentProvider
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils.tiny_path import TinyPath
+from ....shared.app_id import SteamAppId
+from ....shared.content_manager.providers.zip_content_provider import ZIPContentProvider
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
+from ....utils import Buffer
+from ....utils.tiny_path import TinyPath
 
 
 @lump_tag(40, 'LUMP_PAK')

@@ -3,8 +3,8 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.models.mdl.v6.structs.texture import MdlTextureFlag
-from SourceIO.library.utils import Buffer
+from ...v6.structs.texture import MdlTextureFlag
+from .....utils import Buffer
 
 
 @dataclass(slots=True)

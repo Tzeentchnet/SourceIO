@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from enum import IntFlag
 
 
-from SourceIO.library.shared.vector_types import Vector3
-from SourceIO.library.utils import Buffer, math_utilities
+from ....shared.vector_types import Vector3
+from ....utils import Buffer, math_utilities
 
 
 class AttachmentType(IntFlag):

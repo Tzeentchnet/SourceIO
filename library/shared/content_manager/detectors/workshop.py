@@ -16,16 +16,16 @@ files take priority over the base game's.
 """
 from typing import Collection
 
-from SourceIO.library.archives.gma import check_gma
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors.content_detector import ContentDetector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.gma_provider import GMAContentProvider
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
-from SourceIO.library.shared.content_manager.providers.vpk_provider import VPKContentProvider
-from SourceIO.library.utils import kv1
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ....archives.gma import check_gma
+from ...app_id import SteamAppId
+from .content_detector import ContentDetector
+from ..provider import ContentProvider
+from ..providers.gma_provider import GMAContentProvider
+from ..providers.loose_files import LooseFilesContentProvider
+from ..providers.vpk_provider import VPKContentProvider
+from ....utils import kv1
+from ....utils.tiny_path import TinyPath
+from .....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('WorkshopDetector')
@@ -166,7 +166,7 @@ class WorkshopDetector(ContentDetector):
 
         Imported lazily because the registry module imports this one.
         """
-        from SourceIO.library.shared.content_manager.detectors import GAME_DETECTORS
+        from . import GAME_DETECTORS
         for probe in cls._probe_paths(game_install):
             for detector in GAME_DETECTORS:
                 if isinstance(detector, WorkshopDetector):

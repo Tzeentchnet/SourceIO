@@ -1,5 +1,5 @@
-from SourceIO.library.source2.blocks.manifest import ManifestBlock
-from SourceIO.library.source2.compiled_resource import CompiledResource, DATA_BLOCK
+from ..blocks.manifest import ManifestBlock
+from ..compiled_resource import CompiledResource, DATA_BLOCK
 
 
 class CompiledManifestResource(CompiledResource):

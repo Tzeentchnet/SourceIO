@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 from .structs.bodypart import BodyPart
 from .structs.header import Header
 from .structs.material_replacement_list import MaterialReplacementList

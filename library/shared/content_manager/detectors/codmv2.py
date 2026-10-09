@@ -1,10 +1,10 @@
 from typing import Collection
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors import ContentDetector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.zip_content_provider import ZIPContentProvider
-from SourceIO.library.utils import TinyPath, backwalk_file_resolver
+from ...app_id import SteamAppId
+from . import ContentDetector
+from ..provider import ContentProvider
+from ..providers.zip_content_provider import ZIPContentProvider
+from ....utils import TinyPath, backwalk_file_resolver
 
 
 class CallOfDutyModernWarfare2Detector(ContentDetector):

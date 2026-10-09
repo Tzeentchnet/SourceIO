@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 
 
 @dataclass(slots=True)
@@ -41,7 +41,7 @@ class AniFile:
         return cls(version, buffer)
 
     def get_block_buffer(self, block_entry: AnimBlockEntry) -> Buffer:
-        from SourceIO.library.utils import MemoryBuffer
+        from ....utils import MemoryBuffer
         self.buffer.seek(block_entry.data_offset)
         data = self.buffer.read(block_entry.data_size)
         return MemoryBuffer(data)

@@ -4,9 +4,9 @@ from collections import defaultdict
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.source2.blocks.kv3_block import KVBlock
-from SourceIO.library.source2.keyvalues3.enums import KV3Signature, KV3Format
-from SourceIO.library.source2.keyvalues3.types import AnyKVType
+from .kv3_block import KVBlock
+from ..keyvalues3.enums import KV3Signature, KV3Format
+from ..keyvalues3.types import AnyKVType
 
 
 class MorphBlock(KVBlock):

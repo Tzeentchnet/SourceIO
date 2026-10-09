@@ -2,8 +2,8 @@ import bpy
 import numpy as np
 from bpy.types import Node
 
-from SourceIO.blender_bindings.ui.export_nodes.model_tree_nodes import evaluate_tree
-from SourceIO.blender_bindings.ui.export_nodes.nodes.base_node import SourceIOTextureTreeNode
+from ...model_tree_nodes import evaluate_tree
+from ..base_node import SourceIOTextureTreeNode
 
 
 class SourceIO_OP_EvaluatePreview(bpy.types.Operator):

@@ -16,17 +16,17 @@ graphs reach thousands of them.
 """
 from fnmatch import fnmatchcase
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2.animation.animation import (SequenceAnimation, Skeleton, animations_from_data,
+from ...shared.content_manager import ContentManager
+from .animation import (SequenceAnimation, Skeleton, animations_from_data,
                                                           animations_from_sequence_data)
-from SourceIO.library.source2.animation.clip import AnimationClip, ClipAnimation, nm_skeleton
-from SourceIO.library.source2.blocks.agrp_block import AgrpBlock
-from SourceIO.library.source2.blocks.aseq_block import AseqBlock
-from SourceIO.library.source2.blocks.kv3_block import KVBlock, custom_type_kvblock
-from SourceIO.library.source2.blocks.resource_external_reference_list import ResourceExternalReferenceList
-from SourceIO.library.source2.compiled_resource import CompiledResource, DATA_BLOCK
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from .clip import AnimationClip, ClipAnimation, nm_skeleton
+from ..blocks.agrp_block import AgrpBlock
+from ..blocks.aseq_block import AseqBlock
+from ..blocks.kv3_block import KVBlock, custom_type_kvblock
+from ..blocks.resource_external_reference_list import ResourceExternalReferenceList
+from ..compiled_resource import CompiledResource, DATA_BLOCK
+from ...utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
 
 logger = SourceLogMan().get_logger("Source2::Animation")
 

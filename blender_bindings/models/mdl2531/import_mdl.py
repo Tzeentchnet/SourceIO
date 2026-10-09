@@ -1,4 +1,4 @@
-from SourceIO.blender_bindings.models.materials import get_model_material_names, resolve_model_material
+from ..materials import get_model_material_names, resolve_model_material
 from typing import Union
 from collections import defaultdict
 
@@ -6,24 +6,24 @@ import bpy
 import numpy as np
 from mathutils import Euler, Matrix, Quaternion, Vector
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils.path_utilities import path_stem
-from SourceIO.library.models.mdl.structs.header import StudioHDRFlags
-from SourceIO.library.models.mdl.structs.model import ModelV2531
-from SourceIO.library.models.mdl.v2531.mdl_file import MdlV2531
-from SourceIO.library.models.mdl.v36.mdl_file import MdlV36
-from SourceIO.library.models.mdl.v49.flex_expressions import *
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, edit_armature, get_or_create_material
-from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
-from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.library.models.vtx.v107.vtx import Vtx
-from SourceIO.library.models.vvc import Vvc
+from ....library.shared.content_manager import ContentManager
+from ....library.utils.path_utilities import path_stem
+from ....library.models.mdl.structs.header import StudioHDRFlags
+from ....library.models.mdl.structs.model import ModelV2531
+from ....library.models.mdl.v2531.mdl_file import MdlV2531
+from ....library.models.mdl.v36.mdl_file import MdlV36
+from ....library.models.mdl.v49.flex_expressions import *
+from ....library.source1.vmt import VMT
+from ...utils.fast_mesh import FastMesh, set_vertex_weights
+from ...shared.model_container import ModelContainer
+from ...utils.bpy_utils import add_material, edit_armature, get_or_create_material
+from ...material_loader.material_loader import ShaderRegistry
+from ...material_loader.shaders.source1_shader_base import Source1ShaderBase
+from ....library.models.vtx.v107.vtx import Vtx
+from ....library.models.vvc import Vvc
 from ..common import merge_meshes, create_eyeballs
-from SourceIO.logger import SourceLogMan
-from SourceIO.library.utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
+from ....library.utils.tiny_path import TinyPath
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::ModelLoader')

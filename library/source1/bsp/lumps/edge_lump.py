@@ -1,9 +1,9 @@
 import numpy as np
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.utils import Buffer
-from SourceIO.library.source1.bsp import Lump, ValveLumpInfo, lump_tag
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
+from ....shared.app_id import SteamAppId
+from ....utils import Buffer
+from .. import Lump, ValveLumpInfo, lump_tag
+from ..bsp_file import VBSPFile
 
 
 @lump_tag(12, 'LUMP_EDGES')

@@ -2,7 +2,7 @@ import zlib
 
 import numpy as np
 
-from SourceIO.library.utils import Buffer, MemoryBuffer
+from ...utils import Buffer, MemoryBuffer
 from .file import File
 from .header import Header
 from .serpent import *

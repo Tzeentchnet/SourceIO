@@ -3,8 +3,8 @@ import random
 
 import bpy
 
-from SourceIO.library.utils.perf_sampler import timed
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...library.utils.perf_sampler import timed
+from ...library.utils.tiny_path import TinyPath
 
 
 @contextlib.contextmanager

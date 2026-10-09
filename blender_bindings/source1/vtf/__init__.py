@@ -1,15 +1,15 @@
 import zlib
 import numpy as np
 
-from SourceIO.blender_bindings.utils.texture_utils import (create_and_cache_texture,
+from ...utils.texture_utils import (create_and_cache_texture,
                                                            create_and_cache_image_sequence,
                                                            get_asset_cache_roots)
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.vtf import convert_skybox_to_equiangular
-from SourceIO.library.source1.vtf import load_texture, load_texture_frames, load_texture_tth
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.library.utils import Buffer, MemoryBuffer
-from SourceIO.logger import SourceLogMan
+from ....library.shared.content_manager import ContentManager
+from ....library.source1.vtf import convert_skybox_to_equiangular
+from ....library.source1.vtf import load_texture, load_texture_frames, load_texture_tth
+from ....library.utils.tiny_path import TinyPath
+from ....library.utils import Buffer, MemoryBuffer
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::VTF')

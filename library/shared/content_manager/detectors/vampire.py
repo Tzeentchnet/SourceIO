@@ -1,10 +1,10 @@
 from typing import Collection
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors.source1 import Source1Detector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.vpk_provider import VPKContentProvider
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
+from ...app_id import SteamAppId
+from .source1 import Source1Detector
+from ..provider import ContentProvider
+from ..providers.vpk_provider import VPKContentProvider
+from ....utils import backwalk_file_resolver, TinyPath
 
 class VampireDetector(Source1Detector):
 

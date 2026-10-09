@@ -18,12 +18,12 @@ from mathutils import Matrix, Quaternion, Vector
 
 import bpy
 
-from SourceIO.blender_bindings.models.import_animations import import_animations_to_armature
-from SourceIO.library.models.mdl.load_animations import AnimationData, load_all_animations_with_models
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from .import_animations import import_animations_to_armature
+from ...library.models.mdl.load_animations import AnimationData, load_all_animations_with_models
+from ...library.shared.content_manager import ContentManager
+from ...library.utils import Buffer
+from ...library.utils.tiny_path import TinyPath
+from ...logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('PropAnimations')
@@ -170,7 +170,7 @@ def pose_prop(content_manager: ContentManager, armature: bpy.types.Object,
 
 def _parse_mdl(mdl_buffer: Buffer):
     """Parse an MDL header, tolerating versions that carry no animation tables."""
-    from SourceIO.library.models.mdl.v49.mdl_file import MdlV49
+    from ...library.models.mdl.v49.mdl_file import MdlV49
     try:
         mdl_buffer.seek(0)
         return MdlV49.from_buffer(mdl_buffer)

@@ -12,9 +12,9 @@ from typing import Any
 
 import numpy as np
 
-from SourceIO.library.source2.animation.segments import (AnimationSegment, ChannelAttribute, SUPPORTED_DECODERS,
+from .segments import (AnimationSegment, ChannelAttribute, SUPPORTED_DECODERS,
                                                          parse_segment_header)
-from SourceIO.logger import SourceLogMan
+from ....logger import SourceLogMan
 
 logger = SourceLogMan().get_logger("Source2::Animation")
 

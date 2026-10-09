@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
-from SourceIO.library.source2.utils.ntro_reader import NTROBuffer
-from SourceIO.library.utils import Buffer
-from SourceIO.library.source2.blocks.base import BaseBlock
-from SourceIO.library.utils.file_utils import Label
+from ..utils.ntro_reader import NTROBuffer
+from ...utils import Buffer
+from .base import BaseBlock
+from ...utils.file_utils import Label
 
 
 @dataclass(slots=True)

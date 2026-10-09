@@ -1,11 +1,11 @@
 from typing import Collection
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors.source1 import Source1Detector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
-from SourceIO.library.shared.content_manager.providers.zip_content_provider import ZIPContentProvider
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
+from ...app_id import SteamAppId
+from .source1 import Source1Detector
+from ..provider import ContentProvider
+from ..providers.loose_files import LooseFilesContentProvider
+from ..providers.zip_content_provider import ZIPContentProvider
+from ....utils import backwalk_file_resolver, TinyPath
 
 
 class QuakeIDTech3Detector(Source1Detector):

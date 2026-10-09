@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 
-from SourceIO.library.source2.blocks.base import BaseBlock
-from SourceIO.library.source2.keyvalues3.binary_keyvalues import read_valve_keyvalue3, write_valve_keyvalue3
+from ..base import BaseBlock
+from ...keyvalues3.binary_keyvalues import read_valve_keyvalue3, write_valve_keyvalue3
 from .dependencies import *
-from SourceIO.library.source2.utils.ntro_reader import NTROBuffer
+from ...utils.ntro_reader import NTROBuffer
 from ...keyvalues3.enums import KV3Signature, KV3Format, KV3CompressionMethod
 from ...keyvalues3.types import Object
 

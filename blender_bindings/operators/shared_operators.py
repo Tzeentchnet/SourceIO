@@ -14,21 +14,21 @@ import bpy
 from mathutils import Matrix
 
 from .import_settings_base import ModelOptions
-from SourceIO.blender_bindings.models import import_model
-from SourceIO.blender_bindings.models.common import put_into_collections as s1_put_into_collections
-from SourceIO.blender_bindings.models.prop_animations import pose_prop
-from SourceIO.blender_bindings.shared.exceptions import RequiredFileNotFound
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.shared.skins import prop_skin, set_skin, set_model_skin
-from SourceIO.blender_bindings.source2.vmdl_loader import load_model, ImportContext
-from SourceIO.blender_bindings.source2.vmdl_loader import put_into_collections as s2_put_into_collections
-from SourceIO.blender_bindings.utils.bpy_utils import (get_or_create_collection, get_new_unique_collection, find_layer_collection,
+from ..models import import_model
+from ..models.common import put_into_collections as s1_put_into_collections
+from ..models.prop_animations import pose_prop
+from ..shared.exceptions import RequiredFileNotFound
+from ..shared.model_container import ModelContainer
+from ..shared.skins import prop_skin, set_skin, set_model_skin
+from ..source2.vmdl_loader import load_model, ImportContext
+from ..source2.vmdl_loader import put_into_collections as s2_put_into_collections
+from ..utils.bpy_utils import (get_or_create_collection, get_new_unique_collection, find_layer_collection,
                                                        pause_view_layer_update)
-from SourceIO.blender_bindings.utils.resource_utils import deserialize_mounted_content, serialize_mounted_content
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2 import CompiledModelResource
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils.tiny_path import TinyPath
+from ..utils.resource_utils import deserialize_mounted_content, serialize_mounted_content
+from ...library.shared.content_manager import ContentManager
+from ...library.source2 import CompiledModelResource
+from ...library.utils import Buffer
+from ...library.utils.tiny_path import TinyPath
 
 
 def get_parent(collection):

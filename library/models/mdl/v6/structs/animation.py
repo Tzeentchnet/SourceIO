@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.utils import Buffer
+from .....utils import Buffer
 
 raw_pos_dtype = np.dtype([
     ('frame_id', np.int32, (1,)),

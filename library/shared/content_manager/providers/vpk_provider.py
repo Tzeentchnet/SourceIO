@@ -1,10 +1,10 @@
 from typing import Iterator, Optional
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.utils import Buffer, MemoryBuffer, TinyPath
-from SourceIO.library.utils.pylib import VPKFile
-from SourceIO.logger import SourceLogMan
+from ...app_id import SteamAppId
+from ..provider import ContentProvider
+from ....utils import Buffer, MemoryBuffer, TinyPath
+from ....utils.pylib import VPKFile
+from .....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('VpkProvider')

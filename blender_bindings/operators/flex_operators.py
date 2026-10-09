@@ -3,7 +3,7 @@ from bpy.props import (BoolProperty, FloatProperty,
                        IntProperty, StringProperty)
 
 from .shared_operators import UITools
-from SourceIO.library.models.mdl.structs.flex import FlexController
+from ...library.models.mdl.structs.flex import FlexController
 
 
 def update_max_min(self: 'SourceIO_PG_FlexController', _):

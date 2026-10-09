@@ -2,7 +2,7 @@ import bpy
 import numpy as np
 from bpy.types import Node
 
-from SourceIO.blender_bindings.ui.export_nodes.nodes.base_node import SourceIOTextureTreeNode
+from ..base_node import SourceIOTextureTreeNode
 
 
 class SourceIOTextureInputNode(SourceIOTextureTreeNode):

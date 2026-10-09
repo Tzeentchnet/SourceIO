@@ -2,7 +2,7 @@ import os
 import platform
 from typing import Optional
 
-from SourceIO.library.utils import TinyPath
+from . import TinyPath
 
 
 def pop_path_back(path: TinyPath):

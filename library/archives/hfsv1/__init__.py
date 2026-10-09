@@ -1,5 +1,5 @@
-from SourceIO.library.utils import FileBuffer
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...utils import FileBuffer
+from ...utils.tiny_path import TinyPath
 from .file import File
 from .index import Index
 

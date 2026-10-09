@@ -6,7 +6,7 @@ from typing import Sequence
 
 import numpy as np
 
-from SourceIO.library.utils import Buffer
+from ...utils import Buffer
 
 
 @dataclass

@@ -1,9 +1,9 @@
 from abc import abstractmethod
 from typing import Iterator, Optional
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.utils import Buffer, FileBuffer, TinyPath, corrected_path
-from SourceIO.logger import SourceLogMan
+from ..app_id import SteamAppId
+from ...utils import Buffer, FileBuffer, TinyPath, corrected_path
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('ContentManager')

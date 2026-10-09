@@ -1,5 +1,5 @@
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
+from ...app_id import SteamAppId
+from .loose_files import LooseFilesContentProvider
 
 
 class SBoxAddonProvider(LooseFilesContentProvider):

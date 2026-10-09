@@ -1,13 +1,13 @@
 from typing import Iterator, Optional, Any
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.provider import ContentProvider, is_relative_to
-from SourceIO.library.shared.content_manager.providers import register_provider
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
-from SourceIO.library.shared.content_manager.providers.vpk_provider import VPKContentProvider
-from SourceIO.library.utils import Buffer, TinyPath
-from SourceIO.library.utils import kv1
-from SourceIO.logger import SourceLogMan
+from ...app_id import SteamAppId
+from ..provider import ContentProvider, is_relative_to
+from . import register_provider
+from .loose_files import LooseFilesContentProvider
+from .vpk_provider import VPKContentProvider
+from ....utils import Buffer, TinyPath
+from ....utils import kv1
+from .....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('GameInfoProvider')

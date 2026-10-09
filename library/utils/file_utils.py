@@ -14,7 +14,7 @@ from struct import calcsize, pack, unpack
 from typing import Optional, Protocol, Union, TypeVar, Type, Callable, Any
 
 try:
-    from SourceIO.library.utils.tiny_path import TinyPath
+    from .tiny_path import TinyPath
 except ImportError:
     TinyPath = Path
 

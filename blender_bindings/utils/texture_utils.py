@@ -6,9 +6,9 @@ from typing import Optional
 import bpy
 import numpy as np
 
-from SourceIO.library.utils.pylib.image import save_exr, save_png, encode_exr, encode_png
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ...library.utils.pylib.image import save_exr, save_png, encode_exr, encode_png
+from ...library.utils.tiny_path import TinyPath
+from ...logger import SourceLogMan
 
 logger = SourceLogMan().get_logger("TextureUtils")
 

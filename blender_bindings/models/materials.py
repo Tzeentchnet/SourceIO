@@ -1,8 +1,8 @@
 """Material path resolution shared by Source 1 material and mesh import."""
 import posixpath
 
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.library.shared.content_manager import ContentManager
+from ...library.utils.tiny_path import TinyPath
+from ...library.shared.content_manager import ContentManager
 
 
 def resolve_model_material(content_manager: ContentManager, mdl, material_name: str) -> TinyPath | None:

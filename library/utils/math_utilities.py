@@ -3,7 +3,7 @@ from typing import Union
 
 import numpy as np
 
-from SourceIO.library.shared.vector_types import Vector3
+from ..shared.vector_types import Vector3
 # According to the Valve documentation,
 # one hammer unit is 1/16 of feet, and one feet is 30.48 cm
 SOURCE1_HAMMER_UNIT_TO_METERS = ((1 / 16) * 30.48) / 100

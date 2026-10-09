@@ -1,8 +1,8 @@
 import numpy as np
 
-from SourceIO.library.source2.exceptions import MissingBlock
-from SourceIO.library.source2.compiled_resource import CompiledResource
-from SourceIO.library.source2.blocks.phys_block import PhysBlock
+from ..exceptions import MissingBlock
+from ..compiled_resource import CompiledResource
+from ..blocks.phys_block import PhysBlock
 
 
 class CompiledPhysicsResource(CompiledResource):

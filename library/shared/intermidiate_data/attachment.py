@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Annotated, Collection, Optional
 
-from SourceIO.library.shared.intermidiate_data.common import Quaternion, Vector3
+from .common import Quaternion, Vector3
 
 
 @dataclass

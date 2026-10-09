@@ -2,9 +2,9 @@ from typing import Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import (ExtraMaterialParameters, Nodes, MIX_FACTOR,
+from ...shader_base import (ExtraMaterialParameters, Nodes, MIX_FACTOR,
                                                                    MIX_A, MIX_B, MIX_RESULT)
-from SourceIO.library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
+from .....library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
 from .lightmap_generic import LightmapGeneric
 
 #: Vertex-colour layer written by the BSP importer for displacements that carry a

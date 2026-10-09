@@ -5,7 +5,7 @@ from enum import IntFlag
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.utils import Buffer
+from .....utils import Buffer
 from .strip import Strip
 
 

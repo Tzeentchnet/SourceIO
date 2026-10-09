@@ -1,8 +1,8 @@
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import Nodes, MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT
-from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.logger import SourceLogMan
+from ...shader_base import Nodes, MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT
+from ..source1_shader_base import Source1ShaderBase
+from .....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('MaterialLoader')

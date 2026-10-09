@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 from .structs.bodypart import StudioBodypart
 from .structs.bone import StudioBone
 from .structs.studioheader import StudioHeader

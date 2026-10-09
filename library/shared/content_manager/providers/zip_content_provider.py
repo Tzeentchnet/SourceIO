@@ -2,9 +2,9 @@ import fnmatch
 from typing import Iterator, Optional
 from zipfile import ZipFile
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.utils import Buffer, MemoryBuffer, TinyPath
+from ...app_id import SteamAppId
+from ..provider import ContentProvider
+from ....utils import Buffer, MemoryBuffer, TinyPath
 
 
 class ZIPContentProvider(ContentProvider):

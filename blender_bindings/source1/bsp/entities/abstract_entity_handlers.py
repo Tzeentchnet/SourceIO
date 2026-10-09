@@ -7,21 +7,21 @@ import bpy
 import numpy as np
 from mathutils import Euler
 
-from SourceIO.blender_bindings.source1.bsp.entities.base_entity_classes import *
-from SourceIO.blender_bindings.source1.vtf import import_texture
-from SourceIO.blender_bindings.operators.import_settings_base import Source1BSPSettings
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.bsp.bsp_file import BSPFile
-from SourceIO.library.source1.bsp.datatypes.face import Face
-from SourceIO.library.source1.bsp.datatypes.model import Model
-from SourceIO.library.source1.bsp.datatypes.texture_data import TextureData
-from SourceIO.library.source1.bsp.datatypes.texture_info import TextureInfo
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.path_utilities import path_stem, strip_vmt_extension
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from .base_entity_classes import *
+from ...vtf import import_texture
+from ....operators.import_settings_base import Source1BSPSettings
+from ....utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material
+from .....library.shared.content_manager import ContentManager
+from .....library.source1.bsp.bsp_file import BSPFile
+from .....library.source1.bsp.datatypes.face import Face
+from .....library.source1.bsp.datatypes.model import Model
+from .....library.source1.bsp.datatypes.texture_data import TextureData
+from .....library.source1.bsp.datatypes.texture_info import TextureInfo
+from .....library.source1.vmt import VMT
+from .....library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
+from .....library.utils.path_utilities import path_stem, strip_vmt_extension
+from .....library.utils.tiny_path import TinyPath
+from .....logger import SourceLogMan
 
 strip_patch_coordinates = re.compile(r"_-?\d+_-?\d+_-?\d+.*$")
 log_manager = SourceLogMan()

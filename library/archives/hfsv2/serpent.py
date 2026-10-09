@@ -1,8 +1,8 @@
 import numpy as np
 
-from SourceIO.library.utils import MemoryBuffer
-from SourceIO.library.utils.singleton import SingletonMeta
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...utils import MemoryBuffer
+from ...utils.singleton import SingletonMeta
+from ...utils.tiny_path import TinyPath
 from . import tables
 
 ROUND_ITER = 16

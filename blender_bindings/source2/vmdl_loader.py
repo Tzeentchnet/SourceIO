@@ -10,27 +10,27 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import (add_material, edit_armature, find_layer_collection,
+from ..shared.model_container import ModelContainer
+from ..utils.bpy_utils import (add_material, edit_armature, find_layer_collection,
                                                        get_new_unique_collection, get_or_create_material)
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2 import (CompiledMaterialResource, CompiledModelResource, CompiledMorphResource,
+from ...library.shared.app_id import SteamAppId
+from ...library.shared.content_manager import ContentManager
+from ...library.source2 import (CompiledMaterialResource, CompiledModelResource, CompiledMorphResource,
                                       CompiledPhysicsResource, CompiledTextureResource, CompiledMeshResource)
-from SourceIO.library.source2.common import convert_normals, convert_normals_2
-from SourceIO.library.source2.blocks.kv3_block import KVBlock, custom_type_kvblock
-from SourceIO.library.source2.blocks.morph_block import MorphBlock
-from SourceIO.library.source2.blocks.phys_block import PhysBlock
-from SourceIO.library.source2.blocks.vertex_index_buffer import VertexIndexBuffer, IndexBuffer
-from SourceIO.library.source2.blocks.vertex_index_buffer.vertex_buffer import VertexBuffer
-from SourceIO.library.source2.keyvalues3.types import NullObject, Object
-from SourceIO.library.source2.exceptions import MissingBlock
-from SourceIO.library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
-from SourceIO.library.utils.path_utilities import path_stem
-from SourceIO.library.source2.compiled_resource import DATA_BLOCK
-from SourceIO.library.utils.tiny_path import TinyPath
+from ...library.source2.common import convert_normals, convert_normals_2
+from ...library.source2.blocks.kv3_block import KVBlock, custom_type_kvblock
+from ...library.source2.blocks.morph_block import MorphBlock
+from ...library.source2.blocks.phys_block import PhysBlock
+from ...library.source2.blocks.vertex_index_buffer import VertexIndexBuffer, IndexBuffer
+from ...library.source2.blocks.vertex_index_buffer.vertex_buffer import VertexBuffer
+from ...library.source2.keyvalues3.types import NullObject, Object
+from ...library.source2.exceptions import MissingBlock
+from ...library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
+from ...library.utils.path_utilities import path_stem
+from ...library.source2.compiled_resource import DATA_BLOCK
+from ...library.utils.tiny_path import TinyPath
 from .animation_loader import import_animations
-from SourceIO.library.source2.animation import parse_clip_filter
+from ...library.source2.animation import parse_clip_filter
 from .vmat_loader import load_material
 from .vphy_loader import load_physics
 from ..utils.fast_mesh import FastMesh, set_vertex_weights

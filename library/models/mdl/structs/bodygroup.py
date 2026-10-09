@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from SourceIO.library.utils import Buffer
+from ....utils import Buffer
 from .model import Model, ModelV36Plus, ModelV2531
 
 

@@ -1,11 +1,11 @@
 from typing import Iterator, Optional, Union
 
-from SourceIO.library.global_config import GoldSrcConfig
-from SourceIO.library.goldsrc.wad import WadFile
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.provider import ContentProvider, find_file_generic
-from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
-from SourceIO.library.utils import Buffer, TinyPath
+from ....global_config import GoldSrcConfig
+from ....goldsrc.wad import WadFile
+from ...app_id import SteamAppId
+from ..provider import ContentProvider, find_file_generic
+from .loose_files import LooseFilesContentProvider
+from ....utils import Buffer, TinyPath
 
 
 class GoldSrcContentProvider(LooseFilesContentProvider):

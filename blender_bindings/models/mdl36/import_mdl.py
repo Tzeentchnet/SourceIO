@@ -1,4 +1,4 @@
-from SourceIO.blender_bindings.models.materials import get_model_material_names, resolve_model_material
+from ..materials import get_model_material_names, resolve_model_material
 import math
 from collections import defaultdict
 from typing import Union
@@ -7,22 +7,22 @@ import bpy
 import numpy as np
 from mathutils import Euler, Matrix, Quaternion, Vector
 
-from SourceIO.blender_bindings.models.common import create_flex_drivers
-from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
-from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.models.common import merge_meshes, create_eyeballs
-from SourceIO.blender_bindings.shared.model_container import ModelContainer
-from SourceIO.blender_bindings.utils.bpy_utils import add_material, edit_armature, get_or_create_material, ActionCurveFactory
-from SourceIO.blender_bindings.utils.fast_mesh import FastMesh, set_vertex_weights
-from SourceIO.library.models.mdl.structs.header import StudioHDRFlags
-from SourceIO.library.models.mdl.v36.mdl_file import MdlV36
-from SourceIO.library.models.mdl.v49.flex_expressions import *
-from SourceIO.library.models.vtx.v6.vtx import Vtx
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.vmt import VMT
-from SourceIO.library.utils.path_utilities import path_stem
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from ..common import create_flex_drivers
+from ...material_loader.material_loader import ShaderRegistry
+from ...material_loader.shaders.source1_shader_base import Source1ShaderBase
+from ..common import merge_meshes, create_eyeballs
+from ...shared.model_container import ModelContainer
+from ...utils.bpy_utils import add_material, edit_armature, get_or_create_material, ActionCurveFactory
+from ...utils.fast_mesh import FastMesh, set_vertex_weights
+from ....library.models.mdl.structs.header import StudioHDRFlags
+from ....library.models.mdl.v36.mdl_file import MdlV36
+from ....library.models.mdl.v49.flex_expressions import *
+from ....library.models.vtx.v6.vtx import Vtx
+from ....library.shared.content_manager import ContentManager
+from ....library.source1.vmt import VMT
+from ....library.utils.path_utilities import path_stem
+from ....library.utils.tiny_path import TinyPath
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::ModelLoader')

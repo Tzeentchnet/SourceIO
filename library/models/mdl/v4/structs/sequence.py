@@ -4,8 +4,8 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
-from SourceIO.library.shared.vector_types import Vector3
-from SourceIO.library.utils import Buffer
+from .....shared.vector_types import Vector3
+from .....utils import Buffer
 
 
 def euler_to_quat(euler: tuple[float, float, float]):

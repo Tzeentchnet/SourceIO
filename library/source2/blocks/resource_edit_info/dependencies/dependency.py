@@ -2,10 +2,10 @@ import abc
 from abc import ABC
 from typing import TypeVar
 
-from SourceIO.library.source2.keyvalues3.enums import KV3Type, Specifier
-from SourceIO.library.utils import Buffer, WritableMemoryBuffer
-from SourceIO.library.source2.keyvalues3.types import Object, TypedArray, AnyKVType
-from SourceIO.library.utils.file_utils import Label
+from ....keyvalues3.enums import KV3Type, Specifier
+from .....utils import Buffer, WritableMemoryBuffer
+from ....keyvalues3.types import Object, TypedArray, AnyKVType
+from .....utils.file_utils import Label
 
 
 class Dependency(ABC):

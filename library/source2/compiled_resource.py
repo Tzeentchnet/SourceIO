@@ -3,13 +3,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional, Type, TypeVar, Union, Collection
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source2.blocks.base import BaseBlock
-from SourceIO.library.source2.blocks.resource_external_reference_list import ResourceExternalReferenceList
-from SourceIO.library.source2.blocks.resource_introspection_manifest.manifest import ResourceIntrospectionManifest
-from SourceIO.library.source2.compiled_file_header import CompiledHeader, BlockInfo
-from SourceIO.library.source2.utils.ntro_reader import NTROBuffer
-from SourceIO.library.utils import Buffer, MemoryBuffer, TinyPath
+from ..shared.content_manager import ContentManager
+from .blocks.base import BaseBlock
+from .blocks.resource_external_reference_list import ResourceExternalReferenceList
+from .blocks.resource_introspection_manifest.manifest import ResourceIntrospectionManifest
+from .compiled_file_header import CompiledHeader, BlockInfo
+from .utils.ntro_reader import NTROBuffer
+from ..utils import Buffer, MemoryBuffer, TinyPath
 
 CompiledResourceT = TypeVar("CompiledResourceT", bound="CompiledResource")
 BlockT = TypeVar("BlockT", bound="BaseBlock")
@@ -32,7 +32,7 @@ class CompiledResource:
         return None
 
     def _get_block(self, block_class: Type[BlockT] | None, info_block: BlockInfo) -> BlockT | None:
-        from SourceIO.library.source2.blocks.all_blocks import guess_block_type
+        from .blocks.all_blocks import guess_block_type
         self._buffer.seek(info_block.absolute_offset)
         block_class = block_class or (self.get_data_block_type() if info_block.name=="DATA" else None) or guess_block_type(info_block.name)
         if block_class is None:

@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
-from SourceIO.library.utils import Buffer
-from SourceIO.library.source2.keyvalues3.types import Object, String, UInt32
-from SourceIO.library.utils.file_utils import Label
+from .....utils import Buffer
+from ....keyvalues3.types import Object, String, UInt32
+from .....utils.file_utils import Label
 from .dependency import Dependency, DependencyList
 
 

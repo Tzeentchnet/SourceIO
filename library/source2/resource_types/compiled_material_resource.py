@@ -1,5 +1,5 @@
-from SourceIO.library.source2.compiled_resource import CompiledResource, DATA_BLOCK
-from SourceIO.library.source2.blocks.kv3_block import KVBlock
+from ..compiled_resource import CompiledResource, DATA_BLOCK
+from ..blocks.kv3_block import KVBlock
 
 
 class CompiledMaterialResource(CompiledResource):

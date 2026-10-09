@@ -3,8 +3,8 @@ from collections import OrderedDict
 from enum import Enum
 from typing import TextIO, Union
 
-from SourceIO.library.utils.tiny_path import TinyPath
-from SourceIO.logger import SourceLogMan
+from .tiny_path import TinyPath
+from ...logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Utilities::KeyValue Parser')

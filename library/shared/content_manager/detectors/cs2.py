@@ -1,10 +1,10 @@
 from typing import Collection
 
-from SourceIO.library.shared.app_id import SteamAppId
-from SourceIO.library.shared.content_manager.detectors.source2 import Source2Detector
-from SourceIO.library.shared.content_manager.provider import ContentProvider
-from SourceIO.library.shared.content_manager.providers.source2_gameinfo_provider import Source2GameInfoProvider
-from SourceIO.library.utils import backwalk_file_resolver, TinyPath
+from ...app_id import SteamAppId
+from .source2 import Source2Detector
+from ..provider import ContentProvider
+from ..providers.source2_gameinfo_provider import Source2GameInfoProvider
+from ....utils import backwalk_file_resolver, TinyPath
 
 
 class CS2Detector(Source2Detector):

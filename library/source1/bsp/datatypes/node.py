@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
-from SourceIO.library.shared.vector_types import Vector3
-from SourceIO.library.source1.bsp.bsp_file import VBSPFile
-from SourceIO.library.utils.file_utils import Buffer
+from ....shared.vector_types import Vector3
+from ..bsp_file import VBSPFile
+from ....utils.file_utils import Buffer
 
 
 @dataclass(slots=True)

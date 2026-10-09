@@ -1,8 +1,8 @@
 """Skin selection shared by model tools and map prop importers."""
 import bpy
 
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material
-from SourceIO.library.utils.tiny_path import TinyPath
+from ..utils.bpy_utils import get_or_create_material
+from ...library.utils.tiny_path import TinyPath
 
 
 def prop_skin(obj, default):

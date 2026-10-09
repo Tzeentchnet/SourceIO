@@ -9,30 +9,31 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2), round 8 as [5.7.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.1-blender5.2), and round 9 (AnimGraph 2 clips) as [5.7.2-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.2-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
+State (2026-10-08): rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2), round 8 as [5.7.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.1-blender5.2), and round 9 (AnimGraph 2 clips) as [5.7.2-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.2-blender5.2); round 10 (relative imports) is unreleased (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
 
 Checks, with the current baseline:
 
 ```
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 244 pass
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 245 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 88 PASS / 5 WARN / 0 FAIL
+blender -b --factory-startup --python tests/blender_tests/run_renamed_smoke.py                                       # 444/444 modules, register/unregister/register OK
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 570/570 placeholders (~2 min)
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 ```
 
-1. **Relative imports** for the extension, so the top-level `SourceIO` alias in `sys.modules` can go.
-2. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
-3. **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
-4. **`MdlV44/V49.from_buffer`** (minor): after an animation fails to decode, `animations.extend([None] * (len(animations) - len(local_animations)))` pads by a negative count, so `animations` ends up shorter than `anim_descs` instead of aligned with it.
-5. **Clip follow-ups** (round 9):
+1. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
+2. **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
+3. **`MdlV44/V49.from_buffer`** (minor): after an animation fails to decode, `animations.extend([None] * (len(animations) - len(local_animations)))` pads by a negative count, so `animations` ends up shorter than `anim_descs` instead of aligned with it.
+4. **Clip follow-ups** (round 9):
    - Clip events aren't imported (883 of the 2176 clips of an agent and the chicken have some: sounds, particles, IDs, with start times in the clip's normalized time). Pose markers on each action would be the natural place.
    - Weapon viewmodel clips can't be found from any model: the viewmodel graph pulls them in at runtime through `m_externalGraphSlots` (per-weapon graphs such as `viewmodel_inspects.vnmgraph+ak47.vnmgraph`). The clip importer handles them once extracted; finding them automatically needs whatever ties a weapon to its graphs (item schema or weapon vdata, unverified).
    - The clip importer (`sourceio.vnmclip`) treats the armature's rest pose as Source bone orientations. That holds for SourceIO's Source 2 armatures; other rigs would need their bone orientation corrected.
    - Float curves (`m_floatCurveIDs`, VRF's newer format) aren't decoded; no CS2 clip has any.
-6. **Smaller CS2 follow-ups** (round 8): `skybox_reference` entities don't import the 3D skybox; unhandled CS2 entities include `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points; `generic.vfx` logs false "Unused texture" warnings (it reads textures through its own properties); two Source 2 samples log `Failed to find ... morf texture` through the root logger, which the runners don't count.
+5. **Smaller CS2 follow-ups** (round 8): `skybox_reference` entities don't import the 3D skybox; unhandled CS2 entities include `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points; `generic.vfx` logs false "Unused texture" warnings (it reads textures through its own properties); two Source 2 samples log `Failed to find ... morf texture` through the root logger, which the runners don't count.
+6. **Stray file** (minor): `library/models/mdl/v44/mdl_file copy.py` is tracked and ships in the packages; nothing can import it (the name has a space). Probably safe to delete.
 
 Source 2 flex/morph animation channels: the legacy ANIM path still skips `MorphChannel` segments; CS2 clips carry no float channels, so a model with legacy morph animation is needed to test it. Bone masks (`m_maskDefinitions` in a `.vnmskel`) and pose-parameter blending are graph-evaluation features, not needed to import clips.
 Blocked until a v49 game is installed (CS:GO, L4D2, Portal 2, SFM; CS2 ships only Source 2 content): checking the round 6 FRAMEANIM decoder against a real model.
@@ -142,7 +143,7 @@ Still needs game installs: real CS2/Dota 2 maps. (Source 1 animated/flexed model
 Follow-ups found during execution:
 - ~~`models/mdl10/import_mdl.py` only imports the `walk1` sequence~~ — fixed in round 2 (all sequences, rest-relative).
 - ~~Every platform zip bundles all three native libs~~ — fixed in round 2 (`tools/build_extension.py`).
-- The extension still relies on a top-level `SourceIO` alias in `sys.modules`; a full switch to relative imports would be the extension-guideline-clean fix.
+- ~~The extension still relies on a top-level `SourceIO` alias in `sys.modules`~~ — fixed in round 10 (relative imports).
 
 ## Round 2 (2026-10-07, branch `continue-work`)
 
@@ -158,7 +159,7 @@ Follow-ups found during execution:
 | CLI | `blender -c sourceio import ...` (`blender_bindings/cli.py`). Tested through the installed extension: imports, `--output` .blend, exit codes. |
 | Samples | 99 files (20 more VRF textures, 3 animation samples). Suite: **88 PASS / 5 WARN / 0 FAIL**; the 5 WARN are missing game content. |
 
-Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; ~~decals and overlays~~ (Source 1 overlays: round 4); ~~bone collections and colours~~ (round 5); ~~`bpy.ops` mode switching in the armature builders~~ (round 7); relative imports for the extension; testing against CS2/Dota 2 installs.
+Remaining: Source 2 flex/morph animation channels, AnimGraph 2 (`.vnmclip_c`), bone masks and pose-parameter blending; ~~decals and overlays~~ (Source 1 overlays: round 4); ~~bone collections and colours~~ (round 5); ~~`bpy.ops` mode switching in the armature builders~~ (round 7); ~~relative imports for the extension~~ (round 10); testing against CS2/Dota 2 installs.
 
 ## Round 3 (2026-10-08, TF2 install)
 
@@ -251,3 +252,11 @@ Visual check: cs_office imported with every placeholder loaded and saved with al
 Checked against VRF CLI 20.0 glTF exports (additive composed): chicken 87/87 clips, max 8.1e-5 units / 0.0011°; ctm_sas, 50 clips picked across additive, root motion, viewmodel and UI, max 5.2e-5 units / 6.3e-5°; an AK-47 menu clip through both operators (`sourceio.vmdl`, then `sourceio.vnmclip`), max 2.9e-7 units / 0°. With `--clips "*"` the default CS2 models are 9 PASS: the agents import 2091 actions in 52–57 s, the chicken 108 in 6 s.
 
 `tests/animation_tests/test_clips.py` (19 tests): a reference encoder for quaternions (every dropped-component slot), mixed static channels with shuffled frame offsets, short data, additive composition, retargeting through an extra bone and a different bind pose, yaw unwrapping, filters and names; plus the 5 VRF fixtures now in `fetch_samples.py` (`source2/clips`, which the sample runner doesn't import). Mutating the decoder (swapped index bits, ignored offsets, reversed additive order, unmapped bones not following the bind pose) fails them. Unit tests: 244 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. Armature tests: 10 pass. TF2: 13 PASS / 0 WARN / 0 FAIL. CS2: 12 PASS / 0 WARN / 0 FAIL. Smoke test: clean.
+
+## Round 10 (2026-10-08, relative imports)
+
+| Item | Result |
+|------|--------|
+| Relative imports | Every `from SourceIO.x import y` in the shipped code (1607 imports in 384 files; there were no `import SourceIO.x` forms) is now package-relative, so the add-on works under whatever name Blender loads it as. The `sys.modules['SourceIO']` alias in `__init__.py` is gone. Done by a script that computes each import's relative form from the file's own package; every changed line is an import and line endings are unchanged. `tests/` and `tools/` keep absolute `SourceIO` imports: they run with `D:/Github` on `sys.path`, where `SourceIO` is the real package, and aren't shipped. The `__main__` dev blocks in a few `library` modules now need `python -m SourceIO....`. |
+
+Checked by loading a copy of the shipped files as `bl_ext_test_sourceio` with an import hook that rejects any `SourceIO` import: 444/444 modules import, register → unregister → register is clean, and nothing named `SourceIO` ends up in `sys.modules` (`tests/blender_tests/run_renamed_smoke.py`, exit code 1 on any failure; it also replaces the old scratchpad smoke test). Also built the Windows package with `tools/build_extension.py` and installed it into an isolated `BLENDER_USER_RESOURCES`: it loads as `bl_ext.user_default.sourceio` without any `SourceIO` module, and `blender -c sourceio import` of `dog.mdl` and the axolotl `.vmdl_c` saves a .blend (2 imported, 0 failed). `tests/test_relative_imports.py` fails if a shipped file imports `SourceIO` absolutely again (checked by adding one). Unit tests: 245 pass. Armature tests: 10 pass. Samples: 88 PASS / 5 WARN / 0 FAIL. TF2: 13 PASS / 0 WARN / 0 FAIL. CS2: 12 PASS / 0 WARN / 0 FAIL.

@@ -3,9 +3,9 @@ from dataclasses import dataclass
 import bpy.types
 import numpy as np
 
-from SourceIO.library.utils import TinyPath
-from SourceIO.library.utils.pylib.vtf import VTFFile, ImageFormat, MipFilter, TextureFlags
-from SourceIO.library.utils.math_utilities import srgb_to_linear, linear_to_srgb
+from ....library.utils import TinyPath
+from ....library.utils.pylib.vtf import VTFFile, ImageFormat, MipFilter, TextureFlags
+from ....library.utils.math_utilities import srgb_to_linear, linear_to_srgb
 
 
 @dataclass

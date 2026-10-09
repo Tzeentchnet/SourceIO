@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import IntFlag
 
-from SourceIO.library.utils import Buffer
+from .....utils import Buffer
 
 
 class StudioHeaderFlags(IntFlag):

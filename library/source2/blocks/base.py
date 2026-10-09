@@ -1,8 +1,8 @@
 import abc
 from abc import ABC
 
-from SourceIO.library.source2.utils.ntro_reader import NTROBuffer
-from SourceIO.library.utils import Buffer
+from ..utils.ntro_reader import NTROBuffer
+from ...utils import Buffer
 
 
 class BaseBlock(ABC):

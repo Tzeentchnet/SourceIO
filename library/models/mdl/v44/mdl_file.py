@@ -3,18 +3,18 @@ from dataclasses import dataclass, field
 
 import numpy.typing as npt
 
-from SourceIO.library.models.mdl import Mdl
-from SourceIO.library.models.mdl.structs.attachment import Attachment
-from SourceIO.library.models.mdl.structs.bodygroup import BodyPart
-from SourceIO.library.models.mdl.structs.bone import Bone
-from SourceIO.library.models.mdl.structs.flex import FlexController, FlexControllerUI, FlexOpType, FlexRule
-from SourceIO.library.models.mdl.structs.header import MdlHeaderV44
-from SourceIO.library.models.mdl.structs.local_animation import StudioAnimDesc
-from SourceIO.library.models.mdl.structs.material import MaterialV49
-from SourceIO.library.models.mdl.structs.sequence import StudioSequence
-from SourceIO.library.models.mdl.v49.flex_expressions import *
-from SourceIO.library.utils import Buffer
-from SourceIO.library.utils import kv1
+from .. import Mdl
+from ..structs.attachment import Attachment
+from ..structs.bodygroup import BodyPart
+from ..structs.bone import Bone
+from ..structs.flex import FlexController, FlexControllerUI, FlexOpType, FlexRule
+from ..structs.header import MdlHeaderV44
+from ..structs.local_animation import StudioAnimDesc
+from ..structs.material import MaterialV49
+from ..structs.sequence import StudioSequence
+from ..v49.flex_expressions import *
+from ....utils import Buffer
+from ....utils import kv1
 
 
 class _AnimBlocks:

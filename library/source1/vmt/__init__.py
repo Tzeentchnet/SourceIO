@@ -2,9 +2,9 @@ import re
 from math import radians
 from typing import Union
 
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.utils import Buffer, TinyPath, kv1
-from SourceIO.logger import SourceLogMan
+from ...shared.content_manager import ContentManager
+from ...utils import Buffer, TinyPath, kv1
+from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::VMT')

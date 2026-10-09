@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from enum import auto, IntEnum
 from functools import partial
 
-from SourceIO.blender_bindings.source1.bsp.entities.base_entity_classes import Base
-from SourceIO.blender_bindings.source1.bsp.entities.quake3.sof_entity_handler import RavenQ3EntityHandler
-from SourceIO.library.shared.content_manager import ContentManager
-from SourceIO.library.source1.bsp.bsp_file import RavenBSPFile
-from SourceIO.library.utils import SOURCE1_HAMMER_UNIT_TO_METERS
+from ..base_entity_classes import Base
+from .sof_entity_handler import RavenQ3EntityHandler
+from ......library.shared.content_manager import ContentManager
+from ......library.source1.bsp.bsp_file import RavenBSPFile
+from ......library.utils import SOURCE1_HAMMER_UNIT_TO_METERS
 
 
 class ItemType(IntEnum):

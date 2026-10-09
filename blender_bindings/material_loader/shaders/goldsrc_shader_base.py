@@ -2,9 +2,9 @@ from typing import Optional, Any
 
 import bpy
 
-from SourceIO.blender_bindings.material_loader.shader_base import (Nodes, ShaderBase, ExtraMaterialParameters, MIX_FACTOR, MIX_A, MIX_B,
+from ..shader_base import (Nodes, ShaderBase, ExtraMaterialParameters, MIX_FACTOR, MIX_A, MIX_B,
                                                                 MIX_RESULT)
-from SourceIO.library.models.mdl.v10.structs.texture import StudioTexture
+from ....library.models.mdl.v10.structs.texture import StudioTexture
 
 
 class GoldSrcShaderBase(ShaderBase):

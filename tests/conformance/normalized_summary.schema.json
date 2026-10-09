@@ -1,0 +1,464 @@
+{
+  "$id": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://sourceio.dev/schemas/source2-normalized-summary-v1"
+    },
+    "animation": {
+      "$ref": "#/$defs/animation"
+    },
+    "blocks": {
+      "items": {
+        "$ref": "#/$defs/block"
+      },
+      "type": "array"
+    },
+    "capabilities": {
+      "$ref": "#/$defs/capabilities"
+    },
+    "channels": {
+      "$ref": "#/$defs/channels"
+    },
+    "dependencies": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      },
+      "type": "array"
+    },
+    "dimensions": {
+      "$ref": "#/$defs/dimensions"
+    },
+    "identity": {
+      "$ref": "#/$defs/identity"
+    },
+    "mesh": {
+      "$ref": "#/$defs/mesh"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "skeleton": {
+      "$ref": "#/$defs/skeleton"
+    },
+    "sound": {
+      "$ref": "#/$defs/sound"
+    }
+  },
+  "required": [
+    "$schema",
+    "schema_version",
+    "identity",
+    "blocks",
+    "dependencies",
+    "dimensions",
+    "channels",
+    "mesh",
+    "skeleton",
+    "animation",
+    "sound",
+    "capabilities",
+    "diagnostics"
+  ],
+  "title": "SourceIO Source 2 normalized summary",
+  "type": "object",
+  "$defs": {
+    "animation": {
+      "additionalProperties": false,
+      "properties": {
+        "clip_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "duration_seconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "frame_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "clip_count",
+        "frame_count",
+        "fps",
+        "duration_seconds"
+      ],
+      "type": "object"
+    },
+    "block": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 4,
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "size": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "name",
+        "offset",
+        "size"
+      ],
+      "type": "object"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "features": {
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "unavailable": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "available",
+            "unavailable"
+          ],
+          "type": "object"
+        },
+        "operations": {
+          "additionalProperties": false,
+          "properties": {
+            "extract": {
+              "$ref": "#/$defs/maturity"
+            },
+            "read": {
+              "$ref": "#/$defs/maturity"
+            },
+            "render": {
+              "$ref": "#/$defs/maturity"
+            },
+            "write": {
+              "$ref": "#/$defs/maturity"
+            }
+          },
+          "required": [
+            "read",
+            "extract",
+            "render",
+            "write"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "operations",
+        "features"
+      ],
+      "type": "object"
+    },
+    "channels": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "names"
+      ],
+      "type": "object"
+    },
+    "diagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "offset": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        }
+      },
+      "required": [
+        "severity",
+        "code",
+        "message",
+        "offset"
+      ],
+      "type": "object"
+    },
+    "dimensions": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "height": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mip_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "width": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "depth",
+        "mip_count"
+      ],
+      "type": "object"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_size": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "compiled_extension": {
+          "type": "string"
+        },
+        "compiler": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "header_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "resource_type": {
+          "type": "string"
+        },
+        "resource_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "resource_type",
+        "compiled_extension",
+        "byte_size",
+        "sha256",
+        "header_version",
+        "resource_version",
+        "compiler",
+        "input_path",
+        "confidence",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "maturity": {
+      "enum": [
+        "unsupported",
+        "experimental",
+        "partial",
+        "stable",
+        null
+      ]
+    },
+    "mesh": {
+      "additionalProperties": false,
+      "properties": {
+        "index_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mesh_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "primitive_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "vertex_count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mesh_count",
+        "vertex_count",
+        "index_count",
+        "primitive_count"
+      ],
+      "type": "object"
+    },
+    "skeleton": {
+      "additionalProperties": false,
+      "properties": {
+        "bone_count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bone_count"
+      ],
+      "type": "object"
+    },
+    "sound": {
+      "additionalProperties": false,
+      "properties": {
+        "bits_per_sample": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "channel_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "duration_seconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "encoding": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sample_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sample_rate": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sample_rate",
+        "channel_count",
+        "sample_count",
+        "duration_seconds",
+        "bits_per_sample",
+        "encoding"
+      ],
+      "type": "object"
+    }
+  }
+}

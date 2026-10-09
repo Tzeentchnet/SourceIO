@@ -1,0 +1,673 @@
+{
+  "compressed_metadata.vdata_c": {
+    "$schema": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+    "animation": {
+      "clip_count": 0,
+      "duration_seconds": null,
+      "fps": null,
+      "frame_count": null
+    },
+    "blocks": [
+      {
+        "index": 0,
+        "name": "RERL",
+        "offset": 48,
+        "size": 8
+      },
+      {
+        "index": 1,
+        "name": "DATA",
+        "offset": 64,
+        "size": 305
+      }
+    ],
+    "capabilities": {
+      "features": {
+        "available": [
+          "blocks",
+          "dependencies",
+          "header",
+          "kv3"
+        ],
+        "unavailable": [
+          "animation",
+          "channels",
+          "dimensions",
+          "mesh",
+          "skeleton",
+          "sound"
+        ]
+      },
+      "operations": {
+        "extract": "stable",
+        "read": "stable",
+        "render": "unsupported",
+        "write": "experimental"
+      }
+    },
+    "channels": {
+      "count": null,
+      "names": []
+    },
+    "dependencies": [],
+    "diagnostics": [],
+    "dimensions": {
+      "depth": null,
+      "height": null,
+      "mip_count": null,
+      "width": null
+    },
+    "identity": {
+      "byte_size": 369,
+      "compiled_extension": ".vdata_c",
+      "compiler": null,
+      "confidence": 0.1,
+      "evidence": [
+        "DATA contains KV3 magic"
+      ],
+      "header_version": 12,
+      "input_path": null,
+      "name": "compressed_metadata",
+      "path": "compressed_metadata.vdata_c",
+      "resource_type": "keyvalues3",
+      "resource_version": 1,
+      "sha256": "40a798dcfa4b7a04f77b9463e3747e0b8a3b8f549bb44bb74458173bd1a2774c"
+    },
+    "mesh": {
+      "index_count": 0,
+      "mesh_count": 0,
+      "primitive_count": 0,
+      "vertex_count": 0
+    },
+    "schema_version": 1,
+    "skeleton": {
+      "bone_count": 0
+    },
+    "sound": {
+      "bits_per_sample": null,
+      "channel_count": null,
+      "duration_seconds": null,
+      "encoding": null,
+      "sample_count": null,
+      "sample_rate": null
+    }
+  },
+  "minimal_animation.vanim_c": {
+    "$schema": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+    "animation": {
+      "clip_count": 1,
+      "duration_seconds": 1.0,
+      "fps": 30.0,
+      "frame_count": 30
+    },
+    "blocks": [
+      {
+        "index": 0,
+        "name": "RERL",
+        "offset": 48,
+        "size": 52
+      },
+      {
+        "index": 1,
+        "name": "DATA",
+        "offset": 112,
+        "size": 176
+      }
+    ],
+    "capabilities": {
+      "features": {
+        "available": [
+          "animation",
+          "blocks",
+          "dependencies",
+          "header",
+          "kv3"
+        ],
+        "unavailable": [
+          "channels",
+          "dimensions",
+          "mesh",
+          "skeleton",
+          "sound"
+        ]
+      },
+      "operations": {
+        "extract": "stable",
+        "read": "stable",
+        "render": "partial",
+        "write": "unsupported"
+      }
+    },
+    "channels": {
+      "count": null,
+      "names": []
+    },
+    "dependencies": [
+      "models/conformance/rig.vmdl"
+    ],
+    "diagnostics": [],
+    "dimensions": {
+      "depth": null,
+      "height": null,
+      "mip_count": null,
+      "width": null
+    },
+    "identity": {
+      "byte_size": 288,
+      "compiled_extension": ".vanim_c",
+      "compiler": null,
+      "confidence": 0.35,
+      "evidence": [
+        "path extension .vanim_c"
+      ],
+      "header_version": 12,
+      "input_path": null,
+      "name": "minimal_animation",
+      "path": "minimal_animation.vanim_c",
+      "resource_type": "animation",
+      "resource_version": 1,
+      "sha256": "917f42b5a4f88df11e227677e1af468186cfa7fc3f868b7539010018c353d032"
+    },
+    "mesh": {
+      "index_count": 0,
+      "mesh_count": 0,
+      "primitive_count": 0,
+      "vertex_count": 0
+    },
+    "schema_version": 1,
+    "skeleton": {
+      "bone_count": 0
+    },
+    "sound": {
+      "bits_per_sample": null,
+      "channel_count": null,
+      "duration_seconds": null,
+      "encoding": null,
+      "sample_count": null,
+      "sample_rate": null
+    }
+  },
+  "minimal_material.vmat_c": {
+    "$schema": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+    "animation": {
+      "clip_count": 0,
+      "duration_seconds": null,
+      "fps": null,
+      "frame_count": null
+    },
+    "blocks": [
+      {
+        "index": 0,
+        "name": "RERL",
+        "offset": 48,
+        "size": 58
+      },
+      {
+        "index": 1,
+        "name": "DATA",
+        "offset": 112,
+        "size": 351
+      }
+    ],
+    "capabilities": {
+      "features": {
+        "available": [
+          "blocks",
+          "dependencies",
+          "header",
+          "kv3"
+        ],
+        "unavailable": [
+          "animation",
+          "channels",
+          "dimensions",
+          "mesh",
+          "skeleton",
+          "sound"
+        ]
+      },
+      "operations": {
+        "extract": "stable",
+        "read": "stable",
+        "render": "partial",
+        "write": "unsupported"
+      }
+    },
+    "channels": {
+      "count": null,
+      "names": []
+    },
+    "dependencies": [
+      "textures/conformance/checker.vtex"
+    ],
+    "diagnostics": [],
+    "dimensions": {
+      "depth": null,
+      "height": null,
+      "mip_count": null,
+      "width": null
+    },
+    "identity": {
+      "byte_size": 463,
+      "compiled_extension": ".vmat_c",
+      "compiler": null,
+      "confidence": 0.35,
+      "evidence": [
+        "path extension .vmat_c"
+      ],
+      "header_version": 12,
+      "input_path": null,
+      "name": "minimal_material",
+      "path": "minimal_material.vmat_c",
+      "resource_type": "material",
+      "resource_version": 1,
+      "sha256": "c18b6d5b30ddd7f5e28a121ed9a8aac16cf08819677da4571ec27e1291b63ac0"
+    },
+    "mesh": {
+      "index_count": 0,
+      "mesh_count": 0,
+      "primitive_count": 0,
+      "vertex_count": 0
+    },
+    "schema_version": 1,
+    "skeleton": {
+      "bone_count": 0
+    },
+    "sound": {
+      "bits_per_sample": null,
+      "channel_count": null,
+      "duration_seconds": null,
+      "encoding": null,
+      "sample_count": null,
+      "sample_rate": null
+    }
+  },
+  "minimal_mesh.vmesh_c": {
+    "$schema": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+    "animation": {
+      "clip_count": 0,
+      "duration_seconds": null,
+      "fps": null,
+      "frame_count": null
+    },
+    "blocks": [
+      {
+        "index": 0,
+        "name": "RERL",
+        "offset": 64,
+        "size": 60
+      },
+      {
+        "index": 1,
+        "name": "VBIB",
+        "offset": 128,
+        "size": 110
+      },
+      {
+        "index": 2,
+        "name": "DATA",
+        "offset": 240,
+        "size": 206
+      }
+    ],
+    "capabilities": {
+      "features": {
+        "available": [
+          "blocks",
+          "dependencies",
+          "header",
+          "kv3",
+          "mesh"
+        ],
+        "unavailable": [
+          "animation",
+          "channels",
+          "dimensions",
+          "skeleton",
+          "sound"
+        ]
+      },
+      "operations": {
+        "extract": "stable",
+        "read": "stable",
+        "render": "partial",
+        "write": "unsupported"
+      }
+    },
+    "channels": {
+      "count": null,
+      "names": []
+    },
+    "dependencies": [
+      "materials/conformance/triangle.vmat"
+    ],
+    "diagnostics": [],
+    "dimensions": {
+      "depth": null,
+      "height": null,
+      "mip_count": null,
+      "width": null
+    },
+    "identity": {
+      "byte_size": 446,
+      "compiled_extension": ".vmesh_c",
+      "compiler": null,
+      "confidence": 0.35,
+      "evidence": [
+        "path extension .vmesh_c"
+      ],
+      "header_version": 12,
+      "input_path": null,
+      "name": "minimal_mesh",
+      "path": "minimal_mesh.vmesh_c",
+      "resource_type": "mesh",
+      "resource_version": 1,
+      "sha256": "0fb60121011a2529f9ee222a401d061865d2a580789b80bd0efd2641e83a0e28"
+    },
+    "mesh": {
+      "index_count": 3,
+      "mesh_count": 1,
+      "primitive_count": 1,
+      "vertex_count": 3
+    },
+    "schema_version": 1,
+    "skeleton": {
+      "bone_count": 0
+    },
+    "sound": {
+      "bits_per_sample": null,
+      "channel_count": null,
+      "duration_seconds": null,
+      "encoding": null,
+      "sample_count": null,
+      "sample_rate": null
+    }
+  },
+  "minimal_model.vmdl_c": {
+    "$schema": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+    "animation": {
+      "clip_count": 0,
+      "duration_seconds": null,
+      "fps": null,
+      "frame_count": null
+    },
+    "blocks": [
+      {
+        "index": 0,
+        "name": "RERL",
+        "offset": 48,
+        "size": 108
+      },
+      {
+        "index": 1,
+        "name": "DATA",
+        "offset": 160,
+        "size": 362
+      }
+    ],
+    "capabilities": {
+      "features": {
+        "available": [
+          "blocks",
+          "dependencies",
+          "header",
+          "kv3",
+          "skeleton"
+        ],
+        "unavailable": [
+          "animation",
+          "channels",
+          "dimensions",
+          "mesh",
+          "sound"
+        ]
+      },
+      "operations": {
+        "extract": "stable",
+        "read": "stable",
+        "render": "partial",
+        "write": "unsupported"
+      }
+    },
+    "channels": {
+      "count": null,
+      "names": []
+    },
+    "dependencies": [
+      "animations/conformance/idle.vanim",
+      "models/conformance/triangle.vmesh"
+    ],
+    "diagnostics": [],
+    "dimensions": {
+      "depth": null,
+      "height": null,
+      "mip_count": null,
+      "width": null
+    },
+    "identity": {
+      "byte_size": 522,
+      "compiled_extension": ".vmdl_c",
+      "compiler": null,
+      "confidence": 0.35,
+      "evidence": [
+        "path extension .vmdl_c"
+      ],
+      "header_version": 12,
+      "input_path": null,
+      "name": "minimal_model",
+      "path": "minimal_model.vmdl_c",
+      "resource_type": "model",
+      "resource_version": 1,
+      "sha256": "d4a2516060763122b795b75d875868705752905c49bd3e6f91916fea8bc71dee"
+    },
+    "mesh": {
+      "index_count": 0,
+      "mesh_count": 0,
+      "primitive_count": 0,
+      "vertex_count": 0
+    },
+    "schema_version": 1,
+    "skeleton": {
+      "bone_count": 2
+    },
+    "sound": {
+      "bits_per_sample": null,
+      "channel_count": null,
+      "duration_seconds": null,
+      "encoding": null,
+      "sample_count": null,
+      "sample_rate": null
+    }
+  },
+  "minimal_sound.vsnd_c": {
+    "$schema": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+    "animation": {
+      "clip_count": 0,
+      "duration_seconds": null,
+      "fps": null,
+      "frame_count": null
+    },
+    "blocks": [
+      {
+        "index": 0,
+        "name": "RERL",
+        "offset": 48,
+        "size": 8
+      },
+      {
+        "index": 1,
+        "name": "DATA",
+        "offset": 64,
+        "size": 48
+      }
+    ],
+    "capabilities": {
+      "features": {
+        "available": [
+          "blocks",
+          "dependencies",
+          "header",
+          "sound"
+        ],
+        "unavailable": [
+          "animation",
+          "channels",
+          "dimensions",
+          "kv3",
+          "mesh",
+          "skeleton"
+        ]
+      },
+      "operations": {
+        "extract": "stable",
+        "read": "stable",
+        "render": "unsupported",
+        "write": "unsupported"
+      }
+    },
+    "channels": {
+      "count": null,
+      "names": []
+    },
+    "dependencies": [],
+    "diagnostics": [],
+    "dimensions": {
+      "depth": null,
+      "height": null,
+      "mip_count": null,
+      "width": null
+    },
+    "identity": {
+      "byte_size": 304,
+      "compiled_extension": ".vsnd_c",
+      "compiler": null,
+      "confidence": 0.35,
+      "evidence": [
+        "path extension .vsnd_c"
+      ],
+      "header_version": 12,
+      "input_path": null,
+      "name": "minimal_sound",
+      "path": "minimal_sound.vsnd_c",
+      "resource_type": "sound",
+      "resource_version": 4,
+      "sha256": "b94c47c39a15714cfefae54e96e794210d7befa2c7c3cbbdd0cd7d496b740125"
+    },
+    "mesh": {
+      "index_count": 0,
+      "mesh_count": 0,
+      "primitive_count": 0,
+      "vertex_count": 0
+    },
+    "schema_version": 1,
+    "skeleton": {
+      "bone_count": 0
+    },
+    "sound": {
+      "bits_per_sample": 16,
+      "channel_count": 2,
+      "duration_seconds": 0.001,
+      "encoding": "pcm16",
+      "sample_count": 48,
+      "sample_rate": 48000
+    }
+  },
+  "minimal_texture.vtex_c": {
+    "$schema": "https://sourceio.dev/schemas/source2-normalized-summary-v1",
+    "animation": {
+      "clip_count": 0,
+      "duration_seconds": null,
+      "fps": null,
+      "frame_count": null
+    },
+    "blocks": [
+      {
+        "index": 0,
+        "name": "RERL",
+        "offset": 48,
+        "size": 8
+      },
+      {
+        "index": 1,
+        "name": "DATA",
+        "offset": 64,
+        "size": 40
+      }
+    ],
+    "capabilities": {
+      "features": {
+        "available": [
+          "blocks",
+          "channels",
+          "dependencies",
+          "dimensions",
+          "header"
+        ],
+        "unavailable": [
+          "animation",
+          "kv3",
+          "mesh",
+          "skeleton",
+          "sound"
+        ]
+      },
+      "operations": {
+        "extract": "stable",
+        "read": "stable",
+        "render": "stable",
+        "write": "unsupported"
+      }
+    },
+    "channels": {
+      "count": 4,
+      "names": [
+        "R",
+        "G",
+        "B",
+        "A"
+      ]
+    },
+    "dependencies": [],
+    "diagnostics": [],
+    "dimensions": {
+      "depth": 1,
+      "height": 2,
+      "mip_count": 1,
+      "width": 2
+    },
+    "identity": {
+      "byte_size": 120,
+      "compiled_extension": ".vtex_c",
+      "compiler": null,
+      "confidence": 0.35,
+      "evidence": [
+        "path extension .vtex_c"
+      ],
+      "header_version": 12,
+      "input_path": null,
+      "name": "minimal_texture",
+      "path": "minimal_texture.vtex_c",
+      "resource_type": "texture",
+      "resource_version": 1,
+      "sha256": "ba803aef8195794fe66d4945b64efbdb44fe752be06e382fcb41a710aa396446"
+    },
+    "mesh": {
+      "index_count": 0,
+      "mesh_count": 0,
+      "primitive_count": 0,
+      "vertex_count": 0
+    },
+    "schema_version": 1,
+    "skeleton": {
+      "bone_count": 0
+    },
+    "sound": {
+      "bits_per_sample": null,
+      "channel_count": null,
+      "duration_seconds": null,
+      "encoding": null,
+      "sample_count": null,
+      "sample_rate": null
+    }
+  }
+}

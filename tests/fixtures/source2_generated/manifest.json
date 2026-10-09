@@ -1,0 +1,273 @@
+{
+  "builder_version": 1,
+  "fixtures": [
+    {
+      "byte_size": 120,
+      "description": "Two-by-two RGBA texture with one mip.",
+      "expected": {
+        "channels": {
+          "count": 4
+        },
+        "dimensions": {
+          "depth": 1,
+          "height": 2,
+          "mip_count": 1,
+          "width": 2
+        },
+        "resource_type": "texture"
+      },
+      "path": "minimal_texture.vtex_c",
+      "sha256": "ba803aef8195794fe66d4945b64efbdb44fe752be06e382fcb41a710aa396446"
+    },
+    {
+      "byte_size": 463,
+      "description": "Material with one texture dependency.",
+      "expected": {
+        "dependency_count": 1,
+        "resource_type": "material"
+      },
+      "path": "minimal_material.vmat_c",
+      "sha256": "c18b6d5b30ddd7f5e28a121ed9a8aac16cf08819677da4571ec27e1291b63ac0"
+    },
+    {
+      "byte_size": 446,
+      "description": "Single triangle mesh with an uncompressed VBIB block.",
+      "expected": {
+        "dependency_count": 1,
+        "mesh": {
+          "index_count": 3,
+          "mesh_count": 1,
+          "primitive_count": 1,
+          "vertex_count": 3
+        },
+        "resource_type": "mesh"
+      },
+      "path": "minimal_mesh.vmesh_c",
+      "sha256": "0fb60121011a2529f9ee222a401d061865d2a580789b80bd0efd2641e83a0e28"
+    },
+    {
+      "byte_size": 522,
+      "description": "Model with two bones and references to one mesh and animation.",
+      "expected": {
+        "dependency_count": 2,
+        "resource_type": "model",
+        "skeleton": {
+          "bone_count": 2
+        }
+      },
+      "path": "minimal_model.vmdl_c",
+      "sha256": "d4a2516060763122b795b75d875868705752905c49bd3e6f91916fea8bc71dee"
+    },
+    {
+      "byte_size": 288,
+      "description": "Animation metadata for a one-second, thirty-frame clip.",
+      "expected": {
+        "animation": {
+          "clip_count": 1,
+          "duration_seconds": 1.0,
+          "fps": 30.0,
+          "frame_count": 30
+        },
+        "resource_type": "animation"
+      },
+      "path": "minimal_animation.vanim_c",
+      "sha256": "917f42b5a4f88df11e227677e1af468186cfa7fc3f868b7539010018c353d032"
+    },
+    {
+      "byte_size": 304,
+      "description": "VSND v4 PCM16 metadata with a 48-sample silent stream.",
+      "expected": {
+        "resource_type": "sound",
+        "sound": {
+          "bits_per_sample": 16,
+          "channel_count": 2,
+          "duration_seconds": 0.001,
+          "encoding": "pcm16",
+          "sample_count": 48,
+          "sample_rate": 48000
+        }
+      },
+      "path": "minimal_sound.vsnd_c",
+      "sha256": "b94c47c39a15714cfefae54e96e794210d7befa2c7c3cbbdd0cd7d496b740125"
+    },
+    {
+      "byte_size": 369,
+      "description": "LZ4-compressed KV3 metadata used for boundary tests.",
+      "expected": {
+        "resource_type": "keyvalues3"
+      },
+      "path": "compressed_metadata.vdata_c",
+      "sha256": "40a798dcfa4b7a04f77b9463e3747e0b8a3b8f549bb44bb74458173bd1a2774c"
+    }
+  ],
+  "malformed": [
+    {
+      "byte_size": 0,
+      "description": "Compiled header truncated at byte 0.",
+      "expected_code": "header.truncated",
+      "path": "malformed/header_truncated_00.vtex_c",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "byte_size": 3,
+      "description": "Compiled header truncated at byte 3.",
+      "expected_code": "header.truncated",
+      "path": "malformed/header_truncated_03.vtex_c",
+      "sha256": "758d56805faf3cd54dc7a7995808137ca3ade13246ac045c28e3988fbd95900c"
+    },
+    {
+      "byte_size": 7,
+      "description": "Compiled header truncated at byte 7.",
+      "expected_code": "header.truncated",
+      "path": "malformed/header_truncated_07.vtex_c",
+      "sha256": "aa71d32429a9d2a6abd91b648aa9bf24f4c0eed3d83270a77296d2a041d89010"
+    },
+    {
+      "byte_size": 11,
+      "description": "Compiled header truncated at byte 11.",
+      "expected_code": "header.truncated",
+      "path": "malformed/header_truncated_11.vtex_c",
+      "sha256": "9175e6dbffc0dab590ebae86c148189cad77b9e662107a8675de9cc57114560e"
+    },
+    {
+      "byte_size": 15,
+      "description": "Compiled header truncated at byte 15.",
+      "expected_code": "header.truncated",
+      "path": "malformed/header_truncated_15.vtex_c",
+      "sha256": "50a0c7de52ae94afd64a228ad6659746b9c163d10482e8d553dd61ed7c54f196"
+    },
+    {
+      "byte_size": 120,
+      "description": "Unsupported compiled-header version.",
+      "expected_code": "header.version",
+      "path": "malformed/header_version_invalid.vtex_c",
+      "sha256": "d1c0947e06286409e199cb2f63c97e4854d7140d36f421b00acd46dd51ffc8f4"
+    },
+    {
+      "byte_size": 120,
+      "description": "Declared file size differs from the available bytes.",
+      "expected_code": "header.file_size",
+      "path": "malformed/declared_file_size_mismatch.vtex_c",
+      "sha256": "7ef4ce44ff95f7e2efdc29b811dbc11df578723085e30d483af8c83578b80deb"
+    },
+    {
+      "byte_size": 120,
+      "description": "Block table points into the fixed header.",
+      "expected_code": "block_table.offset",
+      "path": "malformed/block_table_before_header.vtex_c",
+      "sha256": "e9b0b36c1eef9c8985c71bbc18b139eb024042b7c533415b4b89ee59799af2c3"
+    },
+    {
+      "byte_size": 120,
+      "description": "Block table offset is beyond the file.",
+      "expected_code": "block_table.range",
+      "path": "malformed/block_table_beyond_eof.vtex_c",
+      "sha256": "916e68864147c33da79df8fcc5fb9fa9616956e1a237917e6bdaeeed577a2b73"
+    },
+    {
+      "byte_size": 120,
+      "description": "Block count exceeds the conformance safety limit.",
+      "expected_code": "limit.block_count",
+      "path": "malformed/block_count_excessive.vtex_c",
+      "sha256": "ebed2298757e966d3a867edad699d7c4866bcab78c18be8a2e3bf8f9282a27b0"
+    },
+    {
+      "byte_size": 28,
+      "description": "The second declared block-table entry is absent.",
+      "expected_code": "block_table.range",
+      "path": "malformed/block_table_truncated.vtex_c",
+      "sha256": "03e992d129255664f29edc5efcef76a42b35dca509261d0b8aad5eb5f6be560b"
+    },
+    {
+      "byte_size": 120,
+      "description": "RERL points into the block table.",
+      "expected_code": "block.overlap_header",
+      "path": "malformed/block_offset_into_table.vtex_c",
+      "sha256": "25f88485d491f83d618112baf56b23b4292ea2d4beea36ae3f4853dcc3f08ded"
+    },
+    {
+      "byte_size": 120,
+      "description": "DATA starts beyond the file.",
+      "expected_code": "block.range",
+      "path": "malformed/block_offset_beyond_eof.vtex_c",
+      "sha256": "9daeb0786e74882c9c6cd525e59fceca681a4e75b56d1cb5cd13c3db2a931bea"
+    },
+    {
+      "byte_size": 120,
+      "description": "DATA size exceeds the conformance safety limit.",
+      "expected_code": "limit.block_size",
+      "path": "malformed/block_size_excessive.vtex_c",
+      "sha256": "4a12007f932e601d1c45dc0afc8208f81ce415d30b001db6123fc6a6cf414173"
+    },
+    {
+      "byte_size": 120,
+      "description": "RERL dependency count exceeds the safety limit.",
+      "expected_code": "limit.dependency_count",
+      "path": "malformed/dependency_count_excessive.vtex_c",
+      "sha256": "0ff22fc29e77dc377073e16672a67c39f2b62c1e1015df38575a51389f52b58e"
+    },
+    {
+      "byte_size": 120,
+      "description": "Texture depth exceeds the safety limit.",
+      "expected_code": "limit.dimension",
+      "path": "malformed/texture_depth_excessive.vtex_c",
+      "sha256": "fc679616eddd4032cf9cb1bc15ea45e624dcc0fc51305cbf69889c96e73ae08c"
+    },
+    {
+      "byte_size": 64,
+      "description": "Compressed KV3 DATA ends at payload byte 0.",
+      "expected_code": "payload.kv3_invalid",
+      "path": "malformed/compressed_payload_truncated_0000.vdata_c",
+      "sha256": "34d18ae095ff21bda4015fe2d318b522299fd10974ab5aa48f400d29186a9045"
+    },
+    {
+      "byte_size": 67,
+      "description": "Compressed KV3 DATA ends at payload byte 3.",
+      "expected_code": "payload.kv3_invalid",
+      "path": "malformed/compressed_payload_truncated_0003.vdata_c",
+      "sha256": "3b1073f4b1ce197237c2fd9e30b83b9dbfc030158dcd9d29635dca772757b8e4"
+    },
+    {
+      "byte_size": 68,
+      "description": "Compressed KV3 DATA ends at payload byte 4.",
+      "expected_code": "payload.kv3_invalid",
+      "path": "malformed/compressed_payload_truncated_0004.vdata_c",
+      "sha256": "41ebceba93eacbad0c3b36e0f70e2438c100f4169bbe2ce25246491b0f930e9a"
+    },
+    {
+      "byte_size": 83,
+      "description": "Compressed KV3 DATA ends at payload byte 19.",
+      "expected_code": "payload.kv3_invalid",
+      "path": "malformed/compressed_payload_truncated_0019.vdata_c",
+      "sha256": "b1f0ffcb7e4a41cba0c5efe10ae63f71040fc586608e3fb261dc61d2b78b51ed"
+    },
+    {
+      "byte_size": 95,
+      "description": "Compressed KV3 DATA ends at payload byte 31.",
+      "expected_code": "payload.kv3_invalid",
+      "path": "malformed/compressed_payload_truncated_0031.vdata_c",
+      "sha256": "5f899db272250b08eee48b903fb14c030c97c829585482f62e43a2fda902578f"
+    },
+    {
+      "byte_size": 368,
+      "description": "Compressed KV3 DATA ends at payload byte 304.",
+      "expected_code": "payload.kv3_invalid",
+      "path": "malformed/compressed_payload_truncated_0304.vdata_c",
+      "sha256": "ac87144707e17c6f07381dd6d36df987eb59a80f6a0a99215e0c0d2776259733"
+    },
+    {
+      "byte_size": 1343,
+      "description": "Decoded KV3 nesting exceeds the normalization depth limit.",
+      "expected_code": "limit.value_depth",
+      "path": "malformed/structured_value_depth_excessive.vdata_c",
+      "sha256": "56bdfe98808f074307a4937f1b6eb7c3a59d03fcfbf2317c90f00eb9b1625820"
+    }
+  ],
+  "provenance": {
+    "generator": "tools/build_source2_fixtures.py",
+    "kind": "generated",
+    "network_required": false,
+    "upstream_fixture_content": false
+  },
+  "schema_version": 1
+}

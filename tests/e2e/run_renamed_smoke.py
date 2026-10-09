@@ -2,7 +2,7 @@
 (``bl_ext.<repository>.sourceio``), and check nothing needs a top-level ``SourceIO`` module.
 
 Usage:
-    blender -b --factory-startup --python tests/blender_tests/run_renamed_smoke.py -- [--work DIR]
+    blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py -- [--work DIR]
 
 The files git tracks, minus what the extension build leaves out, are copied into DIR (default: a
 temporary folder) as ``bl_ext_test_sourceio``. An import hook rejects ``SourceIO``. Every module is

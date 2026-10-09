@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 NOT_SHIPPED = ("tests/", "tools/", "samples/", "dist/", "wiki/")
 ABSOLUTE = re.compile(r"^[ \t]*(?:from|import)[ \t]+SourceIO\b.*$", re.MULTILINE)
 

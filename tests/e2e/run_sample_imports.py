@@ -2,7 +2,7 @@
 
 Usage:
     python tests/fetch_samples.py
-    blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--samples DIR] [--filter TEXT] [--json FILE]
+    blender -b --factory-startup --python tests/e2e/run_sample_imports.py -- [--samples DIR] [--filter TEXT] [--json FILE]
 
 Each file is imported into an empty scene through the same operator the UI uses. A file PASSES
 when the operator finishes, creates data and logs no errors; WARN means it finished but logged

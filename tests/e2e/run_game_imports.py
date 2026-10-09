@@ -1,10 +1,10 @@
 """Import assets straight from an installed Source 1 or Source 2 game and report what each importer produced.
 
 Usage:
-    blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- \
+    blender -b --factory-startup --python tests/e2e/run_game_imports.py -- \
         --game "<steam>/common/Team Fortress 2/tf" [--model models/player/heavy.mdl ...] [--map ctf_2fort ...] \
         [--include-animations] [--load-placeholders] [--json FILE] [--save FILE.blend]
-    blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- \
+    blender -b --factory-startup --python tests/e2e/run_game_imports.py -- \
         --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--model models/chicken/chicken.vmdl_c ...] \
         [--map de_dust2 ...] [--include-animations] [--clips "idle*,run_n_*"]
 

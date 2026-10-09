@@ -4,29 +4,29 @@ from typing import Iterator, Optional
 from ..app_id import SteamAppId
 from ...utils import Buffer, FileBuffer, TinyPath, corrected_path
 from ....logger import SourceLogMan
+from .resolver import CollisionDiagnostic, normalize_resource_path, normalize_resource_pattern
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('ContentManager')
 
 
 def find_file_generic(root: TinyPath, filepath: TinyPath) -> Buffer | None:
-    filepath = corrected_path(root / filepath)
-    if filepath.exists():
+    filepath = corrected_path(root / normalize_resource_path(filepath))
+    if filepath.exists() and filepath.is_file():
         return FileBuffer(filepath)
-    else:
-        return None
+    return None
 
 
 def find_path_generic(root: TinyPath, filepath: TinyPath) -> TinyPath | None:
-    filepath = corrected_path(root / filepath)
+    filepath = corrected_path(root / normalize_resource_path(filepath))
     if filepath.exists():
         return filepath
-    else:
-        return None
+    return None
 
 
 def glob_generic(root: TinyPath, pattern: str) -> Iterator[tuple[TinyPath, Buffer]]:
-    for filename in root.rglob(pattern):
+    pattern = normalize_resource_pattern(pattern)
+    for filename in sorted(root.rglob(pattern), key=lambda path: path.as_posix().casefold()):
         yield (filename.relative_to(root)).as_posix(), FileBuffer(filename)
 
 
@@ -59,6 +59,24 @@ class ContentProvider:
     @abstractmethod
     def find_file(self, filepath: TinyPath) -> Buffer | None:
         ...
+
+    def open_stream(self, filepath: TinyPath) -> Buffer | None:
+        return self.find_file(filepath)
+
+    def resolve_path(self, filepath: TinyPath) -> TinyPath | None:
+        filepath = normalize_resource_path(filepath)
+        return filepath if self.check(filepath) else None
+
+    def iter_paths(self, pattern: str = "*") -> Iterator[TinyPath]:
+        for path, buffer in self.glob(normalize_resource_pattern(pattern)):
+            try:
+                yield TinyPath(path)
+            finally:
+                buffer.close()
+
+    @property
+    def collision_diagnostics(self) -> tuple[CollisionDiagnostic, ...]:
+        return ()
 
     @abstractmethod
     def check(self, filepath: TinyPath) -> bool:

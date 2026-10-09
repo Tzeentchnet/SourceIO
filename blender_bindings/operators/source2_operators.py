@@ -2,7 +2,7 @@ import bpy
 from bpy.props import (BoolProperty, FloatProperty,
                        IntProperty, StringProperty)
 
-from ...library.shared.content_manager import ContentManager
+from ...library.shared.content_manager import ContentManager, MountLayer
 from ...library.shared.content_manager.providers.vpk_provider import VPKContentProvider
 from ...library.source2 import (CompiledMaterialResource, CompiledModelResource,
                                       CompiledTextureResource, CompiledPhysicsResource)
@@ -15,20 +15,49 @@ from ..source2.dmx.camera_loader import load_camera
 from ..source2.vmat_loader import load_material
 from ..source2.vmdl_loader import (load_model, put_into_collections,
                                                            get_physics_block, ImportContext)
-from ..source2.vphy_loader import load_physics
-from ..source2.vtex_loader import import_texture
+from ..source2.vphy_loader import load_physics, load_physics_resource
+from ..source2.vtex_loader import import_texture, texture_settings_from_scene
 from ..source2.animation_loader import import_clips
 from ...library.source2.animation.loader import clip_from_resource
 from ...library.source2.blocks.kv3_block import KVBlock
+from ...library.source2.blocks.texture_data import TextureImportSettings
 from ...library.source2.compiled_resource import CompiledResource, DATA_BLOCK
 from ..source2.vwrld.loader import load_map
 from ..utils.bpy_utils import get_new_unique_collection
 from ..utils.resource_utils import serialize_mounted_content, deserialize_mounted_content
-from ...library.source2.blocks.phys_block import PhysBlock
+
+
+class Source2TextureSettingsMixin:
+    texture_mip_level: IntProperty(
+        name="Texture mip",
+        description="Mip level to decode (0 is the highest resolution)",
+        default=0,
+        min=0,
+    )
+    decode_packed_channels: BoolProperty(
+        name="Decode packed channels",
+        description="Apply unambiguous packed-channel metadata",
+        default=True,
+    )
+
+    def invoke(self, context, event):
+        settings = texture_settings_from_scene(context.scene)
+        self.texture_mip_level = settings.mip_level
+        self.decode_packed_channels = settings.decode_packed_channels
+        return super().invoke(context, event)
+
+    def texture_settings(self, context) -> TextureImportSettings:
+        settings = TextureImportSettings(
+            mip_level=self.texture_mip_level,
+            decode_packed_channels=self.decode_packed_channels,
+        )
+        context.scene.source2_texture_mip_level = settings.mip_level
+        context.scene.source2_decode_packed_channels = settings.decode_packed_channels
+        return settings
 
 
 # noinspection PyPep8Naming
-class SOURCEIO_OT_VMDLImport(ImportOperatorHelper):
+class SOURCEIO_OT_VMDLImport(Source2TextureSettingsMixin, ImportOperatorHelper):
     """Load Source2 VMDL"""
     bl_idname = "sourceio.vmdl"
     bl_label = "Import Source2 VMDL file"
@@ -58,6 +87,7 @@ class SOURCEIO_OT_VMDLImport(ImportOperatorHelper):
             serialize_mounted_content(content_manager)
         else:
             deserialize_mounted_content(content_manager)
+        texture_settings = self.texture_settings(context)
 
         for n, file in enumerate(self.files):
             print(f"Loading {n + 1}/{len(self.files)}")
@@ -65,7 +95,8 @@ class SOURCEIO_OT_VMDLImport(ImportOperatorHelper):
                 model_resource = CompiledModelResource.from_buffer(f, directory / file.name)
                 import_context = ImportContext(self.scale, self.lod_mask, self.import_physics, self.import_attachments,
                                                self.import_materials, import_animations=self.import_animations,
-                                               animation_clips=self.animation_clips)
+                                               animation_clips=self.animation_clips,
+                                               texture_settings=texture_settings)
                 container = load_model(content_manager, model_resource, import_context)
 
             master_collection = get_new_unique_collection(model_resource.name, bpy.context.scene.collection)
@@ -126,7 +157,7 @@ class SOURCEIO_OT_VNMClipImport(ImportOperatorHelper):
 
 
 # noinspection PyPep8Naming
-class SOURCEIO_OT_VMAPImport(ImportOperatorHelper):
+class SOURCEIO_OT_VMAPImport(Source2TextureSettingsMixin, ImportOperatorHelper):
     """Load Source2 VWRLD"""
     bl_idname = "sourceio.vmap"
     bl_label = "Import Source2 VMAP file"
@@ -140,6 +171,7 @@ class SOURCEIO_OT_VMAPImport(ImportOperatorHelper):
 
     def execute(self, context):
         directory = self.get_directory()
+        texture_settings = self.texture_settings(context)
         for n, file in enumerate(self.files):
             print(f"Loading {n}/{len(self.files)}")
             content_manager = ContentManager()
@@ -151,10 +183,13 @@ class SOURCEIO_OT_VMAPImport(ImportOperatorHelper):
             file_stem = TinyPath(file.name).stem
             map_vpk_file = directory / f"{file_stem}.vpk"
             if map_vpk_file.exists():
-                content_manager.add_child(VPKContentProvider(map_vpk_file))
+                content_manager.add_child(
+                    VPKContentProvider(map_vpk_file),
+                    MountLayer.CURRENT_PACKAGE,
+                )
             with FileBuffer(directory / file.name) as buffer:
                 model = CompiledMapResource.from_buffer(buffer, TinyPath(file.name))
-                load_map(model, content_manager, self.scale)
+                load_map(model, content_manager, self.scale, texture_settings)
 
             if self.import_physics:
                 map_collection = bpy.data.collections[file_stem]
@@ -175,7 +210,7 @@ class SOURCEIO_OT_VMAPImport(ImportOperatorHelper):
                     phys_res = CompiledPhysicsResource.from_buffer(phys_file, phys_filename)
                     phys_collection = bpy.data.collections.new("physics")
                     map_collection.children.link(phys_collection)
-                    objects = load_physics(phys_res.get_block(PhysBlock, block_name="DATA"))
+                    objects = load_physics_resource(phys_res, self.scale)
 
                     for obj in objects:
                         phys_collection.objects.link(obj)
@@ -185,7 +220,7 @@ class SOURCEIO_OT_VMAPImport(ImportOperatorHelper):
 
 
 # noinspection PyPep8Naming
-class SOURCEIO_OT_VPK_VMAPImport(ImportOperatorHelper):
+class SOURCEIO_OT_VPK_VMAPImport(Source2TextureSettingsMixin, ImportOperatorHelper):
     """Load Source2 VWRLD"""
     bl_idname = "sourceio.vmap_vpk"
     bl_label = "Import Source2 VMAP file from VPK"
@@ -198,6 +233,7 @@ class SOURCEIO_OT_VPK_VMAPImport(ImportOperatorHelper):
     scale: FloatProperty(name="World scale", default=SOURCE2_HAMMER_UNIT_TO_METERS, precision=6)
 
     def execute(self, context):
+        texture_settings = self.texture_settings(context)
         vpk_path = TinyPath(self.filepath)
         assert vpk_path.is_file(), 'Not a file'
         content_manager = ContentManager()
@@ -207,7 +243,7 @@ class SOURCEIO_OT_VPK_VMAPImport(ImportOperatorHelper):
         else:
             deserialize_mounted_content(content_manager)
         vpk_provider = VPKContentProvider(vpk_path)
-        content_manager.add_child(vpk_provider)
+        content_manager.add_child(vpk_provider, MountLayer.CURRENT_PACKAGE)
 
         # Map VPKs are normally named after the map, but the map can live anywhere under maps/.
         map_path = TinyPath(f'maps/{vpk_path.stem}.vmap_c')
@@ -223,8 +259,14 @@ class SOURCEIO_OT_VPK_VMAPImport(ImportOperatorHelper):
                                          f"{candidates[0][0].as_posix()}")
             map_path, map_buffer = candidates[0]
 
-        model = CompiledMapResource.from_buffer(map_buffer, vpk_path)
-        load_map(model, content_manager, self.scale)
+        model = CompiledMapResource.from_buffer(map_buffer, map_path)
+        load_map(
+            model,
+            content_manager,
+            self.scale,
+            texture_settings,
+            source_container=vpk_path,
+        )
         if self.import_physics:
             map_collection = bpy.data.collections[vpk_path.stem]
             map_folder = map_path.with_suffix("")
@@ -245,7 +287,7 @@ class SOURCEIO_OT_VPK_VMAPImport(ImportOperatorHelper):
                 phys_res = CompiledPhysicsResource.from_buffer(phys_file, phys_filename)
                 phys_collection = bpy.data.collections.new("physics")
                 map_collection.children.link(phys_collection)
-                objects = load_physics(phys_res.get_block(PhysBlock, block_name="DATA"))
+                objects = load_physics_resource(phys_res, self.scale)
 
                 for obj in objects:
                     phys_collection.objects.link(obj)
@@ -256,7 +298,7 @@ class SOURCEIO_OT_VPK_VMAPImport(ImportOperatorHelper):
 
 
 # noinspection PyPep8Naming
-class SOURCEIO_OT_VMATImport(ImportOperatorHelper):
+class SOURCEIO_OT_VMATImport(Source2TextureSettingsMixin, ImportOperatorHelper):
     """Load Source2 material"""
     bl_idname = "sourceio.vmat"
     bl_label = "Import Source2 VMDL file"
@@ -275,16 +317,22 @@ class SOURCEIO_OT_VMATImport(ImportOperatorHelper):
             serialize_mounted_content(content_manager)
         else:
             deserialize_mounted_content(content_manager)
+        texture_settings = self.texture_settings(context)
         for n, file in enumerate(self.files):
             print(f"Loading {n + 1}/{len(self.files)}")
             with FileBuffer(directory / file.name) as f:
                 material_resource = CompiledMaterialResource.from_buffer(f, directory / file.name)
-                load_material(content_manager, material_resource, TinyPath(file.name))
+                load_material(
+                    content_manager,
+                    material_resource,
+                    TinyPath(file.name),
+                    texture_settings=texture_settings,
+                )
         return {'FINISHED'}
 
 
 # noinspection PyPep8Naming
-class SOURCEIO_OT_VTEXImport(ImportOperatorHelper):
+class SOURCEIO_OT_VTEXImport(Source2TextureSettingsMixin, ImportOperatorHelper):
     """Load Source Engine VTF texture"""
     bl_idname = "sourceio.vtex"
     bl_label = "Import VTEX"
@@ -295,10 +343,11 @@ class SOURCEIO_OT_VTEXImport(ImportOperatorHelper):
 
     def execute(self, context):
         directory = self.get_directory()
+        texture_settings = self.texture_settings(context)
         for file in self.files:
             with FileBuffer(directory / file.name) as f:
                 texture_resource = CompiledTextureResource.from_buffer(f, directory / file.name)
-                image = import_texture(texture_resource, TinyPath(file.name))
+                image = import_texture(texture_resource, TinyPath(file.name), settings=texture_settings)
 
                 if (context.region and context.region.type == 'WINDOW'
                         and context.area and context.area.ui_type == 'ShaderNodeTree'
@@ -340,7 +389,7 @@ class SOURCEIO_OT_VPHYSImport(ImportOperatorHelper):
             print(f"Loading {n + 1}/{len(self.files)}")
             with FileBuffer(directory / file.name) as f:
                 phys_res = CompiledPhysicsResource.from_buffer(f, directory / file.name)
-                objects = load_physics(phys_res.get_block(PhysBlock, block_name="DATA"), self.scale)
+                objects = load_physics_resource(phys_res, self.scale)
 
             master_collection = get_new_unique_collection(phys_res.name, bpy.context.scene.collection)
             for obj in objects:

@@ -5,8 +5,8 @@ from pprint import pformat
 import bpy
 from mathutils import Euler, Matrix
 
-from ....utils.texture_utils import check_texture_cache
 from .....library.source2.blocks.kv3_block import KVBlock
+from .....library.source2.blocks.texture_data import TextureImportSettings
 from .base_entity_classes import *
 from ...vtex_loader import import_texture
 from ....utils.bpy_utils import get_or_create_child_collection
@@ -58,11 +58,13 @@ class AbstractEntityHandler:
     entity_lookup_table = {}
 
     def __init__(self, entities: list[dict], parent_collection, cm: ContentManager,
-                 scale=SOURCE2_HAMMER_UNIT_TO_METERS):
+                 scale=SOURCE2_HAMMER_UNIT_TO_METERS,
+                 texture_settings: TextureImportSettings | None = None):
         self.logger = log_manager.get_logger(self.__class__.__name__)
         self.scale = scale
         self.content_manager = cm
         self.parent_collection = parent_collection
+        self.texture_settings = texture_settings or TextureImportSettings()
 
         self._entities = entities
 
@@ -188,10 +190,12 @@ class AbstractEntityHandler:
                     obj.empty_display_size = 16 * self.scale  # (1 / self.scale)
                     texture_path = TinyPath(path_texture)
                     if image_resource is not None:
-                        texture = check_texture_cache(texture_path)
-                        if texture is not None:
-                            obj.data = texture
-                        obj.data = import_texture(image_resource, texture_path)
+                        texture = import_texture(
+                            image_resource,
+                            texture_path,
+                            settings=self.texture_settings,
+                        )
+                        obj.data = texture
 
     @staticmethod
     def _create_lines(name, points, closed=False):

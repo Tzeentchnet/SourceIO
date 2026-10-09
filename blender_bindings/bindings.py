@@ -24,6 +24,12 @@ from .operators.source2_operators import (SOURCEIO_OT_VMAPImport,
                                           SOURCEIO_OT_VPK_VMAPImport,
                                           SOURCEIO_OT_VTEXImport,
                                           SOURCEIO_OT_DMXCameraImport)
+from .operators.source2_animation_operators import SOURCEIO_OT_Source2AnimationImport
+from .operators.source2_export_operators import (
+    SOURCEIO_OT_Source2HammerMapExport,
+    SOURCEIO_OT_Source2ModelDocExport,
+)
+from .operators.source2_sound_operators import SOURCEIO_OT_VSNDImport
 from .operators.dragndrop import file_handler_classes
 from .ui.export_nodes import register_nodes, unregister_nodes
 from . import cli
@@ -70,6 +76,10 @@ class SourceIO_MT_ImportMenu(bpy.types.Menu):
                         icon_value=model_doc_icon.icon_id)
         layout.operator(SOURCEIO_OT_VNMClipImport.bl_idname, text="Source2 animation clip (.vnmclip_c)",
                         icon_value=model_doc_icon.icon_id)
+        layout.operator(SOURCEIO_OT_Source2AnimationImport.bl_idname,
+                        text="Source2 animation (.vanim_c/.vagrp_c)",
+                        icon_value=model_doc_icon.icon_id)
+        layout.operator(SOURCEIO_OT_VSNDImport.bl_idname, text="Source2 sound (.vsnd_c)")
         layout.operator(SOURCEIO_OT_VPHYSImport.bl_idname, text="Source2 physics (.vphys_c)",
                         icon_value=model_doc_icon.icon_id)
         layout.operator(SOURCEIO_OT_VMAPImport.bl_idname, text="Source2 map (.vmap_c)",
@@ -98,9 +108,30 @@ class SourceIOUtils_MT_Menu(bpy.types.Menu):
         layout.operator(SOURCEIO_OT_DMXCameraImport.bl_idname, text="Valve camera(.dmx)")
 
 
+class SourceIO_MT_ExportMenu(bpy.types.Menu):
+    bl_label = "Source Engine Assets"
+    bl_idname = "EXPORT_MT_sourceio"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator(
+            SOURCEIO_OT_Source2ModelDocExport.bl_idname,
+            text="Source2 ModelDoc (.vmdl/.dmx)",
+        )
+        layout.operator(
+            SOURCEIO_OT_Source2HammerMapExport.bl_idname,
+            text="Source2 Hammer map (.vmap)",
+        )
+
+
 def menu_import(self, context):
     source_io_icon = custom_icons["main"]["sourceio_icon"]
     self.layout.menu(SourceIO_MT_ImportMenu.bl_idname, icon_value=source_io_icon.icon_id)
+
+
+def menu_export(self, context):
+    source_io_icon = custom_icons["main"]["sourceio_icon"]
+    self.layout.menu(SourceIO_MT_ExportMenu.bl_idname, icon_value=source_io_icon.icon_id)
 
 
 def load_icon(loader, filename, name):
@@ -143,6 +174,10 @@ classes = [
     SOURCEIO_OT_DMXCameraImport,
     SOURCEIO_OT_VMDLImport,
     SOURCEIO_OT_VNMClipImport,
+    SOURCEIO_OT_Source2AnimationImport,
+    SOURCEIO_OT_VSNDImport,
+    SOURCEIO_OT_Source2ModelDocExport,
+    SOURCEIO_OT_Source2HammerMapExport,
     SOURCEIO_OT_VTEXImport,
     SOURCEIO_OT_VPHYSImport,
     SOURCEIO_OT_VMATImport,
@@ -152,6 +187,7 @@ classes = [
     # Addon tools
     # SourceIOPreferences,
     SourceIO_MT_ImportMenu,
+    SourceIO_MT_ExportMenu,
     SourceIOUtils_MT_Menu,
 
     SOURCEIO_OT_VTFImport,
@@ -201,12 +237,14 @@ def register():
     register_nodes()
     register_props()
     bpy.types.TOPBAR_MT_file_import.append(menu_import)
+    bpy.types.TOPBAR_MT_file_export.append(menu_export)
     bpy.types.IMAGE_MT_image.append(vtf_export)
     _cli_commands.append(bpy.utils.register_cli_command("sourceio", cli.execute))
 
 
 def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
+    bpy.types.TOPBAR_MT_file_export.remove(menu_export)
     bpy.types.IMAGE_MT_image.remove(vtf_export)
     while _cli_commands:
         bpy.utils.unregister_cli_command(_cli_commands.pop())

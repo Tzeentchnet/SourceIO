@@ -12,6 +12,7 @@ from ....library.shared.app_id import SteamAppId
 from ....library.shared.content_manager import ContentManager
 from ....library.shared.content_manager.providers.vpk_provider import VPKContentProvider
 from ....library.source2 import CompiledWorldResource, CompiledResource
+from ....library.source2.blocks.texture_data import TextureImportSettings
 from ....library.source2.keyvalues3.types import Object, NullObject
 from ....library.source2.resource_types import CompiledManifestResource
 from ....library.source2.resource_types.compiled_world_resource import CompiledEntityLumpResource, \
@@ -20,6 +21,10 @@ from ....library.utils import FileBuffer
 from ....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from ....library.utils.tiny_path import TinyPath
 from ....logger import SourceLogMan
+from ...exporting.source2.provenance import (
+    attach_import_provenance,
+    build_resource_import_payload,
+)
 
 from .entities.abstract_entity_handlers import get_angles, get_origin, parse_float_vector
 from .entities.base_entity_handlers import BaseEntityHandler
@@ -69,11 +74,19 @@ def get_entity_name(entity_data: dict[str, Any]):
     return f'{entity_data.get("targetname", entity_data.get("hammeruniqueid", "missing_hammer_id"))}'
 
 
-def load_map(map_resource: CompiledMapResource, cm: ContentManager, scale: float = SOURCE2_HAMMER_UNIT_TO_METERS):
+def load_map(map_resource: CompiledMapResource, cm: ContentManager, scale: float = SOURCE2_HAMMER_UNIT_TO_METERS,
+             texture_settings: TextureImportSettings | None = None, *, source_container=None):
     world_resource = find_world(map_resource, cm)
     if world_resource is None:
         return None
-    return import_world(world_resource, map_resource, cm, scale)
+    return import_world(
+        world_resource,
+        map_resource,
+        cm,
+        scale,
+        texture_settings,
+        source_container=source_container,
+    )
 
 
 def find_world(map_resource: CompiledMapResource, cm: ContentManager) -> CompiledWorldResource | None:
@@ -101,13 +114,29 @@ def cheap_path_check(resource_id: str | int, content_manager: ContentManager, re
 
 
 def import_world(world_resource: CompiledWorldResource, map_resource: CompiledMapResource,
-                 content_manager: ContentManager, scale=SOURCE2_HAMMER_UNIT_TO_METERS):
+                 content_manager: ContentManager, scale=SOURCE2_HAMMER_UNIT_TO_METERS,
+                 texture_settings: TextureImportSettings | None = None, *, source_container=None):
+    texture_settings = texture_settings or TextureImportSettings()
     map_name = map_resource.name
     master_collection = get_or_create_collection(map_name, bpy.context.scene.collection)
+    provenance_metadata = {
+        "world_resource": str(world_resource._filepath),
+        "import_scale": scale,
+        "texture_settings": texture_settings,
+    }
+    if source_container is not None:
+        provenance_metadata["source_container"] = str(source_container)
+    provenance = build_resource_import_payload(
+        map_resource,
+        asset_kind="map",
+        metadata=provenance_metadata,
+    )
+    attach_import_provenance(master_collection, provenance)
     with pause_view_layer_update():
         load_world_nodes(world_resource, map_resource, content_manager, master_collection, scale)
-        load_entities(world_resource, master_collection, scale, content_manager)
-        load_skyboxes(world_resource, master_collection, scale, content_manager)
+        load_entities(world_resource, master_collection, scale, content_manager,
+                      texture_settings=texture_settings)
+        load_skyboxes(world_resource, master_collection, scale, content_manager, texture_settings)
 
 
 def load_world_nodes(world_resource: CompiledWorldResource, map_resource: CompiledMapResource,
@@ -264,16 +293,20 @@ def iter_entity_lumps(world_resource: CompiledWorldResource,
 
 
 def load_entities(world_resource: CompiledWorldResource, collection: bpy.types.Collection,
-                  scale: float, cm: ContentManager, skipped_classes: frozenset[str] = frozenset()):
+                  scale: float, cm: ContentManager, skipped_classes: frozenset[str] = frozenset(),
+                  texture_settings: TextureImportSettings | None = None):
     handler_class = get_entity_handler(cm)
     for entity_resource in iter_entity_lumps(world_resource, cm):
         entities = [entity for entity in entity_resource.get_entities()
                     if entity_values(entity).get("classname") not in skipped_classes]
-        handler_class(entities, collection, cm, scale).load_entities()
+        handler = handler_class(entities, collection, cm, scale)
+        handler.texture_settings = texture_settings or TextureImportSettings()
+        handler.load_entities()
 
 
 def load_skyboxes(world_resource: CompiledWorldResource, collection: bpy.types.Collection,
-                  scale: float, cm: ContentManager):
+                  scale: float, cm: ContentManager,
+                  texture_settings: TextureImportSettings | None = None):
     """Import the 3D skybox of every ``skybox_reference``.
 
     The skybox is a map of its own (CS2 ships ``maps/prefabs/de_dust2/de_dust2_skybox.vmap`` as
@@ -297,7 +330,14 @@ def load_skyboxes(world_resource: CompiledWorldResource, collection: bpy.types.C
 
         sky_collection = get_or_create_child_collection(target.stem, collection)
         load_world_nodes(sky_world, sky_map, cm, sky_collection, scale)
-        load_entities(sky_world, sky_collection, scale, cm, SKYBOX_SKIPPED_CLASSES)
+        load_entities(
+            sky_world,
+            sky_collection,
+            scale,
+            cm,
+            SKYBOX_SKIPPED_CLASSES,
+            texture_settings or TextureImportSettings(),
+        )
         for obj in sky_collection.all_objects:
             if obj.parent is None:
                 obj.matrix_basis = matrix @ obj.matrix_basis

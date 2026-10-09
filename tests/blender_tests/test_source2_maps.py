@@ -16,6 +16,7 @@ from mathutils import Matrix, Vector
 from SourceIO.blender_bindings.operators import shared_operators
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
 from SourceIO.blender_bindings.source2.vwrld import loader
+from SourceIO.blender_bindings.source2.vwrld.entities import abstract_entity_handlers
 from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_child_collection
 
 SCALE = 0.0254
@@ -96,6 +97,32 @@ class ChildCollectionTests(unittest.TestCase):
         self.assertIs(get_or_create_child_collection("func", second), b)
         self.assertIs(get_or_create_child_collection("func", first), a)
         self.assertIsNot(get_or_create_child_collection("func_brush", first), a)
+
+
+class EntityIconTests(unittest.TestCase):
+    def setUp(self):
+        bpy.ops.wm.read_homefile(use_empty=True)
+
+    def test_cached_icon_uses_settings_aware_import(self):
+        cached = bpy.data.images.new("env_soundscape", 64, 64)
+        obj = bpy.data.objects.new("soundscape", None)
+        material = SimpleNamespace(
+            get_block=lambda *args, **kwargs: {"m_shaderName": "tools_sprite.vfx"},
+            get_child_resources=lambda: ["materials/editor/env_soundscape.vtex"],
+            get_child_resource=lambda *args, **kwargs: object(),
+        )
+        content_manager = SimpleNamespace(find_file=lambda path: object())
+        handler = abstract_entity_handlers.AbstractEntityHandler([], None, content_manager)
+
+        with mock.patch.object(abstract_entity_handlers.CompiledMaterialResource, "from_buffer",
+                               return_value=material), \
+                mock.patch.object(abstract_entity_handlers, "import_texture",
+                                  return_value=cached) as import_texture:
+            handler._set_icon_if_present(obj, SimpleNamespace(icon_sprite="editor/env_soundscape.vmat"))
+
+        self.assertIs(obj.data, cached)
+        import_texture.assert_called_once()
+        self.assertIs(import_texture.call_args.kwargs["settings"], handler.texture_settings)
 
 
 class SkyboxImportTests(unittest.TestCase):

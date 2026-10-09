@@ -70,6 +70,30 @@ class OBJECT_FH_vnmclip_import(bpy.types.FileHandler):
 
 
 # noinspection PyPep8Naming
+class OBJECT_FH_source2_animation_import(bpy.types.FileHandler):
+    bl_idname = "OBJECT_FH_source2_animation_import"
+    bl_label = "Source2 animation (.vanim_c/.vagrp_c)"
+    bl_import_operator = "sourceio.source2_animation"
+    bl_file_extensions = ".vanim_c;.vagrp_c"
+
+    @classmethod
+    def poll_drop(cls, context):
+        return _in_3d_view(context) and any(obj.type == 'ARMATURE' for obj in context.selected_objects)
+
+
+# noinspection PyPep8Naming
+class OBJECT_FH_vsnd_import(bpy.types.FileHandler):
+    bl_idname = "OBJECT_FH_vsnd_import"
+    bl_label = "Source2 sound (.vsnd_c)"
+    bl_import_operator = "sourceio.vsnd"
+    bl_file_extensions = ".vsnd_c"
+
+    @classmethod
+    def poll_drop(cls, context):
+        return _in_window(context)
+
+
+# noinspection PyPep8Naming
 class OBJECT_FH_vphys_import(bpy.types.FileHandler):
     bl_idname = "OBJECT_FH_vphys_import"
     bl_label = "Source2 physics (.vphys_c)"
@@ -159,6 +183,8 @@ file_handler_classes = (
     OBJECT_FH_mdl_import,
     OBJECT_FH_vmdl_import,
     OBJECT_FH_vnmclip_import,
+    OBJECT_FH_source2_animation_import,
+    OBJECT_FH_vsnd_import,
     OBJECT_FH_vphys_import,
     OBJECT_FH_dmx_camera_import,
     MATERIAL_FH_vmt_import,

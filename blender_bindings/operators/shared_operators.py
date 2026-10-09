@@ -22,6 +22,7 @@ from ..shared.model_container import ModelContainer
 from ..shared.skins import prop_skin, set_skin, set_model_skin
 from ..source2.vmdl_loader import load_model, ImportContext
 from ..source2.vmdl_loader import put_into_collections as s2_put_into_collections
+from ..source2.vtex_loader import texture_settings_from_scene
 from ..utils.bpy_utils import (get_or_create_collection, get_new_unique_collection, find_layer_collection,
                                                        make_shadow_only, pause_view_layer_update)
 from ..utils.resource_utils import deserialize_mounted_content, serialize_mounted_content
@@ -311,7 +312,8 @@ class SourceIO_OT_LoadEntity(Operator):
             import_attachments=False,
             import_materials=import_materials,
             draw_call_index=None,
-            lm_uv_scale=(1, 1)
+            lm_uv_scale=(1, 1),
+            texture_settings=texture_settings_from_scene(context.scene),
         )
 
         if prop_type == "aggregate_static_prop":

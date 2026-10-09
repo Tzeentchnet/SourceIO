@@ -1,5 +1,5 @@
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from itertools import chain
 from struct import pack, unpack
@@ -19,6 +19,7 @@ from ...library.source2 import (CompiledMaterialResource, CompiledModelResource,
 from ...library.source2.common import convert_normals, convert_normals_2
 from ...library.source2.blocks.kv3_block import KVBlock, custom_type_kvblock
 from ...library.source2.blocks.morph_block import MorphBlock
+from ...library.source2.blocks.texture_data import TextureImportSettings
 from ...library.source2.blocks.phys_block import PhysBlock
 from ...library.source2.blocks.vertex_index_buffer import VertexIndexBuffer, IndexBuffer
 from ...library.source2.blocks.vertex_index_buffer.vertex_buffer import VertexBuffer
@@ -36,6 +37,12 @@ from ..utils.fast_mesh import FastMesh, set_vertex_weights
 from ...library.source2.blocks.vertex_index_buffer.enums import DxgiFormat
 from ...library.utils import MemoryBuffer
 from ...logger import SourceLogMan
+from ..exporting.source2.provenance import (
+    PROVENANCE_PROPERTY,
+    attach_import_provenance,
+    attach_import_provenance_many,
+    build_resource_import_payload,
+)
 
 logger = SourceLogMan().get_logger("Source2::Model")
 
@@ -68,6 +75,20 @@ def put_into_collections(model_container, model_name, parent_collection=None, bo
         attachments_collection = get_new_unique_collection(model_name + '_ATTACHMENTS', master_collection)
         for attachment in model_container.attachments:
             attachments_collection.objects.link(attachment)
+    provenance_owner = next(
+        (
+            owner for owner in chain(
+                [model_container.armature],
+                model_container.objects,
+                model_container.physics_objects,
+                model_container.attachments,
+            )
+            if owner is not None and owner.get(PROVENANCE_PROPERTY) is not None
+        ),
+        None,
+    )
+    if provenance_owner is not None:
+        master_collection[PROVENANCE_PROPERTY] = provenance_owner[PROVENANCE_PROPERTY]
     model_container.master_collection = master_collection
     return master_collection
 
@@ -83,15 +104,25 @@ class ImportContext:
     lm_uv_scale: tuple[float, float] = (1, 1)
     import_animations: bool = False
     animation_clips: str = ''  # graph clip filter, see parse_clip_filter
+    texture_settings: TextureImportSettings = field(default_factory=TextureImportSettings)
 
 
 def load_model(content_manager: ContentManager, resource: CompiledModelResource, import_contex: ImportContext):
+    provenance_payload = build_resource_import_payload(
+        resource,
+        asset_kind="model",
+        metadata={"import_settings": import_contex},
+    )
     armature = create_armature(content_manager, resource, import_contex.scale)
     physics_objects = []
     if import_contex.import_physics:
         physics_block = get_physics_block(content_manager, resource)
         if physics_block is not None:
-            objects = load_physics(physics_block, import_contex.scale)
+            objects = load_physics(
+                physics_block,
+                import_contex.scale,
+                provenance=provenance_payload,
+            )
             physics_objects = objects
     container = ModelContainer([], defaultdict(list), physics_objects, [], armature, None)
     objects = create_meshes(content_manager, resource, container, import_contex)
@@ -104,6 +135,10 @@ def load_model(content_manager: ContentManager, resource: CompiledModelResource,
             import_animations(content_manager, resource, armature, import_contex.scale,
                               clip_patterns=parse_clip_filter(import_contex.animation_clips))
 
+    attach_import_provenance_many(
+        chain([armature], objects, physics_objects, container.attachments),
+        provenance_payload,
+    )
     return container
 
 
@@ -501,7 +536,8 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     if material_resource:
         if import_context.import_materials:
             load_material(content_manager, material_resource, TinyPath(material_name),
-                          tint is not None and all(a != 1.0 for a in tint))
+                          tint is not None and all(a != 1.0 for a in tint),
+                          texture_settings=import_context.texture_settings)
             morph_supported = material_resource.get_int_property('F_MORPH_SUPPORTED', 0) == 1
             overlay = material_resource.get_int_property('F_OVERLAY', 0) == 1
             if not overlay:
@@ -604,7 +640,8 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
                                                                       CompiledMaterialResource)
                     if skin_resource is not None:
                         load_material(content_manager, skin_resource, TinyPath(skin_material),
-                                      tint is not None and all(a != 1.0 for a in tint))
+                                      tint is not None and all(a != 1.0 for a in tint),
+                                      texture_settings=import_context.texture_settings)
 
             mesh_obj['active_skin'] = default_skin['m_name']
             mesh_obj['skin_groups'] = mat_groups

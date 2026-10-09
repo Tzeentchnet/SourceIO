@@ -9,7 +9,7 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2) and round 8 as [5.7.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.1-blender5.2); round 9 (AnimGraph 2 clips) is pushed to `master` but not released (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
+State (2026-10-08): rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2), round 8 as [5.7.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.1-blender5.2), and round 9 (AnimGraph 2 clips) as [5.7.2-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.2-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
 
 Checks, with the current baseline:
 

@@ -119,7 +119,7 @@ class ShaderRegistry:
         cls.align_nodes(material)
         for unused_texture in handler.unused_textures.copy():
             texture_path = material_resource.get_texture_property(unused_texture, None)
-            if texture_path is not None:
+            if texture_path is not None and texture_path not in handler.loaded_textures:
                 handler.logger.warn(f"Unused texture {unused_texture} {texture_path}")
                 handler._get_texture(unused_texture, (0, 0, 0, 0), False)
 

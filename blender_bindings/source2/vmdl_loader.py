@@ -1,4 +1,3 @@
-import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import IntEnum
@@ -36,6 +35,9 @@ from .vphy_loader import load_physics
 from ..utils.fast_mesh import FastMesh, set_vertex_weights
 from ...library.source2.blocks.vertex_index_buffer.enums import DxgiFormat
 from ...library.utils import MemoryBuffer
+from ...logger import SourceLogMan
+
+logger = SourceLogMan().get_logger("Source2::Model")
 
 
 def put_into_collections(model_container, model_name, parent_collection=None, bodygroup_grouping=False):
@@ -160,7 +162,7 @@ def create_meshes(content_manager: ContentManager, model_resource: CompiledModel
     data = model_resource.get_block(custom_type_kvblock("PermModelData_t"), block_name='DATA')
     ctrl = model_resource.get_block(KVBlock, block_name='CTRL')
     if not ctrl:
-        logging.error(f'Failed to find ctrl block for {model_resource.name}')
+        logger.error(f'Failed to find ctrl block for {model_resource.name}')
         return []
     group_masks = {}
     lod_count = len(data['m_lodGroupSwitchDistances'])
@@ -195,7 +197,7 @@ def create_meshes(content_manager: ContentManager, model_resource: CompiledModel
                 else:
                     mesh_resource = model_resource.get_child_resource(mesh, content_manager, CompiledMeshResource)
                 if mesh_resource is None:
-                    logging.error(f'Failed to find vmesh file for {model_resource.name}')
+                    logger.error(f'Failed to find vmesh file for {model_resource.name}')
                     continue
                 sub_meshes = load_external_mesh(content_manager, model_resource, container, i, mesh_resource,
                                                 import_contex)
@@ -230,6 +232,19 @@ def create_meshes(content_manager: ContentManager, model_resource: CompiledModel
     return object_groups
 
 
+def _load_morph_texture(content_manager: ContentManager, model_resource: CompiledModelResource,
+                        morph_block: MorphBlock | None) -> np.ndarray | None:
+    # A morph set whose flexes hold no data (CS2 ctm_sas) has no atlas either.
+    if not morph_block or not morph_block['m_pTextureAtlas']:
+        return None
+    atlas = morph_block['m_pTextureAtlas']
+    morph_texture = model_resource.get_child_resource(atlas, content_manager, CompiledTextureResource)
+    texture = morph_texture.get_texture_data(0)[0] if morph_texture is not None else None
+    if texture is None:
+        logger.error(f'Failed to find morph texture {atlas!r}, flexes are not imported')
+    return texture
+
+
 def load_internal_mesh(content_manager: ContentManager, model_resource: CompiledModelResource,
                        container: ModelContainer, mesh_info: Object, import_context: ImportContext
                        ):
@@ -239,16 +254,7 @@ def load_internal_mesh(content_manager: ContentManager, model_resource: Compiled
     tbuf_block = model_resource.get_block(VertexIndexBuffer,
                                           block_id=mesh_info.get(('tools_vb_block', "m_nToolsVBIBBlock"), -1))
     morph_block = model_resource.get_block(MorphBlock, block_id=mesh_info['morph_block', 'm_nMorphBlock'])
-    texture = None
-    if morph_block:
-        morph_texture = model_resource.get_child_resource(morph_block['m_pTextureAtlas'], content_manager,
-                                                          CompiledTextureResource)
-        if morph_texture is not None:
-            texture, _ = morph_texture.get_texture_data(0)
-            if texture is None:
-                logging.error(f'Failed to find {morph_block["m_pTextureAtlas"]!r} morf texture')
-        else:
-            logging.error(f'Failed to find {morph_block["m_pTextureAtlas"]!r} morf texture')
+    texture = _load_morph_texture(content_manager, model_resource, morph_block)
 
     if data_block and vbib_block:
         return create_mesh(content_manager, model_resource, container, data_block, vbib_block.index_buffers,
@@ -281,13 +287,7 @@ def load_external_mesh(content_manager: ContentManager, model_resource: Compiled
     else:
         morph_block = mesh_resource.get_block(MorphBlock, block_name='MRPH')
 
-    if morph_block:
-        morph_texture = model_resource.get_child_resource(morph_block['m_pTextureAtlas'], content_manager,
-                                                          CompiledTextureResource)
-        if morph_texture is not None:
-            texture, _ = morph_texture.get_texture_data(0)
-        if texture is None:
-            logging.error(f'Failed to find {morph_block["m_pTextureAtlas"]!r} morf texture')
+    texture = _load_morph_texture(content_manager, model_resource, morph_block)
 
     if data_block and vbib_block:
         return create_mesh(content_manager, model_resource, container, data_block, vbib_block.index_buffers,
@@ -516,7 +516,7 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     else:
         overlay = False
         morph_supported = bool(morph_block)
-        logging.error(f'Failed to load material {material_name} for {mesh_resource.name}!')
+        logger.warn(f'Failed to load material {material_name} for {mesh_resource.name}')
 
     all_buffers = []
     for vertex_buffer_info in draw_call['m_vertexBuffers']:
@@ -530,8 +530,8 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     vertex_count = draw_call['m_nVertexCount']
     vertices, vertex_buffer = combine_vertex_buffers(all_buffers, mesh_resource) if all_buffers else (None, None)
     if vertices is None or 'POSITION' not in (vertices.dtype.names or ()):
-        logging.warning(f'Skipping draw call of {mesh_resource.name} with material {material_name}: '
-                        f'vertex buffer has no POSITION attribute')
+        logger.warn(f'Skipping draw call of {mesh_resource.name} with material {material_name}: '
+                    f'vertex buffer has no POSITION attribute')
         return g_vertex_offset + vertex_count
     indices = index_buffer.get_indices(mesh_resource)
     tri_start = draw_call['m_nStartIndex'] // 3
@@ -549,7 +549,7 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     if tint is not None:
         mesh_obj.color = list(tint) + [1.0]
 
-    logging.info(f"Mesh attributes: {used_vertices.dtype.names}")
+    logger.debug(f"Mesh attributes: {used_vertices.dtype.names}")
 
     positions = used_vertices['POSITION'] * import_context.scale
 
@@ -687,7 +687,7 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
                 flex = morph_data[:, :, :3].reshape((-1, 3))
                 flex_verts = flex[g_vertex_offset:g_vertex_offset + vertex_count]
                 if not np.any(flex_verts):
-                    logging.debug(f'Skipping {flex_name!r} because flex delta is zero')
+                    logger.debug(f'Skipping {flex_name!r} because flex delta is zero')
                     continue
                 shape = mesh_obj.shape_key_add(name=flex_name)
                 shape.value = 0.0

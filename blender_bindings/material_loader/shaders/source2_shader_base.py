@@ -24,6 +24,8 @@ class Source2ShaderBase(ShaderBase):
         self.load_source2_nodes()
         self._material_resource = source2_material
         self.unused_textures = set(self._material_resource.get_used_textures().keys())
+        # Paths loaded by any means; shaders that read texture properties directly never touch unused_textures.
+        self.loaded_textures: set[str | int] = set()
         self.tinted = tinted
 
         self.load_source2_nodes_blender5_0()
@@ -58,7 +60,7 @@ class Source2ShaderBase(ShaderBase):
 
     def load_texture_or_default(self, name_or_id: Union[str, int], default_color: tuple = (1.0, 1.0, 1.0, 1.0),
                                 invert_y: bool = False):
-        # print(f'Loading texture {name_or_id}')
+        self.loaded_textures.add(name_or_id)
         resource = self._material_resource.get_child_resource(name_or_id, self.content_manager,
                                                               CompiledTextureResource)
         texture_name: str

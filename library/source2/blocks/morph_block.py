@@ -1,4 +1,3 @@
-import logging
 from collections import defaultdict
 
 import numpy as np
@@ -7,6 +6,9 @@ import numpy.typing as npt
 from .kv3_block import KVBlock
 from ..keyvalues3.enums import KV3Signature, KV3Format
 from ..keyvalues3.types import AnyKVType
+from ....logger import SourceLogMan
+
+logger = SourceLogMan().get_logger("Source2::Morph")
 
 
 class MorphBlock(KVBlock):
@@ -59,7 +61,7 @@ class MorphBlock(KVBlock):
 
         morph_data = name_map.get(flex_name)
         if morph_data is None:
-            logging.error(f'Failed to find morph data for {flex_name!r} flex')
+            logger.error(f'Failed to find morph data for {flex_name!r} flex')
             return None
 
         out = bundle_data[flex_name] = np.zeros((height, width, 4), dtype=np.float32)

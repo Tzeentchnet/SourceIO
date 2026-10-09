@@ -10,7 +10,7 @@ from ...library.source1.vmt import VMT
 from ...library.source2 import CompiledMaterialResource
 from ...logger import SourceLogMan
 from .node_arranger import nodes_iterate
-from .shader_base import ShaderBase, ExtraMaterialParameters
+from .shader_base import ShaderBase, ExtraMaterialParameters, unfilter_alpha_clips
 from .shaders.goldsrc_shader_base import GoldSrcShaderBase
 from .shaders.source1_shader_base import Source1ShaderBase
 from .shaders.source2_shader_base import Source2ShaderBase
@@ -89,6 +89,8 @@ class ShaderRegistry:
             logger.debug(f'Failed material: {material.name}')
         # params = handler._vmt.data.to_dict()
         material['vmt_parameters'] = vmt.data.to_dict()
+        if material.node_tree is not None:
+            unfilter_alpha_clips(material)
         if handler.do_arrange:
             handler.align_nodes()
         return material
@@ -116,6 +118,7 @@ class ShaderRegistry:
             logger.error(f'Failed to load material, due to {e} error')
             traceback.print_exc()
             logger.debug(f'Failed material: {material.name}')
+        unfilter_alpha_clips(material)
         cls.align_nodes(material)
         for unused_texture in handler.unused_textures.copy():
             texture_path = material_resource.get_texture_property(unused_texture, None)

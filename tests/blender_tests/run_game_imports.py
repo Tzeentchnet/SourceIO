@@ -130,6 +130,16 @@ def load_placeholders(result: dict):
     placeholders = [obj for obj in bpy.data.objects
                     if obj.get("entity_data") and obj["entity_data"].get("prop_path")]
     view_layer = bpy.context.view_layer
+
+    def layer_collections(layer_collection):
+        yield layer_collection
+        for child in layer_collection.children:
+            yield from layer_collections(child)
+
+    # Hidden objects can't be selected; show collections hidden by default (light blockers) while loading.
+    hidden = [layer for layer in layer_collections(view_layer.layer_collection) if layer.hide_viewport]
+    for layer in hidden:
+        layer.hide_viewport = False
     for obj in view_layer.objects:
         obj.select_set(obj in placeholders)
     before = samples.snapshot()
@@ -140,6 +150,10 @@ def load_placeholders(result: dict):
     except Exception as ex:
         result["status"], result["message"] = "FAIL", f"load_placeholder: {str(ex).strip().splitlines()[-1]}"
     result["seconds"] = round(result["seconds"] + time.perf_counter() - started, 3)
+    for layer in hidden:
+        layer.hide_viewport = True
+    if hidden:
+        result["details"]["hidden_collections"] = len(hidden)
     for name in samples.COUNTED:
         added = sum(1 for item in getattr(bpy.data, name) if item not in before[name])
         if added:

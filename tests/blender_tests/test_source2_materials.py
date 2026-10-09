@@ -4,7 +4,8 @@ import bpy
 import numpy as np
 
 from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
-from SourceIO.blender_bindings.material_loader.shader_base import MIX_A, MIX_B, MIX_FACTOR
+from SourceIO.blender_bindings.material_loader.shader_base import (MIX_A, MIX_B, MIX_FACTOR, ALPHA_CLIP_LABEL,
+                                                                  unfilter_alpha_clips)
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
 from SourceIO.library.source2.resource_types import CompiledMaterialResource
 
@@ -284,6 +285,42 @@ class Source2MaterialTests(unittest.TestCase):
             expected = scaled @ rotation_matrix.T + np.array(center) + np.array(offset)
             expected[..., 1] = 1 - expected[..., 1]
             np.testing.assert_allclose(pixels[..., :2], expected, atol=2e-3, err_msg=str(scale_about_center))
+
+    def test_alpha_clip_reads_full_resolution(self):
+        # EEVEE's mipmaps average a thin alpha-tested texture below its cutoff; Closest lookups skip them.
+        material = build('csgo_vertexlitgeneric.vfx', ('g_tColor',), ints={'F_ALPHA_TEST': 1},
+                         floats={'g_flAlphaTestReference': 0.4})
+        clip = next(node for node in material.node_tree.nodes if node.label == ALPHA_CLIP_LABEL)
+        self.assertAlmostEqual(clip.inputs[1].default_value, 0.4, places=6)
+        color = material.node_tree.nodes['g_tColor']
+        taps = [node for node in material.node_tree.nodes
+                if node.bl_idname == 'ShaderNodeTexImage' and node.interpolation == 'Closest']
+        self.assertEqual(len(taps), 4)
+        self.assertTrue(all(tap.image == color.image for tap in taps))
+        self.assertNotEqual(linked_node(clip.inputs[0]), color)
+        # The color keeps its filtered lookup and the shared UV transform
+        transform = linked_node(color.inputs['Vector'])
+        self.assertTrue(all(linked_node(linked_node(tap.inputs['Vector']).inputs['UV']) == transform
+                            for tap in taps))
+
+    def test_full_resolution_alpha_matches_linear_sampling(self):
+        size = 16
+        rng = np.random.default_rng(1)
+        image = bpy.data.images.new('alpha', 4, 4, alpha=True, float_buffer=True)
+        image.colorspace_settings.name = 'Non-Color'
+        image.pixels = rng.random(4 * 4 * 4).astype(np.float32)
+
+        def build_alpha(builder, unfilter):
+            texture = builder.create_node('ShaderNodeTexImage')
+            texture.image = image
+            clip = builder.insert_alpha_clip(texture.outputs['Alpha'], 0.5)
+            if unfilter:
+                unfilter_alpha_clips(builder.bpy_material)
+            return clip.node.inputs[0].links[0].from_socket
+
+        linear = self.bake_uv(lambda builder: build_alpha(builder, False), size)
+        unfiltered = self.bake_uv(lambda builder: build_alpha(builder, True), size)
+        np.testing.assert_allclose(unfiltered[..., 0], linear[..., 0], atol=2e-3)
 
     def test_secondary_uv_fallback(self):
         size = 4

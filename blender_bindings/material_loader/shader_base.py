@@ -12,6 +12,102 @@ from ...logger import SourceLogMan
 from .node_arranger import nodes_iterate
 
 
+ALPHA_CLIP_LABEL = "Alpha clip"
+BILINEAR_TAPS_GROUP = "SourceIO Bilinear Taps"
+
+
+def _bilinear_taps_group() -> bpy.types.ShaderNodeTree:
+    """The four texel centres around a UV, and the weights between them, for an image of the given size:
+    p = uv * size - 0.5, base = floor(p), weights = p - base, taps at (base + 0.5 + {0, 1}) / size."""
+    group = bpy.data.node_groups.get(BILINEAR_TAPS_GROUP)
+    if group is not None:
+        return group
+    group = bpy.data.node_groups.new(BILINEAR_TAPS_GROUP, "ShaderNodeTree")
+    interface = group.interface
+    for name in ("UV 00", "UV 10", "UV 01", "UV 11", "Weights"):
+        interface.new_socket(name, in_out="OUTPUT", socket_type="NodeSocketVector")
+    interface.new_socket("UV", in_out="INPUT", socket_type="NodeSocketVector")
+    interface.new_socket("Size", in_out="INPUT", socket_type="NodeSocketVector").default_value = (1, 1, 1)
+    nodes, links = group.nodes, group.links
+    group_input = nodes.new("NodeGroupInput")
+    group_output = nodes.new("NodeGroupOutput")
+
+    def vector_math(operation, *inputs):
+        node = nodes.new("ShaderNodeVectorMath")
+        node.operation = operation
+        for index, value in enumerate(inputs):
+            if isinstance(value, bpy.types.NodeSocket):
+                links.new(value, node.inputs[index])
+            else:
+                node.inputs[index].default_value = value
+        return node.outputs[0]
+
+    size = group_input.outputs["Size"]
+    position = vector_math('MULTIPLY_ADD', group_input.outputs["UV"], size, (-0.5, -0.5, 0.0))
+    base = vector_math('FLOOR', position)
+    links.new(vector_math('SUBTRACT', position, base), group_output.inputs["Weights"])
+    for name, offset in (("UV 00", (0.5, 0.5, 0.0)), ("UV 10", (1.5, 0.5, 0.0)),
+                         ("UV 01", (0.5, 1.5, 0.0)), ("UV 11", (1.5, 1.5, 0.0))):
+        links.new(vector_math('DIVIDE', vector_math('ADD', base, offset), size), group_output.inputs[name])
+    return group
+
+
+def unfilter_alpha_clips(material: bpy.types.Material):
+    """Sample the alpha of every alpha clip that reads an image straight at full resolution.
+
+    EEVEE (and the viewport) samples textures through mipmaps it builds by averaging, so a thin alpha-tested
+    texture averages below its cutoff a few metres away and vanishes: 19% of a chain-link fence's texels are
+    wire, and from 10 m its alpha is mostly under 0.5. Cycles reads the full-resolution image and keeps it. The
+    game's own mipmaps are made to keep the coverage, but Blender builds its own. Closest lookups skip the
+    mipmaps, so the alpha is four of them blended bilinearly, as Cycles' Linear interpolation does.
+    """
+    nodes, links = material.node_tree.nodes, material.node_tree.links
+    clips = [node for node in nodes if node.bl_idname == Nodes.ShaderNodeMath and node.label == ALPHA_CLIP_LABEL]
+    for clip in clips:
+        if not clip.inputs[0].links:
+            continue
+        link = clip.inputs[0].links[0]
+        image_node = link.from_node
+        if (image_node.bl_idname != Nodes.ShaderNodeTexImage or link.from_socket.name != "Alpha"
+                or image_node.image is None or image_node.interpolation == 'Closest'
+                or image_node.projection != 'FLAT' or 0 in image_node.image.size):
+            continue
+        vector_links = image_node.inputs["Vector"].links
+        if vector_links:
+            uv = vector_links[0].from_socket
+        else:
+            uv = nodes.new(Nodes.ShaderNodeTexCoord).outputs["UV"]
+        taps = nodes.new(Nodes.ShaderNodeGroup)
+        taps.node_tree = _bilinear_taps_group()
+        taps.label = "Full resolution alpha"
+        links.new(uv, taps.inputs["UV"])
+        taps.inputs["Size"].default_value = (*image_node.image.size, 1)
+        weights = nodes.new(Nodes.ShaderNodeSeparateXYZ)
+        links.new(taps.outputs["Weights"], weights.inputs[0])
+
+        alphas = []
+        for name in ("UV 00", "UV 10", "UV 01", "UV 11"):
+            tap = nodes.new(Nodes.ShaderNodeTexImage)
+            tap.image = image_node.image
+            tap.interpolation = 'Closest'
+            tap.extension = image_node.extension
+            tap.hide = True
+            links.new(taps.outputs[name], tap.inputs["Vector"])
+            alphas.append(tap.outputs["Alpha"])
+
+        def lerp(a, b, factor):
+            mix = nodes.new(Nodes.ShaderNodeMix)
+            mix.data_type = 'FLOAT'
+            links.new(factor, mix.inputs[0])
+            links.new(a, mix.inputs[2])
+            links.new(b, mix.inputs[3])
+            return mix.outputs[0]
+
+        bottom = lerp(alphas[0], alphas[1], weights.outputs["X"])
+        top = lerp(alphas[2], alphas[3], weights.outputs["X"])
+        links.new(lerp(bottom, top, weights.outputs["Y"]), clip.inputs[0])
+
+
 class Nodes:
     ShaderNodeAddShader = 'ShaderNodeAddShader'
     ShaderNodeAmbientOcclusion = 'ShaderNodeAmbientOcclusion'
@@ -254,6 +350,7 @@ class ShaderBase:
     def insert_alpha_clip(self, alpha_socket, threshold: float):
         clip_node = self.create_node(Nodes.ShaderNodeMath)
         clip_node.operation = 'GREATER_THAN'
+        clip_node.label = ALPHA_CLIP_LABEL  # unfilter_alpha_clips finds it once the material is built
         self.connect_nodes(alpha_socket, clip_node.inputs[0])
         clip_node.inputs[1].default_value = threshold
         return clip_node.outputs[0]

@@ -1,11 +1,13 @@
 import math
+import re
 from typing import Any, Iterator, Type
 
 import bpy
 from mathutils import Euler, Matrix, Vector
 
 from ...shared.exceptions import RequiredFileNotFound
-from ...utils.bpy_utils import get_or_create_child_collection, get_or_create_collection, pause_view_layer_update
+from ...utils.bpy_utils import (find_layer_collection, get_or_create_child_collection, get_or_create_collection,
+                                pause_view_layer_update)
 from ....library.shared.app_id import SteamAppId
 from ....library.shared.content_manager import ContentManager
 from ....library.shared.content_manager.providers.vpk_provider import VPKContentProvider
@@ -33,6 +35,34 @@ logger = log_manager.get_logger("VWRLD")
 # A 3D skybox map has its own sun and sky, which the map that references it already has, and a sky_camera
 # that only says where the skybox goes.
 SKYBOX_SKIPPED_CLASSES = frozenset({"light_environment", "env_sky", "sky_camera", "skybox_reference"})
+
+# Meshes compiled from toolsblocklight/toolssolidblocklight brushes (n0_lr0_c1_s_cb_bl_mesh_blocklight1_shadow):
+# the game only renders them into shadow maps.
+LIGHT_BLOCKER = re.compile(r"_blocklight\d+_(?:no)?shadow$")
+SHADOW_CASTERS_COLLECTION = "shadow_casters"
+
+# The map compiler names the models it generates for a world node after the node, layer, cluster and
+# batching flags (n0_lr0_c0_s_cb_b_), then what the model is: nomerge6_steam_001, agg_merge_agave_plant_01_0,
+# mesh_overlay12, bl_mesh_blocklight3_shadow, ending in render flags (_nsh, _nzp). Hammer's own names are gone.
+_COMPILER_PREFIX = re.compile(r"(?:n|node)\d+_+(?:world_)?lr\d+_(?:c\d+_)?(?:s_)?(?:cb_)?(?:b_)?(?:bl_)?(?:nv_)?")
+_RENDER_FLAGS = re.compile(r"(?:_(?:nzp|nsh|nz))+$")
+_MODEL_KINDS = (re.compile(r"agg_(?:merge|prop|nomerge)_(.+)_\d+"), re.compile(r"agg\d+_\d+_(.+)"),
+                re.compile(r"nomerge\d+_(.+)"), re.compile(r"mesh_mat\d+_(.+)"),
+                re.compile(r"mesh_(overlay\d+|blocklight\d+_(?:no)?shadow)"))
+
+
+def world_node_model_name(model_path: str) -> str:
+    """A readable name for a model the map compiler generated: the material (or overlay, light blocker) it was
+    made for, without the compiler's bookkeeping. Other models keep their file name."""
+    path = TinyPath(model_path)
+    stem = path.stem
+    if "worldnodes" not in path.as_posix().split("/") or (prefix := _COMPILER_PREFIX.match(stem)) is None:
+        return stem
+    name = _RENDER_FLAGS.sub("", stem[prefix.end():])
+    for kind in _MODEL_KINDS:
+        if match := kind.fullmatch(name):
+            return match[1]
+    return name or stem
 
 
 def get_entity_name(entity_data: dict[str, Any]):
@@ -105,7 +135,10 @@ def load_world_nodes(world_resource: CompiledWorldResource, map_resource: Compil
                 matrix = Matrix(transform).to_4x4()
             else:
                 matrix = Matrix.Identity(4)
-            create_static_prop_placeholder(scene_object, proper_path, matrix, collection, scale, uv_scale)
+            target = collection
+            if proper_path and LIGHT_BLOCKER.search(TinyPath(proper_path).stem):
+                target = get_or_create_child_collection(SHADOW_CASTERS_COLLECTION, master_collection)
+            create_static_prop_placeholder(scene_object, proper_path, matrix, target, scale, uv_scale)
         for scene_object in node_resource.get_aggregate_scene_objects():
             renderable_model = scene_object["m_renderableModel"]
             proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
@@ -132,6 +165,18 @@ def load_world_nodes(world_resource: CompiledWorldResource, map_resource: Compil
                 create_aggregate_prop_placeholder(scene_object, proper_path, fragments, collection, scale, uv_scale)
             else:
                 create_static_prop_placeholder(scene_object, proper_path, None, collection, scale, uv_scale)
+    hide_shadow_casters(master_collection)
+
+
+def hide_shadow_casters(master_collection: bpy.types.Collection):
+    """Light blockers are hidden in the viewport and in renders; the collection's eye shows them."""
+    for child in master_collection.children:
+        if child.name.split(".")[0] != SHADOW_CASTERS_COLLECTION:
+            continue
+        child.hide_render = True
+        layer_collection = find_layer_collection(bpy.context.view_layer.layer_collection, child.name)
+        if layer_collection is not None:
+            layer_collection.hide_viewport = True
 
 
 def create_static_prop_placeholder(scene_object: Object, proper_path: TinyPath | None, matrix: Matrix | None,
@@ -146,7 +191,7 @@ def create_static_prop_placeholder(scene_object: Object, proper_path: TinyPath |
                    'entity': {k: str(v) for (k, v) in scene_object.to_dict().items()},
                    'tint_color': scene_object.get('m_vTintColor', [1.0, 1.0, 1.0, 1.0]),
                    'skin': scene_object.get('skin', 'default') or 'default'}
-    empty = create_empty(proper_path.stem, scale, custom_data=custom_data)
+    empty = create_empty(world_node_model_name(proper_path), scale, custom_data=custom_data)
     if matrix is not None:
         transform_mat = matrix.to_4x4()
         loc, rot, scl = transform_mat.decompose()
@@ -170,7 +215,7 @@ def create_aggregate_prop_placeholder(scene_object: Object, proper_path: TinyPat
                               k not in ["m_fragmentTransforms", "m_aggregateMeshes"]},
                    'fragments': fragments,
                    'skin': scene_object.get('skin', 'default') or 'default'}
-    empty = create_empty(proper_path.stem, scale, custom_data=custom_data)
+    empty = create_empty(world_node_model_name(proper_path), scale, custom_data=custom_data)
     collection.objects.link(empty)
 
 

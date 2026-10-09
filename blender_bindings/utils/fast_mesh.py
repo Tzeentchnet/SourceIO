@@ -7,6 +7,12 @@ from bpy.types import Mesh, VertexGroup
 
 
 def set_custom_normals(mesh: Mesh, normals: np.ndarray, domain: Literal['POINT', 'CORNER'] = 'POINT'):
+    """Set custom normals per vertex (POINT) or per face corner (CORNER).
+
+    They are stored relative to each corner's fan, so they follow armature deformation, shape keys and poses.
+    A free `custom_normal` FLOAT_VECTOR attribute is much faster to write but stays fixed in mesh space: model
+    meshes are stored Y-up and turned upright by the armature, so free normals ended up pointing sideways.
+    """
     normals = np.asarray(normals, dtype=np.float32)
     if normals.ndim == 2 and normals.shape[1] > 3:
         normals = normals[:, :3]
@@ -14,12 +20,12 @@ def set_custom_normals(mesh: Mesh, normals: np.ndarray, domain: Literal['POINT',
     lengths = np.linalg.norm(normals, axis=1, keepdims=True)
     normals = np.divide(normals, lengths, out=np.zeros_like(normals), where=lengths > 0)
     attribute = mesh.attributes.get("custom_normal")
-    if attribute is not None and (attribute.domain != domain or attribute.data_type != 'FLOAT_VECTOR'):
+    if attribute is not None and attribute.data_type == 'FLOAT_VECTOR':
         mesh.attributes.remove(attribute)
-        attribute = None
-    if attribute is None:
-        attribute = mesh.attributes.new("custom_normal", 'FLOAT_VECTOR', domain)
-    attribute.data.foreach_set("vector", normals.ravel())
+    if domain == 'POINT':
+        mesh.normals_split_custom_set_from_vertices(normals)
+    else:
+        mesh.normals_split_custom_set(normals)
 
 
 def set_vertex_weights(groups: Sequence[VertexGroup], bone_ids: np.ndarray, weights: np.ndarray):

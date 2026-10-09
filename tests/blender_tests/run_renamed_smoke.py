@@ -36,7 +36,7 @@ def copy_shipped(work: Path) -> None:
     files = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True,
                            check=True).stdout.splitlines()
     for rel in files:
-        if rel.startswith(NOT_SHIPPED):
+        if rel.startswith(NOT_SHIPPED) or not (REPO_ROOT / rel).is_file():  # not shipped, or deleted
             continue
         (work / NAME / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO_ROOT / rel, work / NAME / rel)

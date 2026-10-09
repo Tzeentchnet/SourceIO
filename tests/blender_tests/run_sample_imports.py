@@ -6,12 +6,14 @@ Usage:
 
 Each file is imported into an empty scene through the same operator the UI uses. A file PASSES
 when the operator finishes, creates data and logs no errors; WARN means it finished but logged
-errors or created nothing; FAIL means the operator raised or was cancelled. Exit code is 1 if
-anything failed.
+errors or created nothing; KNOWN is a WARN whose errors are all expected for that sample (content
+the samples don't include, listed in KNOWN_ERRORS); FAIL means the operator raised or was cancelled.
+Exit code is 1 if anything failed.
 """
 import argparse
 import importlib
 import json
+import re
 import sys
 import time
 import traceback
@@ -35,6 +37,22 @@ IMPORTERS = {
     ("source2/physics", ".vphys_c"): ("vphys", "files"),
     ("source2/maps", ".vpk"): ("vmap_vpk", "filepath"),
     ("source2/animations", ".vmdl_c"): ("vmdl", "files"),
+}
+
+MISSING_SKYBOX = r"Failed to load Skybox|SkyboxException"
+# Samples with content missing from the samples, by path under samples/: a WARN whose every error matches one of
+# its patterns is reported as KNOWN, so any new error still shows up as WARN.
+KNOWN_ERRORS = {
+    # HL2 materials and skybox textures; a patch material whose original is missing keeps the "patch" shader
+    "source1/maps/dm_lockdown.bsp": (r"Failed to find original material", r"Failed to find \S+ material",
+                                     r'Shader "patch" not currently supported', MISSING_SKYBOX),
+    "source1/maps/rot_main.bsp": (r"Failed to find tools/toolsnodraw material", MISSING_SKYBOX),
+    # textures in Half-Life's external WADs
+    "goldsrc/maps/test1.bsp": (r"Could not find texture resource",),
+    "goldsrc/maps/test2.bsp": (r"Could not find texture resource",),
+    "goldsrc/maps/test3.bsp": (r"Could not find texture resource",),
+    # the morph atlas isn't in the samples (VRF doesn't ship it)
+    "source2/models/stone_tranquility_helm.vmdl_c": (r"Failed to find morph texture .*_vmorf\.vtex",),
 }
 
 COUNTED = ("objects", "meshes", "materials", "images", "armatures", "actions", "lights", "collections")
@@ -161,6 +179,13 @@ def run_one(path: Path, operator: str, mode: str, before_import=None, options=No
     if status == "PASS" and (errors or not counts):
         status = "WARN"
         message = errors[0] if errors else "nothing was created"
+        known = KNOWN_ERRORS.get("/".join(path.parts[-3:]))
+        if known and errors:
+            unexpected = [error for error in errors if not any(re.search(pattern, error) for pattern in known)]
+            if unexpected:
+                message = unexpected[0]
+            else:
+                status = "KNOWN"
 
     return {"file": path.as_posix(), "operator": operator, "status": status, "seconds": round(elapsed, 3),
             "created": counts, "details": details, "errors": errors[:20], "error_count": len(errors),
@@ -188,10 +213,11 @@ def main() -> int:
             result = run_one(path, operator, mode)
             results.append(result)
             created = ", ".join(f"{k}={v}" for k, v in result["created"].items()) or "-"
-            print(f"\nSAMPLE {result['status']:4} {result['seconds']:7.2f}s  {folder}/{path.name}  [{created}]"
+            print(f"\nSAMPLE {result['status']:5} {result['seconds']:7.2f}s  {folder}/{path.name}  [{created}]"
                   + (f"  :: {result['message']}" if result["message"] else ""))
 
-    summary = {status: sum(1 for r in results if r["status"] == status) for status in ("PASS", "WARN", "FAIL")}
+    summary = {status: sum(1 for r in results if r["status"] == status)
+               for status in ("PASS", "KNOWN", "WARN", "FAIL")}
     print(f"SAMPLE SUMMARY {summary}")
     if args.json:
         args.json.write_text(json.dumps({"summary": summary, "results": results}, indent=2))

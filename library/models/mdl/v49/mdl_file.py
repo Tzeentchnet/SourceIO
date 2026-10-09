@@ -105,7 +105,7 @@ class MdlV49(MdlV44):
                 animations.append(anim_desc.read_animations(buffer, bones))
             except (AssertionError, ValueError, struct.error):
                 traceback.print_exc()
-                animations.extend([None] * (len(animations) - len(local_animations)))
+                animations.extend([None] * (len(local_animations) - len(animations)))
                 break
 
         include_models = []

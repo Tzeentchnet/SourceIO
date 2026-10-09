@@ -1,9 +1,13 @@
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ....shared.vector_types import Vector3
 from ....utils.file_utils import Buffer
 from ..bsp_file import VBSPFile
-from ..lumps.face_lump import FaceLump
+
+if TYPE_CHECKING:
+    # The lumps package imports this module
+    from ..lumps.face_lump import FaceLump
 
 DISP_INFO_FLAG_HAS_MULTIBLEND = 0x40000000
 DISP_INFO_FLAG_MAGIC = 0x80000000

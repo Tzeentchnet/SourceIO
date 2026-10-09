@@ -9,7 +9,7 @@ from ..structs.bone import Bone
 from ..structs.flex import FlexController, FlexOpType, FlexRule
 from ..structs.header import MdlHeaderV36
 from ..structs.material import MaterialV36
-from ..v49.flex_expressions import *
+from ..flex_expressions import *
 from ....utils import Buffer
 
 

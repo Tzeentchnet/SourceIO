@@ -17,7 +17,7 @@ from ....library.models.mdl.structs.header import StudioHDRFlags
 from ....library.models.mdl.structs.local_animation import AnimDescFlags
 from ....library.models.mdl.v44.mdl_file import MdlV44
 from ....library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
-from ....library.models.mdl.v49.flex_expressions import *
+from ....library.models.mdl.flex_expressions import *
 from ....library.models.vtx.v7.vtx import Vtx
 from ....library.models.vvd import Vvd
 from ....library.shared.content_manager import ContentManager

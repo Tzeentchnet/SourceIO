@@ -16,7 +16,7 @@ from ...utils.bpy_utils import add_material, get_or_create_material, ActionCurve
 from ...utils.fast_mesh import FastMesh, set_vertex_weights
 from ....library.models.mdl.structs.header import StudioHDRFlags
 from ....library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
-from ....library.models.mdl.v49.flex_expressions import *
+from ....library.models.mdl.flex_expressions import *
 from ....library.models.mdl.v49.mdl_file import MdlV49
 from ....library.models.vtx.v7.vtx import Vtx
 from ....library.models.vvd import Vvd

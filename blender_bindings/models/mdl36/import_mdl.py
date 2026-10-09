@@ -16,7 +16,7 @@ from ...utils.bpy_utils import add_material, edit_armature, get_or_create_materi
 from ...utils.fast_mesh import FastMesh, set_vertex_weights
 from ....library.models.mdl.structs.header import StudioHDRFlags
 from ....library.models.mdl.v36.mdl_file import MdlV36
-from ....library.models.mdl.v49.flex_expressions import *
+from ....library.models.mdl.flex_expressions import *
 from ....library.models.vtx.v6.vtx import Vtx
 from ....library.shared.content_manager import ContentManager
 from ....library.source1.vmt import VMT

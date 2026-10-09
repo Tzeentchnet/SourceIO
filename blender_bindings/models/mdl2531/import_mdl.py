@@ -12,7 +12,7 @@ from ....library.models.mdl.structs.header import StudioHDRFlags
 from ....library.models.mdl.structs.model import ModelV2531
 from ....library.models.mdl.v2531.mdl_file import MdlV2531
 from ....library.models.mdl.v36.mdl_file import MdlV36
-from ....library.models.mdl.v49.flex_expressions import *
+from ....library.models.mdl.flex_expressions import *
 from ....library.source1.vmt import VMT
 from ...utils.fast_mesh import FastMesh, set_vertex_weights
 from ...shared.model_container import ModelContainer

@@ -12,7 +12,7 @@ from ..structs.header import MdlHeaderV44
 from ..structs.local_animation import StudioAnimDesc
 from ..structs.material import MaterialV49
 from ..structs.sequence import StudioSequence
-from ..v49.flex_expressions import *
+from ..flex_expressions import *
 from ....utils import Buffer
 from ....utils import kv1
 
@@ -137,7 +137,7 @@ class MdlV44(Mdl):
                 animations.append(anim_desc.read_animations(buffer, bones))
             except (AssertionError, ValueError):
                 traceback.print_exc()
-                animations.extend([None] * (len(animations) - len(local_animations)))
+                animations.extend([None] * (len(local_animations) - len(animations)))
                 break
 
         include_models = []

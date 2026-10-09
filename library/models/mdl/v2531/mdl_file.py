@@ -9,7 +9,7 @@ from ..structs.bone import Bone
 from ..structs.flex import FlexController, FlexOpType, FlexRule
 from ..structs.header import MdlHeaderV2531
 from ..structs.material import MaterialV2531
-from ..v49.flex_expressions import *
+from ..flex_expressions import *
 
 
 @dataclass(slots=True)

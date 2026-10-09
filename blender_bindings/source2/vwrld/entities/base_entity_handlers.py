@@ -5,8 +5,9 @@ from .....library.shared.content_manager.provider import \
 from .....library.source2 import CompiledMaterialResource
 from ....material_loader.shaders.source2_shaders.sky import Skybox
 from .abstract_entity_handlers import (AbstractEntityHandler, get_angles,
-                                       get_origin)
+                                       get_origin, parse_float_vector)
 from .base_entity_classes import *
+from .....library.utils.path_utilities import path_stem
 from .....library.utils.tiny_path import TinyPath
 
 
@@ -186,11 +187,22 @@ class BaseEntityHandler(AbstractEntityHandler):
 
     def handle_env_sky(self, entity: env_sky, entity_raw: dict):
         sky_mat = self.content_manager.find_file(TinyPath(entity.skyname + '_c'))
-        if sky_mat is not None:
-            vmat = CompiledMaterialResource.from_buffer(sky_mat, TinyPath(entity.skyname))
-            # load_material(vmat, TinyPath(entity.skyname))
-            world_material = bpy.data.worlds.get(entity.skyname, False) or bpy.data.worlds.new(entity.skyname)
-            Skybox(self.content_manager, vmat).create_nodes(world_material, {})
+        if sky_mat is None:
+            self.logger.warn(f'Sky material {entity.skyname!r} not found')
+            return
+        vmat = CompiledMaterialResource.from_buffer(sky_mat, TinyPath(entity.skyname))
+        world_name = path_stem(entity.skyname)
+        world = bpy.data.worlds.get(world_name) or bpy.data.worlds.new(world_name)
+        tint = tuple(float(c) / 255 for c in parse_float_vector(entity_raw.get('tint_color', '255 255 255'))[:3])
+        Skybox(self.content_manager, vmat, yaw=get_angles(entity_raw)[1],
+               brightness=float(entity_raw.get('brightnessscale', 1.0)), tint=tint).create_nodes(world, {})
+        # A map can have a visible sky and a disabled one that only lights it (light_environment's skytexture);
+        # the visible one becomes the scene's world, the other only when no imported sky is there yet.
+        enabled = str(entity_raw.get('StartDisabled', 0)) in ('0', 'False', 'false')
+        self._set_entity_data(world, {'entity': entity_raw})
+        current = bpy.context.scene.world
+        if enabled or current is None or 'entity_data' not in current:
+            bpy.context.scene.world = world
 
     def handle_point_clientui_world_panel(self, entity: point_clientui_world_panel, entity_raw: dict):
         pass

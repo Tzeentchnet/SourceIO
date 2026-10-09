@@ -257,7 +257,7 @@ class ShaderBase:
         return color_multiply_node.outputs[MIX_RESULT]
 
     def insert_generic_tint(self, color_output_socket, tint: tuple[float, ...], tint_amount=1.0,
-                            tint_mask_output=None | object):
+                            tint_mask_output: None | object = None):
         color_multiply_node = self.create_mix_color('MULTIPLY')
         if tint_mask_output is None:
             color_multiply_node.inputs[MIX_FACTOR].default_value = tint_amount

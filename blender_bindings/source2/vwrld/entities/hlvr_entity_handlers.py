@@ -245,13 +245,15 @@ class HLVREntityHandler(BaseEntityHandler):
         lamp_data = bpy.data.lights.new(name + "_DATA", 'SUN')
         lamp = bpy.data.objects.new(name, lamp_data)
         self._set_location_and_scale(lamp, get_origin(entity_raw))
-        self._set_rotation(lamp, get_angles(entity_raw))
-        scale_vec = get_scale(entity_raw)
+        # The sun shines along the entity's forward axis: pitch is its elevation, yaw points away from it.
+        self._set_light_rotation(lamp, get_angles(entity_raw))
 
         color = np.divide(entity.color, 255.0)
-        brightness = float(entity.brightness)
-        lamp_data.energy = brightness * 10000 * scale_vec[0] * self.scale
+        # Source shades a white surface facing the light at radiance `brightness` (as the point lights' 10000 x
+        # scale does at 100 units, and the sky texture emits as is); a Blender sun reaches that at pi W/m².
+        lamp_data.energy = math.pi * float(entity.brightness) * float(entity_raw.get("brightnessscale", 1.0))
         lamp_data.color = color[:3]
+        lamp_data.angle = math.radians(float(entity_raw.get("angulardiameter", 1.0)))
 
         self._set_entity_data(lamp, {'entity': entity_raw})
         self._put_into_collection('light_environment', lamp, 'lights')

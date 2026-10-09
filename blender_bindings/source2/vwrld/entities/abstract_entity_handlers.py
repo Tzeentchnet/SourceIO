@@ -3,7 +3,7 @@ import re
 from pprint import pformat
 
 import bpy
-from mathutils import Euler
+from mathutils import Euler, Matrix
 
 from ....utils.texture_utils import check_texture_cache
 from .....library.source2.blocks.kv3_block import KVBlock
@@ -152,6 +152,12 @@ class AbstractEntityHandler:
         obj.rotation_euler.rotate(Euler((math.radians(angles[2]),
                                          math.radians(angles[0]),
                                          math.radians(angles[1]))))
+
+    @staticmethod
+    def _set_light_rotation(obj, angles):
+        """Point a sun or spot light, which shines along its local -Z, along the entity's forward (+X) axis."""
+        rotation = Euler((math.radians(angles[2]), math.radians(angles[0]), math.radians(angles[1]))).to_matrix()
+        obj.rotation_euler = (rotation @ Matrix.Rotation(-math.pi / 2, 3, 'Y')).to_euler()
 
     @staticmethod
     def _set_parent_if_exist(obj, parent_name):

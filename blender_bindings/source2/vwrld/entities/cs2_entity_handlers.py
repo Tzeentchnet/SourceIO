@@ -33,6 +33,15 @@ def replace_null_object(data):
         return data
 
 
+def light2_brightness(entity_raw: dict) -> float:
+    """Linear brightness of a CS2 light_omni2, light_rect or light_barn.
+
+    Their ``brightness`` is in stops (EV): ``brightness_legacy``, the linear value, is 2 ** brightness (to within
+    its 1/256 steps) on every light of 11 maps. ``brightness_lumens`` depends on the light's shape and size.
+    """
+    return 2.0 ** float(entity_raw.get("brightness", 0.0)) * float(entity_raw.get("brightnessscale", 1.0))
+
+
 class CS2EntityHandler(HLVREntityHandler):
     entity_lookup_table = local_entity_lookup_table
     entity_lookup_table["point_script"] = Base
@@ -176,8 +185,7 @@ class CS2EntityHandler(HLVREntityHandler):
         scale_vec = get_scale(entity_raw)
 
         color = np.divide(entity_raw["color"], 255.0)
-        brightness = float(entity_raw["brightness_lumens"]) / 256
-        lamp_data.energy = brightness * 10000 * scale_vec[0] * self.scale
+        lamp_data.energy = light2_brightness(entity_raw) * 10000 * scale_vec[0] * self.scale
         lamp_data.color = color[:3]
         # lamp_data.shadow_soft_size = entity.lightsourceradius
 
@@ -193,8 +201,7 @@ class CS2EntityHandler(HLVREntityHandler):
         scale_vec = get_scale(entity_raw)
 
         color = np.divide(entity_raw["color"], 255.0)
-        brightness = float(entity_raw["brightness_lumens"]) / 256
-        lamp_data.energy = brightness * 10000 * scale_vec[0] * self.scale
+        lamp_data.energy = light2_brightness(entity_raw) * 10000 * scale_vec[0] * self.scale
         lamp_data.color = color[:3]
         # lamp_data.shadow_soft_size = entity.lightsourceradius
 
@@ -209,7 +216,6 @@ class CS2EntityHandler(HLVREntityHandler):
 
         lamp_data = None
         lamp = None
-        angles = []
 
         # TODO: This should probably take in all axes into account
         light_source_radius = float(entity.size_params[0]) * self.scale
@@ -217,10 +223,6 @@ class CS2EntityHandler(HLVREntityHandler):
         if is_spot:
             lamp_data = bpy.data.lights.new(name + "_DATA", 'SPOT')
             lamp = bpy.data.objects.new(name, lamp_data)
-            # light_omni2 as a spotlight in cs2 is oriented differently to light_spot in hla
-            # could it be beneficial to re orient the light either way?
-            angles = get_angles(entity_raw)
-            angles[0] -= 90
 
             # TODO: I think there should be a better way of correcting outer_angle
             lamp_data.spot_size = math.radians(entity.outer_angle * 2)
@@ -228,15 +230,16 @@ class CS2EntityHandler(HLVREntityHandler):
         else:
             lamp_data = bpy.data.lights.new(name + "_DATA", 'POINT')
             lamp = bpy.data.objects.new(name, lamp_data)
-            angles = get_angles(entity_raw)
 
         self._set_location_and_scale(lamp, get_origin(entity_raw))
-        self._set_rotation(lamp, angles)
+        if is_spot:
+            self._set_light_rotation(lamp, get_angles(entity_raw))
+        else:
+            self._set_rotation(lamp, get_angles(entity_raw))
         scale_vec = get_scale(entity_raw)
 
         color = np.divide(entity.color, 255.0)
-        brightness = float(entity.brightness)
-        lamp_data.energy = brightness * 10000 * scale_vec[0] * self.scale
+        lamp_data.energy = light2_brightness(entity_raw) * 10000 * scale_vec[0] * self.scale
         lamp_data.color = color[:3]
         lamp_data.shadow_soft_size = light_source_radius
 

@@ -44,3 +44,21 @@ class CompiledPhysicsResource(CompiledResource):
             for mesh in shapes['m_meshes']:
                 mesh_data = mesh['m_Mesh']
         return spheres, capsules, hulls,
+
+    def get_resource_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import resource_provenance
+
+        return resource_provenance(self, resolver=resolver, recursive=recursive, asset_kind="physics")
+
+    def get_import_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import import_provenance
+
+        return import_provenance(self, asset_kind="physics", resolver=resolver, recursive=recursive)
+
+    def get_physics_shapes(self, *, report=None):
+        from ..export.physics import physics_shapes_from_block
+
+        data = self.get_block(PhysBlock, block_name="DATA")
+        if data is None:
+            raise MissingBlock('Required block "DATA" is missing')
+        return physics_shapes_from_block(data, report=report)

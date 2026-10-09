@@ -58,6 +58,27 @@ class CompiledMapResource(CompiledResource):
             return None
         return CompiledWorldNodeResource.from_buffer(buffer, TinyPath(node_group_prefix + ".vwnod_c"))
 
+    def get_resource_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import resource_provenance
+
+        return resource_provenance(self, resolver=resolver, recursive=recursive, asset_kind="map")
+
+    def get_import_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import import_provenance
+
+        return import_provenance(self, asset_kind="map", resolver=resolver, recursive=recursive)
+
+    def to_hammer_document(self, world_resource: "CompiledWorldResource", content_manager: ContentManager,
+                           *, report=None):
+        from ..export.map_reconstruction import hammer_document_from_compiled
+
+        return hammer_document_from_compiled(
+            self,
+            world_resource,
+            content_manager,
+            report=report,
+        )
+
 
 class CompiledWorldResource(CompiledResource):
     @property
@@ -67,3 +88,24 @@ class CompiledWorldResource(CompiledResource):
     def get_worldnode_prefixes(self) -> Iterator[str]:
         for world_node_group in self.data_block['m_worldNodes']:
             yield TinyPath(world_node_group['m_worldNodePrefix']).as_posix()
+
+    def get_resource_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import resource_provenance
+
+        return resource_provenance(self, resolver=resolver, recursive=recursive, asset_kind="world")
+
+    def get_import_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import import_provenance
+
+        return import_provenance(self, asset_kind="world", resolver=resolver, recursive=recursive)
+
+    def to_hammer_document(self, map_resource: CompiledMapResource, content_manager: ContentManager,
+                           *, report=None):
+        from ..export.map_reconstruction import hammer_document_from_compiled
+
+        return hammer_document_from_compiled(
+            map_resource,
+            self,
+            content_manager,
+            report=report,
+        )

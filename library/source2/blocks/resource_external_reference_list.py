@@ -65,3 +65,8 @@ class ResourceExternalReferenceList(list[ResourceExternalReference], BaseBlock):
     def find_resource(self, resource_id: int):
         if res := self._mapping.get(resource_id & 0xFFFF_FFFF, None):
             return res.name
+
+    def to_resource_dependencies(self, source: str):
+        from ..provenance import dependencies_from_rerl
+
+        return dependencies_from_rerl(self, source)

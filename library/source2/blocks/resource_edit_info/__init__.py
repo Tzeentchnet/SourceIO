@@ -85,17 +85,22 @@ class ResourceEditInfo(BaseBlock):
             buffer.write(buf.data)
             label.write('2I', data_offset, len(data))
 
+    def to_resource_dependencies(self, source: str):
+        from ...provenance import dependencies_from_edit_info
+
+        return dependencies_from_edit_info(self, source, origin=self.custom_name or self.__class__.__name__)
+
 
 class ResourceEditInfo2(ResourceEditInfo):
     @classmethod
     def from_buffer(cls, buffer: Buffer):
         vkv = read_valve_keyvalue3(buffer)
         return cls(
-            InputDependencies.from_vkv3(vkv['m_InputDependencies']),
+            InputDependencies.from_vkv3(vkv.get('m_InputDependencies', [])),
             AdditionalInputDependencies.from_vkv3(vkv.get('m_AdditionalInputDependencies', [])),
             ArgumentDependencies.from_vkv3(vkv.get('m_ArgumentDependencies', [])),
             SpecialDependencies.from_vkv3(vkv.get('m_SpecialDependencies', [])),
-            CustomDependencies(),
+            CustomDependencies.from_vkv3(vkv.get('m_CustomDependencies', [])),
             AdditionalRelatedFiles.from_vkv3(vkv.get('m_AdditionalRelatedFiles', [])),
             ChildResources.from_vkv3(vkv.get('m_ChildResourceList', [])),
             ExtraInts(),

@@ -8,8 +8,6 @@ from ..blocks.kv3_block import custom_type_kvblock
 
 class CompiledModelResource(CompiledResource):
 
-
-
     def get_data_block_type(self):
         return custom_type_kvblock("PermModelData_t")
 
@@ -42,3 +40,18 @@ class CompiledModelResource(CompiledResource):
                 Bone(name, parent_name, BoneFlags(int(flags[bone_id])), positions[bone_id], np.asarray((w, x, y, z))))
 
         return bones
+
+    def get_resource_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import resource_provenance
+
+        return resource_provenance(self, resolver=resolver, recursive=recursive, asset_kind="model")
+
+    def get_import_provenance(self, *, resolver=None, recursive: bool = False):
+        from ..provenance import import_provenance
+
+        return import_provenance(self, asset_kind="model", resolver=resolver, recursive=recursive)
+
+    def to_model_document(self, *, content_manager=None, report=None):
+        from ..export.model_reconstruction import model_document_from_compiled
+
+        return model_document_from_compiled(self, content_manager=content_manager, report=report)

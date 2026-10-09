@@ -6,6 +6,10 @@ from ...library.source2.blocks.phys_block import PhysBlock
 from ...library.source2.keyvalues3.binary_keyvalues import BinaryBlob, TypedArray
 from ...library.source2.utils.entity_keyvalues_keys import EntityKeyValuesKeys
 from ...library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
+from ..exporting.source2.provenance import (
+    attach_import_provenance_many,
+    build_resource_import_payload,
+)
 
 
 def generate_capsule_mesh(p1, p2, radius, segments=16):
@@ -147,7 +151,7 @@ def generate_sphere_mesh(radius, segments):
 segments = 12
 
 
-def load_physics(phys_block: PhysBlock, scale: float = SOURCE2_HAMMER_UNIT_TO_METERS):
+def load_physics(phys_block: PhysBlock, scale: float = SOURCE2_HAMMER_UNIT_TO_METERS, *, provenance=None):
     parts = phys_block["m_parts"]
     indices = phys_block["m_boneParents"]
     names = phys_block["m_boneNames"]
@@ -186,7 +190,21 @@ def load_physics(phys_block: PhysBlock, scale: float = SOURCE2_HAMMER_UNIT_TO_ME
             surface_properties = [keys.get(hsh) for hsh in phys_block["m_surfacePropertyHashes"]]
             shapes.extend(generate_physics_shapes(shape_name, bone_matrix, scale, capsules, spheres, hulls, meshes,
                                                   collision_attributes, surface_properties))
+    if provenance is not None:
+        attach_import_provenance_many(shapes, provenance)
     return shapes
+
+
+def load_physics_resource(resource, scale: float = SOURCE2_HAMMER_UNIT_TO_METERS):
+    phys_block = resource.get_block(PhysBlock, block_name="DATA")
+    if phys_block is None:
+        raise ValueError('Required block "DATA" is missing')
+    provenance = build_resource_import_payload(
+        resource,
+        asset_kind="physics",
+        metadata={"import_scale": scale},
+    )
+    return load_physics(phys_block, scale, provenance=provenance)
 
 
 def generate_physics_shapes(shape_name, bone_matrix, scale, capsules, spheres, hulls, meshes,

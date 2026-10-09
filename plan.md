@@ -38,6 +38,7 @@ blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each def
 7. **External mesh morph atlas** (unverified, round 11): `load_external_mesh` resolves `m_pTextureAtlas` against the model resource, as before; it may belong to the mesh or morph set resource. No CS2 or sample model uses this path.
 
 Source 2 flex/morph animation channels: the legacy ANIM path still skips `MorphChannel` segments; CS2 clips carry no float channels, so a model with legacy morph animation is needed to test it. Bone masks (`m_maskDefinitions` in a `.vnmskel`) and pose-parameter blending are graph-evaluation features, not needed to import clips.
+Future work, not started: the Source 1 / Source 2 export plan in [TODO.md](TODO.md).
 Blocked until a v49 game is installed (CS:GO, L4D2, Portal 2, SFM; CS2 ships only Source 2 content): checking the round 6 FRAMEANIM decoder against a real model.
 
 ## Verification

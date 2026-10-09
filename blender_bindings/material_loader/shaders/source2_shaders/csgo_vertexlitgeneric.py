@@ -18,6 +18,20 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
         uv_node.uv_map = "TEXCOORD"
         return uv_node.outputs[0]
 
+    def _apply_detail_texture(self, color_output, normal_input):
+        """The Mod2X detail (Source2ShaderBase._apply_detail); the detail and its mask read the secondary UV set
+        unless g_bUseSecondaryUvForDetailTexture/Mask is 0."""
+        if not self._material_resource.get_int_property("F_DETAIL_TEXTURE", 0):
+            return self._apply_detail(color_output, normal_input, None, None)  # skips the slots
+        material_data = self._material_resource
+        detail_transform = self.create_transform(
+            self._detail_uv("g_bUseSecondaryUvForDetailTexture"),
+            material_data.get_vector_property("g_vDetailTexCoordScale", (1.0, 1.0, 0.0)),
+            material_data.get_vector_property("g_vDetailTexCoordOffset", (0.0, 0.0, 0.0)),
+            (0.5, 0.5, 0.0), material_data.get_float_property("g_flDetailTexCoordRotation", 0.0))
+        return self._apply_detail(color_output, normal_input, detail_transform.outputs[0],
+                                  self._detail_uv("g_bUseSecondaryUvForDetailMask"))
+
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
         self._skip_texture("g_tAmbientOcclusion")
@@ -32,33 +46,13 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
         if self._have_texture("g_tColor"):
             color_texture = self._get_texture("g_tColor", (1, 1, 1, 1))
             self.connect_nodes(uv_output, color_texture.inputs[0])
-            color_output = color_texture.outputs[0]
+            color_output = self._apply_detail_texture(color_texture.outputs[0], shader.inputs["TextureNormal"])
             if self._check_flag("F_DECAL_TEXTURE") and self._have_texture("g_tDecal"):
                 color_output = self._apply_decal(color_output)
             self.connect_nodes(color_output, shader.inputs["TextureColor"])
             alpha_output = color_texture.outputs[1]
         else:
             alpha_output = None
-        if self._have_texture("g_tDetail"):
-            # The detail and its mask read the secondary UV set unless these are 0.
-            detail_uv = self._detail_uv("g_bUseSecondaryUvForDetailTexture")
-            detail_texture = self._get_texture("g_tDetail", (1, 1, 1, 1))
-            detail_transform = self.create_transform(
-                detail_uv,
-                material_data.get_vector_property("g_vDetailTexCoordScale", (1.0, 1.0, 0.0)),
-                material_data.get_vector_property("g_vDetailTexCoordOffset", (0.0, 0.0, 0.0)),
-                (0.5, 0.5, 0.0), material_data.get_float_property("g_flDetailTexCoordRotation", 0.0))
-            self.connect_nodes(detail_transform.outputs[0], detail_texture.inputs[0])
-            detail_mask_texture = self._get_texture("g_tDetailMask", (1, 0, 0, 1))
-            self.connect_nodes(self._detail_uv("g_bUseSecondaryUvForDetailMask"), detail_mask_texture.inputs[0])
-
-            self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail"])
-            self.connect_nodes(detail_mask_texture.outputs[0], shader.inputs["TextureDetailMask"])
-            shader.inputs["F_DETAIL_TEXTURE"].default_value = float(
-                material_data.get_int_property("F_DETAIL_TEXTURE", 0))
-            shader.inputs["g_flDetailBlendFactor"].default_value = material_data.get_float_property(
-                "g_flDetailBlendFactor", 0)
-
         if self._have_texture("g_tNormal"):
             normal_texture = self._get_texture("g_tNormal", (0.5, 0.5, 1, 1), True, True)
             normal_transform = self._texcoord_transform("Normal", scale_about_center=True)

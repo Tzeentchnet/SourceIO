@@ -226,7 +226,7 @@ class Source2MaterialTests(unittest.TestCase):
         vectors = {'g_vDetailTexCoordScale': (1.0, 1.0, 0.0, 0.0), 'g_vDetailTexCoordOffset': (0.0, 0.0, 0.0, 0.0)}
         for ints, uv_map in (({}, 'TEXCOORD'), ({'F_SECONDARY_UV': 1}, 'TEXCOORD_1'),
                              ({'F_SECONDARY_UV': 1, 'g_bUseSecondaryUvForDetailTexture': 0}, 'TEXCOORD')):
-            material = build('csgo_complex.vfx', textures, ints=ints, vectors=vectors)
+            material = build('csgo_complex.vfx', textures, ints={'F_DETAIL_TEXTURE': 1, **ints}, vectors=vectors)
             transform = linked_node(material.node_tree.nodes['g_tDetail'].inputs['Vector'])
             self.assertEqual(linked_node(transform.inputs[0]).uv_map, uv_map, ints)
 
@@ -337,7 +337,7 @@ class Source2MaterialTests(unittest.TestCase):
 
     def test_lightmappedgeneric_layer_uv_transforms(self):
         textures = ('g_tColor', 'g_tLayer1NormalRoughness', 'g_tLayer2Color', 'g_tBlendModulation')
-        material = build('csgo_lightmappedgeneric.vfx', textures,
+        material = build('csgo_lightmappedgeneric.vfx', textures, ints={'F_FANCY_BLENDING': 2},
                          floats={'g_flLayer1NormalTexCoordRotation': 90.0},
                          vectors={'g_vLayer2TexCoordScale': (2.0, 2.0, 0.0, 0.0),
                                   'g_vLayer2TexCoordCenter': (0.0, 0.0, 0.0, 0.0),
@@ -435,12 +435,18 @@ class Source2MaterialTests(unittest.TestCase):
         self.assertEqual(linked_node(mask.inputs[MIX_B]), tint)
 
     @staticmethod
-    def render_over_background(material, background, size=4):
+    def render_over_background(material, background, size=4, vertex_color=None, uv_layers=None):
         """Render a quad filling the camera with this material in front of a uniform world color; the mean
-        pixel. The file doesn't hold the radiance as rendered, so compare with ``render_constant``."""
+        pixel. The file doesn't hold the radiance as rendered, so compare with ``render_constant``. uv_layers
+        adds UV maps with a constant value, {name: (u, v)}."""
         mesh = bpy.data.meshes.new('unlit_quad')
         mesh.from_pydata([(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)], [], [(0, 1, 2, 3)])
         mesh.uv_layers.new(name='TEXCOORD')
+        for name, uv in (uv_layers or {}).items():
+            mesh.uv_layers.new(name=name).data.foreach_set('uv', np.tile(np.asarray(uv, np.float32), 4))
+        if vertex_color is not None:
+            colors = mesh.color_attributes.new('COLOR', 'FLOAT_COLOR', 'CORNER')
+            colors.data.foreach_set('color', np.tile(np.asarray(vertex_color, np.float32), len(colors.data)))
         mesh.materials.append(material)
         obj = bpy.data.objects.new('unlit_quad', mesh)
         camera = bpy.data.objects.new('camera', bpy.data.cameras.new('camera'))
@@ -489,8 +495,8 @@ class Source2MaterialTests(unittest.TestCase):
         material.node_tree.links.new(emission.outputs[0], nodes.new('ShaderNodeOutputMaterial').inputs['Surface'])
         return cls.render_over_background(material, background)
 
-    def assert_renders_as(self, material, background, value, message=''):
-        np.testing.assert_allclose(self.render_over_background(material, background),
+    def assert_renders_as(self, material, background, value, message='', vertex_color=None):
+        np.testing.assert_allclose(self.render_over_background(material, background, vertex_color=vertex_color),
                                    self.render_constant(value, background), atol=2e-3, err_msg=message)
 
     @staticmethod
@@ -505,11 +511,13 @@ class Source2MaterialTests(unittest.TestCase):
 
     def test_unlitgeneric_blend_modes(self):
         # Over a background B, a color C with alpha A and tint T: Opaque C·T, Translucent lerp(B, C·T, A),
-        # Alpha Test C·T where A > reference, else B, Additive B + C·T·A, Multiply B·C·T, Mod2x 2·B·C·T.
+        # Alpha Test C·T where A > reference, else B, Additive B + C·T·A, Multiply B·C·T,
+        # Mod2x 2·B·lerp(0.5, C·T, A), ModThenAdd B·lerp(1, C·T, A).
         background, color, alpha, tint = np.array((0.2, 0.4, 0.1)), np.array((0.5, 0.25, 1.0)), 0.6, 0.8
         drawn = color * tint
         expected = {0: drawn, 1: background * (1 - alpha) + drawn * alpha, 2: drawn, 4: background + drawn * alpha,
-                    5: background * drawn, 3: 2 * background * drawn}
+                    5: background * drawn, 3: 2 * background * (0.5 + (drawn - 0.5) * alpha),
+                    6: background * (1 + (drawn - 1) * alpha)}
         for blend_mode, value in expected.items():
             material = build('csgo_unlitgeneric.vfx', ('g_tColor',), ints={'F_BLEND_MODE': blend_mode},
                              floats={'g_flAlphaTestReference': 0.7 if blend_mode == 2 else 0.5},
@@ -544,6 +552,219 @@ class Source2MaterialTests(unittest.TestCase):
         material = build('csgo_unlitgeneric.vfx', ('g_tColor', 'g_tColor2'))
         self.assertEqual(texture_nodes(material), {'g_tColor'})
 
+    @staticmethod
+    def srgb(linear):
+        linear = np.asarray(linear, dtype=np.float64)
+        return np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
+
+    def test_static_overlay_blend_modes(self):
+        # Unlit overlays (F_LIT 0), a color C with alpha A, opacity scale s over a background B: Opaque C,
+        # Translucent lerp(B, C, A·s), Alpha Test C above the reference, Mod2x 2·B·lerp(0.5, sRGB(C), A·s) (the
+        # color in gamma space; 0.002 is on the curve's linear segment), Additive B + C·A·s, Multiply B·C,
+        # ModThenAdd B·lerp(1, C, A·s).
+        background, color, alpha, scale = np.array((0.2, 0.4, 0.1)), np.array((0.5, 0.25, 0.002)), 0.6, 0.75
+        faded = alpha * scale
+        expected = {0: color, 1: background * (1 - faded) + color * faded, 2: color,
+                    3: 2 * background * (0.5 + (self.srgb(color) - 0.5) * faded), 4: background + color * faded,
+                    5: background * color, 6: background * (1 + (color - 1) * faded)}
+        for blend_mode, value in expected.items():
+            material = build('csgo_static_overlay.vfx', ('g_tColor', 'g_tNormal', 'g_tMetalness'),
+                             ints={'F_BLEND_MODE': blend_mode},
+                             floats={'g_flOpacityScale': scale, 'g_flAlphaTestReference': 0.5})
+            self.set_color(material, 'g_tColor', (*color, alpha))
+            self.assert_renders_as(material, background, value, f'F_BLEND_MODE {blend_mode}')
+            self.assertFalse(texture_nodes(material) & {'g_tNormal', 'g_tMetalness'})
+        material = build('csgo_static_overlay.vfx', ('g_tColor',), ints={'F_BLEND_MODE': 2},
+                         floats={'g_flAlphaTestReference': 0.7})
+        self.set_color(material, 'g_tColor', (*color, alpha))
+        self.assert_renders_as(material, background, background, 'alpha under the reference')
+
+    def test_static_overlay_lit(self):
+        # Lit overlays draw the csgo_complex group, metalness from g_tMetalness green, blended by the scaled alpha.
+        material = build('csgo_static_overlay.vfx', ('g_tColor', 'g_tNormal', 'g_tMetalness', 'g_tAmbientOcclusion',
+                                                     'g_tSelfIllumMask'),
+                         ints={'F_BLEND_MODE': 1, 'F_LIT': 1}, floats={'g_flOpacityScale': 0.9})
+        group = shader_node(material, 'csgo_static_overlay.vfx')
+        self.assertEqual(source(group.inputs['TextureColor']), ('g_tColor', 'Color'))
+        self.assertEqual(source(group.inputs['TextureMetalness']), ('g_tMetalness', 'Green'))
+        self.assertEqual(source(group.inputs['TextureNormal']), ('g_tNormal', 'Color'))
+        mix = linked_node(output_node(material).inputs['Surface'])
+        self.assertEqual(mix.bl_idname, 'ShaderNodeMixShader')
+        self.assertEqual(linked_node(mix.inputs[2]), group)
+        opacity = linked_node(mix.inputs[0])
+        self.assertAlmostEqual(opacity.inputs[1].default_value, 0.9, places=6)
+        self.assertEqual(source(opacity.inputs[0]), ('g_tColor', 'Alpha'))
+        self.assertEqual(texture_nodes(material), {'g_tColor', 'g_tNormal', 'g_tMetalness'})
+
+    def test_static_overlay_color_adjust(self):
+        # Contrast about the texture's average color a, then brightness, then saturation about the grey of
+        # SATURATION_WEIGHTS: c' = B·((c − a)·C + a); c'' = Y + S·(c' − Y).
+        from unittest import mock
+        from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import SATURATION_WEIGHTS
+        background, color, average = np.array((0.2, 0.4, 0.1)), np.array((0.5, 0.25, 0.75)), (0.4, 0.3, 0.2)
+        contrast, saturation, brightness = 1.5, 0.5, 1.2
+        adjusted = brightness * ((color - average) * contrast + average)
+        grey = np.dot(adjusted, SATURATION_WEIGHTS)
+        adjusted = grey + saturation * (adjusted - grey)
+        with mock.patch.object(Source2ShaderBase, '_texture_average_color', return_value=average):
+            material = build('csgo_static_overlay.vfx', ('g_tColor',),
+                             floats={'g_fTextureColorContrast': contrast, 'g_fTextureColorSaturation': saturation,
+                                     'g_fTextureColorBrightness': brightness})
+        self.set_color(material, 'g_tColor', (*color, 1.0))
+        self.assert_renders_as(material, background, adjusted)
+        self.assertAlmostEqual(sum(SATURATION_WEIGHTS), 1.0)
+
+    def test_static_overlay_vertex_colors(self):
+        # F_PAINT_VERTEX_COLORS multiplies the color by the vertex color and the alpha by its alpha.
+        background, color, alpha = np.array((0.2, 0.4, 0.1)), np.array((0.5, 0.25, 1.0)), 0.8
+        vertex_color = np.array((0.5, 1.0, 0.25, 0.5))
+        material = build('csgo_static_overlay.vfx', ('g_tColor',),
+                         ints={'F_BLEND_MODE': 1, 'F_PAINT_VERTEX_COLORS': 1})
+        self.set_color(material, 'g_tColor', (*color, alpha))
+        faded = alpha * vertex_color[3]
+        self.assert_renders_as(material, background, background * (1 - faded) + color * vertex_color[:3] * faded,
+                               vertex_color=vertex_color)
+        # Without the flag the vertex colors are ignored.
+        material = build('csgo_static_overlay.vfx', ('g_tColor',), ints={'F_BLEND_MODE': 1})
+        self.set_color(material, 'g_tColor', (*color, alpha))
+        self.assert_renders_as(material, background, background * (1 - alpha) + color * alpha,
+                               vertex_color=vertex_color)
+
+    def render_input(self, material, socket_name, shader, uv_layers=None):
+        """What the material feeds into its node group's input, rendered as an Emission (RGB)."""
+        nodes, links = material.node_tree.nodes, material.node_tree.links
+        source_socket = nodes[shader].inputs[socket_name].links[0].from_socket
+        emission = nodes.new('ShaderNodeEmission')
+        links.new(source_socket, emission.inputs['Color'])
+        links.new(emission.outputs[0], output_node(material).inputs['Surface'])
+        return self.render_over_background(material, (0.0, 0.0, 0.0), uv_layers=uv_layers)
+
+    def assert_input_is(self, material, socket_name, value, shader, message=''):
+        np.testing.assert_allclose(self.render_input(material, socket_name, shader),
+                                   self.render_constant(value, (0.0, 0.0, 0.0)), atol=2e-3, err_msg=message)
+
+    def test_complex_detail_color_modes(self):
+        # F_DETAIL_TEXTURE 1 Mod2X: C·lerp(1, 1.9922·D, f); 2 Overlay (and 4): lerp(C, linear(overlay(sRGB(C),
+        # 0.9961·D)), f), with f = g_flDetailBlendFactor (default 1) × max(mask, g_flDetailBlendToFull).
+        def overlay(a, b):
+            return np.where(a < 0.5, 2 * a * b, 1 - 2 * (1 - a) * (1 - b))
+
+        def linear(c):
+            return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+        color, detail, mask = np.array((0.05, 0.4, 0.8)), np.array((0.3, 0.5, 0.9)), 0.6
+        cases = (({'F_DETAIL_TEXTURE': 1}, {}, color * (1 + (1.9922 * detail - 1) * mask)),
+                 ({'F_DETAIL_TEXTURE': 1}, {'g_flDetailBlendFactor': 0.5, 'g_flDetailBlendToFull': 0.8},
+                  color * (1 + (1.9922 * detail - 1) * 0.4)),
+                 ({'F_DETAIL_TEXTURE': 2}, {'g_flDetailBlendFactor': 0.5},
+                  color + (linear(overlay(self.srgb(color), 0.9961 * detail)) - color) * 0.3),
+                 ({'F_DETAIL_TEXTURE': 4}, {}, color + (linear(overlay(self.srgb(color), 0.9961 * detail)) - color) * mask),
+                 ({}, {}, color))
+        for ints, floats, value in cases:
+            material = build('csgo_complex.vfx', ('g_tColor', 'g_tDetail', 'g_tDetailMask'), ints=ints, floats=floats)
+            if ints:
+                self.assertTrue(material.node_tree.nodes['g_tDetail'].image.colorspace_settings.is_data)
+                self.assertTrue(material.node_tree.nodes['g_tDetailMask'].image.colorspace_settings.is_data)
+                self.set_color(material, 'g_tDetail', (*detail, 1.0))
+                self.set_color(material, 'g_tDetailMask', (mask, 0.0, 0.0, 1.0))
+            else:
+                self.assertEqual(texture_nodes(material), {'g_tColor'})
+            self.set_color(material, 'g_tColor', (*color, 1.0))
+            self.assert_input_is(material, 'TextureColor', value, 'csgo_complex.vfx', f'{ints} {floats}')
+
+    def test_complex_detail_normals(self):
+        # F_DETAIL_TEXTURE 3: D = lerp((0, 0, 1), detail, f · g_flDetailNormalStrength),
+        # n' = n·D.z + (n.z·D.z·D.xy, 0), in the normal map's [0, 1] encoding; the color is left alone.
+        normal, detail, mask, strength = np.array((0.1, -0.2, 0.97)), np.array((0.3, 0.4, 0.87)), 0.5, 0.8
+        faded = np.array((0.0, 0.0, 1.0)) + (detail - (0.0, 0.0, 1.0)) * mask * strength
+        blended = normal * faded[2] + np.array((*(normal[2] * faded[2] * faded[:2]), 0.0))
+        for mode in (3, 4):
+            material = build('csgo_complex.vfx', ('g_tColor', 'g_tNormal', 'g_tDetail', 'g_tNormalDetail',
+                                                  'g_tDetailMask'),
+                             ints={'F_DETAIL_TEXTURE': mode}, floats={'g_flDetailNormalStrength': strength})
+            self.assertEqual('g_tDetail' in texture_nodes(material), mode == 4)
+            self.set_color(material, 'g_tNormal', (*(normal * 0.5 + 0.5), 1.0))
+            self.set_color(material, 'g_tNormalDetail', (*(detail * 0.5 + 0.5), 1.0))
+            self.set_color(material, 'g_tDetailMask', (mask, 0.0, 0.0, 1.0))
+            self.assert_input_is(material, 'TextureNormal', blended * 0.5 + 0.5, 'csgo_complex.vfx', f'mode {mode}')
+        # Mod2X leaves the normal map alone.
+        material = build('csgo_complex.vfx', ('g_tColor', 'g_tNormal', 'g_tDetail', 'g_tNormalDetail'),
+                         ints={'F_DETAIL_TEXTURE': 1})
+        self.assertEqual(source(shader_node(material, 'csgo_complex.vfx').inputs['TextureNormal']),
+                         ('g_tNormal', 'Color'))
+        self.assertNotIn('g_tNormalDetail', texture_nodes(material))
+
+    def test_vertexlitgeneric_detail_mod2x(self):
+        color, detail, mask = np.array((0.5, 0.25, 0.75)), np.array((0.5, 0.25, 0.75)), 0.5
+        material = build('csgo_vertexlitgeneric.vfx', ('g_tColor', 'g_tDetail', 'g_tDetailMask'),
+                         ints={'F_DETAIL_TEXTURE': 1}, floats={'g_flDetailBlendFactor': 0.8})
+        self.assertTrue(material.node_tree.nodes['g_tDetail'].image.colorspace_settings.is_data)
+        for slot, rgba in (('g_tColor', (*color, 1.0)), ('g_tDetail', (*detail, 1.0)),
+                           ('g_tDetailMask', (mask, 0.0, 0.0, 1.0))):
+            self.set_color(material, slot, rgba)
+        self.assert_input_is(material, 'TextureColor', color * (1 + (1.9922 * detail - 1) * 0.4),
+                             'csgo_vertexlitgeneric.vfx')
+
+    def test_character_and_weapon_detail(self):
+        # F_DETAIL_TEXTURE 0 Multiply, 1 Replace, faded by g_fDetailBlendFactor (times the tint mask, or its
+        # inverse, by g_nMaskDetailTextureByTintMask / g_bMaskDetailTextureByTintMask). The detail is sRGB.
+        color, detail, tint_mask = np.array((0.5, 0.25, 0.75)), np.array((0.4, 0.8, 0.2)), 0.25
+        cases = (('csgo_character.vfx', {}, {}, color * detail),
+                 ('csgo_character.vfx', {'F_DETAIL_TEXTURE': 1}, {'g_fDetailBlendFactor': 0.5},
+                  color + (detail - color) * 0.5),
+                 ('csgo_character.vfx', {'F_TINT_MASK': 1, 'g_nMaskDetailTextureByTintMask': 2}, {},
+                  color + (color * detail - color) * (1 - tint_mask)),
+                 ('csgo_character.vfx', {'g_nMaskDetailTextureByTintMask': 2}, {}, color),
+                 ('csgo_weapon.vfx', {'F_TINT_MASK': 1, 'g_bMaskDetailTextureByTintMask': 1},
+                  {'g_fDetailBlendFactor': 0.5}, color + (color * detail - color) * tint_mask * 0.5))
+        for shader, ints, floats, value in cases:
+            material = build(shader, ('g_tColor', 'g_tDetail', 'g_tTintMask'), ints=ints, floats=floats)
+            self.assertFalse(material.node_tree.nodes['g_tDetail'].image.colorspace_settings.is_data)
+            for slot, rgba in (('g_tColor', (*color, 1.0)), ('g_tDetail', (*detail, 1.0)),
+                               ('g_tTintMask', (tint_mask, 0.0, 0.0, 1.0))):
+                if slot in material.node_tree.nodes:
+                    self.set_color(material, slot, rgba)
+            self.assert_input_is(material, 'TextureColor', value, shader, f'{shader} {ints} {floats}')
+
+    def lit_layers(self, ints=None, floats=None, modulation=None, weight=0.0, grey=None):
+        """Render csgo_lightmappedgeneric lit by a uniform white world: a black layer 1 and a white layer 2 at the
+        painted weight, or (grey) one layer of that grey."""
+        if grey is not None:
+            material = build('csgo_lightmappedgeneric.vfx', ('g_tColor',))
+            self.set_color(material, 'g_tColor', (grey, grey, grey, 1.0))
+        else:
+            textures = ('g_tColor', 'g_tLayer2Color') + (('g_tBlendModulation',) if modulation else ())
+            material = build('csgo_lightmappedgeneric.vfx', textures, ints=ints, floats=floats)
+            self.set_color(material, 'g_tColor', (0.0, 0.0, 0.0, 1.0))
+            self.set_color(material, 'g_tLayer2Color', (1.0, 1.0, 1.0, 1.0))
+            if modulation:
+                self.assertTrue(material.node_tree.nodes['g_tBlendModulation'].image.colorspace_settings.is_data)
+                self.set_color(material, 'g_tBlendModulation', modulation)
+        return self.render_over_background(material, (1.0, 1.0, 1.0), uv_layers={'TEXCOORD_4': (weight, 0.0)})
+
+    def test_lightmappedgeneric_layer_blend(self):
+        # Layer 2's share: the painted weight w (TEXCOORD_4.x) with F_FANCY_BLENDING 0, else
+        # smoothstep(max(0, m - s), min(1, m + s), w) with the modulation's green (1, 2) or alpha (3) as m and
+        # its red (1) or g_flBlendSoftness (2, 3) as s. A black and a white layer render as that grey.
+        def smoothstep(edge0, edge1, x):
+            t = np.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+            return t * t * (3 - 2 * t)
+
+        weight, modulation, softness = 0.55, (0.2, 0.5, 0.0, 0.7), 0.15
+        cases = ((0, 0.0), (0, 0.3), (0, 1.0), (0, weight), (1, smoothstep(0.3, 0.7, weight)),
+                 (2, smoothstep(0.35, 0.65, weight)), (3, smoothstep(0.55, 0.85, weight)))
+        for mode, factor in cases:
+            rendered = self.lit_layers({'F_FANCY_BLENDING': mode}, {'g_flBlendSoftness': softness},
+                                       modulation if mode else None, factor if mode == 0 else weight)
+            np.testing.assert_allclose(rendered, self.lit_layers(grey=factor), atol=5e-3,
+                                       err_msg=f'F_FANCY_BLENDING {mode}, factor {factor}')
+        material = build('csgo_lightmappedgeneric.vfx', ('g_tColor', 'g_tLayer2Color', 'g_tBlendModulation'))
+        self.assertNotIn('g_tBlendModulation', texture_nodes(material))  # VertexBlend doesn't modulate
+        # One layer: the group gets a factor of 0.
+        material = build('csgo_lightmappedgeneric.vfx', ('g_tColor', 'g_tBlendModulation'))
+        group = shader_node(material, 'csgo_lightmappedgeneric.vfx')
+        self.assertFalse(group.inputs['BlendModulate'].is_linked)
+        self.assertEqual(tuple(group.inputs['BlendModulate'].default_value)[:3], (0.0, 0.0, 0.0))
 
 if __name__ == '__main__':
     unittest.main()

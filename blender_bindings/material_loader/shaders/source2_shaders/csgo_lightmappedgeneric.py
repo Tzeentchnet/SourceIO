@@ -8,6 +8,10 @@ from ..source2_shader_base import Source2ShaderBase
 from .....library.source2.blocks.kv3_block import KVBlock
 
 
+# vmdl_loader's name for the VertexPaintBlendParams stream (TEXCOORD4), the painted layer blend in x
+BLEND_UV = "TEXCOORD_4"
+
+
 class CSGOLightmappedGeneric(Source2ShaderBase):
     SHADER: str = 'csgo_lightmappedgeneric.vfx'
 
@@ -39,6 +43,72 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
         self.connect_nodes(color_output, blend.inputs[MIX_A])
         self.connect_nodes(mod2x.outputs[MIX_RESULT], blend.inputs[MIX_B])
         return blend.outputs[MIX_RESULT]
+
+    def _layer_blend_factor(self):
+        """How much of layer 2 shows (VRF's complex.frag): the painted blend weight w (TEXCOORD_4.x, the
+        VertexPaintBlendParams stream), as is with F_FANCY_BLENDING 0 (VertexBlend), else
+        smoothstep(max(0, m - s), min(1, m + s), w) for the linear g_tBlendModulation's mask m (1: green, with the
+        softness s in red; 2: green, 3: alpha, with s = g_flBlendSoftness)."""
+        blend_uv = self.create_node(Nodes.ShaderNodeUVMap)
+        blend_uv.uv_map = BLEND_UV
+        weight = self.create_node(Nodes.ShaderNodeSeparateXYZ)
+        self.connect_nodes(blend_uv.outputs[0], weight.inputs[0])
+        mode = self._material_resource.get_int_property("F_FANCY_BLENDING", 0)
+        if mode == 0 or not self._have_texture("g_tBlendModulation"):
+            self._skip_texture("g_tBlendModulation")
+            return weight.outputs["X"]
+        modulation = self._get_texture("g_tBlendModulation", (0.5, 0.5, 0.5, 0.5), True)
+        self._connect_layer_uv(modulation, "BlendModulate")
+        channels = self.create_node(Nodes.ShaderNodeSeparateColor)
+        self.connect_nodes(modulation.outputs[0], channels.inputs[0])
+        mask = modulation.outputs["Alpha"] if mode == 3 else channels.outputs["Green"]
+        smoothstep = self.create_node(Nodes.ShaderNodeMapRange)
+        smoothstep.interpolation_type = 'SMOOTHSTEP'
+        self.connect_nodes(weight.outputs["X"], smoothstep.inputs["Value"])
+        for bound, operation, value in (("From Min", 'SUBTRACT', 0.0), ("From Max", 'ADD', 1.0)):
+            offset = self.create_node(Nodes.ShaderNodeMath)
+            offset.operation = operation
+            self.connect_nodes(mask, offset.inputs[0])
+            if mode == 1:
+                self.connect_nodes(channels.outputs["Red"], offset.inputs[1])
+            else:
+                offset.inputs[1].default_value = self._material_resource.get_float_property("g_flBlendSoftness", 0.5)
+            clamp = self.create_node(Nodes.ShaderNodeMath)
+            clamp.operation = 'MAXIMUM' if value == 0.0 else 'MINIMUM'
+            self.connect_nodes(offset.outputs[0], clamp.inputs[0])
+            clamp.inputs[1].default_value = value
+            self.connect_nodes(clamp.outputs[0], smoothstep.inputs[bound])
+        return smoothstep.outputs["Result"]
+
+    def _connect_layer_blend(self, shader):
+        """Feed _layer_blend_factor through the node group's own blend ramp, a smoothstep of the green of
+        BlendModulate from min(V1 + Softness, 1) to max(V0 - Softness, 0), sharpened by a sigmoid of exponent
+        Sharpness. With Softness 0, V0 1, V1 0 and Sharpness 1 that is smoothstep(0, 1, green), so the green is
+        the factor's inverse smoothstep, 0.5 - sin(asin(1 - 2f) / 3). Without a second layer the factor is 0."""
+        if self._have_texture("g_tLayer2Color"):
+            def math(operation, *operands):
+                node = self.create_node(Nodes.ShaderNodeMath)
+                node.operation = operation
+                for index, operand in enumerate(operands):
+                    if isinstance(operand, bpy.types.NodeSocket):
+                        self.connect_nodes(operand, node.inputs[index])
+                    else:
+                        node.inputs[index].default_value = operand
+                return node.outputs[0]
+
+            factor = self._layer_blend_factor()
+            angle = math('DIVIDE', math('ARCSINE', math('MULTIPLY_ADD', factor, -2.0, 1.0)), 3.0)
+            inverse = math('SUBTRACT', 0.5, math('SINE', angle))
+            green = self.create_node(Nodes.ShaderNodeCombineColor)
+            self.connect_nodes(inverse, green.inputs["Green"])
+            self.connect_nodes(green.outputs[0], shader.inputs["BlendModulate"])
+        else:
+            self._skip_texture("g_tBlendModulation")
+            shader.inputs["BlendModulate"].default_value = (0.0, 0.0, 0.0, 1.0)
+        shader.inputs["Softness"].default_value = 0.0
+        shader.inputs["V0"].default_value = 1.0
+        shader.inputs["V1"].default_value = 0.0
+        shader.inputs["Sharpness"].default_value = 1.0
 
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
@@ -82,19 +152,13 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
             self.connect_nodes(normal_texture.outputs[0], shader.inputs["TextureNormal1"])
             self.connect_nodes(normal_texture.outputs[1], shader.inputs["TextureRoughness1"])
 
-        if self._have_texture("g_tBlendModulation"):
-            color_texture = self._get_texture("g_tBlendModulation", (1, 1, 1, 1))
-            self._connect_layer_uv(color_texture, "BlendModulate")
-            self.connect_nodes(color_texture.outputs[0], shader.inputs["BlendModulate"])
+        self._connect_layer_blend(shader)
 
         # TODO: tinting
 
         if self.tinted:
             object_color = self.create_node(Nodes.ShaderNodeObjectInfo)
             self.connect_nodes(object_color.outputs["Color"], shader.inputs["ModelTint"])
-
-        shader.inputs["Softness"].default_value = material_data.get_float_property("g_flBlendSoftness", 0.5)
-        shader.inputs["Sharpness"].default_value = material_data.get_float_property("g_flBevelBlendSharpness", 4)
 
         if material_data.get_int_property("F_ALPHA_TEST", 0):
             self.set_blend_mode('CLIP')

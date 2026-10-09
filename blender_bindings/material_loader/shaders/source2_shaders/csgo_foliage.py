@@ -43,3 +43,6 @@ class CSGOFoliage(Source2ShaderBase):
         elif self._is_translucent():
             self.set_blend_mode('HASHED')
             self.connect_nodes(color_texture.outputs[1], shader.inputs["Alpha"])
+
+        self._add_transmission(shader.outputs['BSDF'], color_output, shader.inputs["Alpha"],
+                               material_output.inputs['Surface'])

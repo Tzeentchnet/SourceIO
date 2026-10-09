@@ -15,6 +15,9 @@ from ....logger import SourceLogMan
 
 logger = SourceLogMan().get_logger("Source2::Shader")
 
+# vmdl_loader names UV sets TEXCOORD, TEXCOORD_1, ...
+SECONDARY_UV = "TEXCOORD_1"
+
 
 class Source2ShaderBase(ShaderBase):
     def __init__(self, content_manager: ContentManager, source2_material: CompiledMaterialResource,
@@ -75,6 +78,49 @@ class Source2ShaderBase(ShaderBase):
         split = self.create_node(Nodes.ShaderNodeSeparateColor)
         self.connect_nodes(metalness_texture.outputs[0], split.inputs[0])
         return split
+
+    def _apply_decal(self, color_output):
+        """Blend g_tDecal (color, translucency in alpha) into the albedo: blend mode 0 lays it over the albedo,
+        mode 1 multiplies. It uses the secondary UV set unless g_bUseSecondaryUvForDecal is 0."""
+        decal_texture = self._get_texture("g_tDecal", (1, 1, 1, 0))
+        uv_node = self.create_node(Nodes.ShaderNodeUVMap)
+        use_secondary = self._material_resource.get_int_property("g_bUseSecondaryUvForDecal", 1)
+        uv_node.uv_map = SECONDARY_UV if use_secondary else "TEXCOORD"
+        self.connect_nodes(uv_node.outputs[0], decal_texture.inputs[0])
+        blend = self.create_mix_color('MULTIPLY' if self._check_flag("F_DECAL_BLEND_MODE") else 'MIX')
+        self.connect_nodes(decal_texture.outputs[1], blend.inputs[MIX_FACTOR])
+        self.connect_nodes(color_output, blend.inputs[MIX_A])
+        self.connect_nodes(decal_texture.outputs[0], blend.inputs[MIX_B])
+        return blend.outputs[MIX_RESULT]
+
+    def _add_transmission(self, surface_output, albedo_output, alpha_input, surface_input, uv_output=None):
+        """Source 2 adds back-lit diffuse light tinted by the transmissive color (the albedo with
+        F_USE_ALBEDO_FOR_TRANSMISSIVE), without a weight; a Translucent BSDF added to the surface does the same."""
+        if self._check_flag("F_USE_ALBEDO_FOR_TRANSMISSIVE"):
+            self._skip_texture("g_tTransmissiveColor")  # the default texture
+            color_output = albedo_output
+        elif self._have_texture("g_tTransmissiveColor"):
+            transmissive_texture = self._get_texture("g_tTransmissiveColor", (0, 0, 0, 1))
+            if uv_output is not None:
+                self.connect_nodes(uv_output, transmissive_texture.inputs[0])
+            color_output = transmissive_texture.outputs[0]
+        else:
+            return
+        if color_output is None:
+            return
+        if alpha_input.is_linked:
+            # Clipped or translucent parts must not transmit either.
+            alpha_mask = self.create_mix_color('MULTIPLY')
+            alpha_mask.inputs[MIX_FACTOR].default_value = 1.0
+            self.connect_nodes(color_output, alpha_mask.inputs[MIX_A])
+            self.connect_nodes(alpha_input.links[0].from_socket, alpha_mask.inputs[MIX_B])
+            color_output = alpha_mask.outputs[MIX_RESULT]
+        translucent = self.create_node(Nodes.ShaderNodeBsdfTranslucent)
+        self.connect_nodes(color_output, translucent.inputs['Color'])
+        add_shader = self.create_node(Nodes.ShaderNodeAddShader)
+        self.connect_nodes(surface_output, add_shader.inputs[0])
+        self.connect_nodes(translucent.outputs[0], add_shader.inputs[1])
+        self.connect_nodes(add_shader.outputs[0], surface_input)
 
     def load_texture_or_default(self, name_or_id: Union[str, int], default_color: tuple = (1.0, 1.0, 1.0, 1.0),
                                 invert_y: bool = False):

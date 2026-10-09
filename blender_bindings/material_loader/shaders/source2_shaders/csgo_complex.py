@@ -4,7 +4,7 @@ from typing import Any
 import bpy
 
 from ...shader_base import Nodes, ExtraMaterialParameters
-from ..source2_shader_base import Source2ShaderBase
+from ..source2_shader_base import Source2ShaderBase, SECONDARY_UV
 from .....library.source2.blocks.kv3_block import KVBlock
 
 
@@ -15,8 +15,20 @@ class CSGOComplex(Source2ShaderBase):
         # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
         self._skip_texture("g_tAmbientOcclusion")
 
-    def _connect_roughness(self, normal_texture, metalness_split, roughness_input):
-        self.connect_nodes(normal_texture.outputs[1], roughness_input)
+    def _connect_roughness(self, normal_texture, metalness_split, roughness_input, uv_output):
+        if self._check_flag("F_ANISOTROPIC_GLOSS") and self._have_texture("g_tAnisoGloss"):
+            # The normal map then has only X and Y; g_tAnisoGloss holds the roughness along the tangent (red)
+            # and the bitangent (green). Blender gets their average.
+            aniso_texture = self._get_texture("g_tAnisoGloss", (0.5, 0.5, 0, 1), True)
+            self.connect_nodes(uv_output, aniso_texture.inputs[0])
+            average = self.create_node(Nodes.ShaderNodeVectorMath)
+            average.operation = 'DOT_PRODUCT'
+            self.connect_nodes(aniso_texture.outputs[0], average.inputs[0])
+            average.inputs[1].default_value = (0.5, 0.5, 0.0)
+            self.connect_nodes(average.outputs['Value'], roughness_input)
+        else:
+            self._skip_texture("g_tAnisoGloss")
+            self.connect_nodes(normal_texture.outputs[1], roughness_input)
 
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         self._skip_unsupported_textures()
@@ -38,16 +50,19 @@ class CSGOComplex(Source2ShaderBase):
             if extra_parameters.get(ExtraMaterialParameters.USE_OBJECT_TINT, False):
                 color_output = self.insert_object_tint(color_texture.outputs[0])
             self.connect_nodes(color_output, shader.inputs["TextureColor"])
+            albedo_output = color_texture.outputs[0]
             alpha_output = color_texture.outputs[1]
         else:
-            alpha_output = None
+            albedo_output = alpha_output = None
         if self._have_texture("g_tDetail"):
             scale = material_data.get_vector_property("g_vDetailTexCoordScale", None)
             offset = material_data.get_vector_property("g_vDetailTexCoordOffset", None)
 
             detail_texture = self._get_texture("g_tDetail", (1, 1, 1, 1))
             detail_mask_texture = self._get_texture("g_tDetailMask", (1, 0, 0, 1))
-            detail_uv_slot = "TEXCOORD1" if material_data.get_int_property("F_SECONDARY_UV", 0) else "TEXCOORD"
+            use_secondary = (self._check_flag("F_SECONDARY_UV") and
+                             material_data.get_int_property("g_bUseSecondaryUvForDetailTexture", 1))
+            detail_uv_slot = SECONDARY_UV if use_secondary else "TEXCOORD"
             detail_transform_node = self.create_transform(detail_uv_slot, scale, offset, (0.5, 0.5, 0))
             self.connect_nodes(detail_transform_node.outputs[0], detail_texture.inputs[0])
 
@@ -66,7 +81,8 @@ class CSGOComplex(Source2ShaderBase):
             normal_texture = self._get_texture("g_tNormal", (0.5, 0.5, 1, 1), True, True)
             self.connect_nodes(transform_node.outputs[0], normal_texture.inputs[0])
             self.connect_nodes(normal_texture.outputs[0], shader.inputs["TextureNormal"])
-            self._connect_roughness(normal_texture, metalness_split, shader.inputs["TextureRoughness"])
+            self._connect_roughness(normal_texture, metalness_split, shader.inputs["TextureRoughness"],
+                                    transform_node.outputs[0])
 
         if self._have_texture("g_tTintMask") and self._check_flag("F_TINT_MASK", 0):
             tint_texture = self._get_texture("g_tTintMask", (1, 0, 0, 1), True)
@@ -120,6 +136,9 @@ class CSGOComplex(Source2ShaderBase):
             self._handle_alpha_modes("OVERLAY", 0.5,
                                      alpha_output, shader.inputs['Alpha'])
 
+        self._add_transmission(shader.outputs['BSDF'], albedo_output, shader.inputs['Alpha'],
+                               material_output.inputs['Surface'], transform_node.outputs[0])
+
 
 class CSGOCharacter(CSGOComplex):
     SHADER: str = 'csgo_character.vfx'
@@ -139,9 +158,9 @@ class CSGOWeapon(CSGOComplex):
         self._skip_textures_with_prefix("g_tSticker", "g_tGlitterNormalSticker", "g_tHoloSpectrumSticker",
                                         "g_tNormalRoughnessSticker", "g_tSfxMaskSticker")
 
-    def _connect_roughness(self, normal_texture, metalness_split, roughness_input):
+    def _connect_roughness(self, normal_texture, metalness_split, roughness_input, uv_output):
         # Weapons keep roughness in the red channel of g_tMetalness, not in the normal map.
         if metalness_split is not None:
             self.connect_nodes(metalness_split.outputs[0], roughness_input)
         else:
-            super()._connect_roughness(normal_texture, metalness_split, roughness_input)
+            super()._connect_roughness(normal_texture, metalness_split, roughness_input, uv_output)

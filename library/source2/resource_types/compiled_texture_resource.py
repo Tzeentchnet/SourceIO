@@ -296,6 +296,11 @@ class CompiledTextureResource(CompiledResource):
                     normalize = True
                 elif spec.string == "Texture Compiler Version Image YCoCg Conversion":
                     y_co_cg = True
+            # CS2 lists every normal-map step on every texture it compiles from a normal map, including the
+            # anisotropic gloss (g_tAnisoGloss), whose R and G are roughness values; only it has this step.
+            if any(spec.string == "Texture Compiler Version Mip AnisoRoughness_RG"
+                   for spec in resource_info_block.special_deps):
+                invert = normalize = hemi_oct_aniso_roughness = hemi_oct_normal = False
 
         if pixel_format == VTexFormat.RGBA8888:
             pixel_data = np.frombuffer(data, np.uint8).reshape((width, height, 4)).astype(np.float32) / 255

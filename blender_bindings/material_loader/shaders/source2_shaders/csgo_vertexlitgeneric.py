@@ -41,7 +41,10 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
 
                 self.connect_nodes(uv_transform.outputs[0], color_texture.inputs[0])
 
-            self.connect_nodes(color_texture.outputs[0], shader.inputs["TextureColor"])
+            color_output = color_texture.outputs[0]
+            if self._check_flag("F_DECAL_TEXTURE") and self._have_texture("g_tDecal"):
+                color_output = self._apply_decal(color_output)
+            self.connect_nodes(color_output, shader.inputs["TextureColor"])
             alpha_output = color_texture.outputs[1]
         else:
             alpha_output = None

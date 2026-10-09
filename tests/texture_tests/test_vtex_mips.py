@@ -35,7 +35,9 @@ def test_mip_is_downsampled_first_mip(name):
     assert np.abs(pixels - box_filtered).mean() < 0.02
 
 
-def test_missing_mip_raises():
+def test_missing_mip_clamps_to_available_range():
     texture = load("DXT5_announcer_axe_png.vtex_c")  # a single mip
-    with pytest.raises(ValueError):
-        texture.get_texture_data(1)
+    expected, expected_resolution = texture.get_texture_data(0)
+    actual, actual_resolution = texture.get_texture_data(99)
+    assert actual_resolution == expected_resolution
+    assert np.array_equal(actual, expected)

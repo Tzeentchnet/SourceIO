@@ -9,7 +9,10 @@ from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegi
 from SourceIO.blender_bindings.material_loader.shader_base import (MIX_A, MIX_B, MIX_FACTOR, ALPHA_CLIP_LABEL,
                                                                   unfilter_alpha_clips)
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
+from SourceIO.blender_bindings.source2.vmat_loader import load_material
+from SourceIO.library.source2.blocks.texture_data import TextureImportSettings
 from SourceIO.library.source2.resource_types import CompiledMaterialResource
+from SourceIO.library.utils import TinyPath
 
 
 class FakeMaterial(CompiledMaterialResource):
@@ -83,6 +86,25 @@ class Source2MaterialTests(unittest.TestCase):
         self.assertEqual(source(shader.inputs['TextureMetalness']), ('g_tMetalness', 'Green'))
         self.assertEqual(source(shader.inputs['TextureRoughness']), ('g_tNormal', 'Alpha'))
         self.assertNotIn('g_tAmbientOcclusion', texture_nodes(material))
+
+    def test_vmat_texture_settings_are_scoped_and_isolate_material_cache(self):
+        resource = FakeMaterial('csgo_complex.vfx', ('g_tColor',))
+        settings = TextureImportSettings(mip_level=2, decode_packed_channels=False)
+        material = load_material(
+            None,
+            resource,
+            TinyPath("materials/test/settings.vmat"),
+            texture_settings=settings,
+        )
+        default_material = load_material(
+            None,
+            resource,
+            TinyPath("materials/test/settings.vmat"),
+        )
+
+        self.assertIsNot(material, default_material)
+        self.assertEqual(material["sourceio_texture_settings"], settings.cache_identity())
+        self.assertEqual(resource.texture_import_settings, TextureImportSettings())
 
     def test_complex_metalness_flag_without_texture_uses_color_alpha(self):
         material = build('csgo_complex.vfx', ('g_tColor', 'g_tNormal'), ints={'F_METALNESS_TEXTURE': 1})

@@ -1,17 +1,20 @@
-import io
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, Type
+from os import PathLike
 
 import numpy as np
 import numpy.typing as npt
 
 from ..blocks.resource_edit_info import ResourceEditInfo, ResourceEditInfo2
-from ...utils.perf_sampler import timed
-from ...utils.pylib.compression import lz4_decompress
+from ..compiled_file_header import CompiledHeader
+from ..exceptions import Source2Error
+from ..interfaces import Diagnostic, DiagnosticSeverity, Maturity, ResourceCapabilities, ResourceKind
+from ...utils import Buffer, MemoryBuffer, TinyPath
+from ...utils.pylib.compression import lz4_decompress, zstd_decompress
 from ...utils.pylib.image import decode_texture
 from ..blocks.texture_data import CompressedMip, TextureData, VTexExtraData, \
-    VTexFlags, VTexFormat
+    VTexFlags, VTexFormat, VTexMipCompression, TextureArtifact, TextureImportSettings, \
+    TextureMipLayout, TextureSubresource
 from ..compiled_resource import CompiledResource
 
 logger = logging.getLogger('CompiledTextureResource')
@@ -85,63 +88,184 @@ def _blocks_to_image(block_values: np.ndarray, width: int, height: int) -> np.nd
     return image[:height, :width]
 
 
-HDR_FORMATS = {VTexFormat.BC6H, VTexFormat.RGBA16161616F, VTexFormat.R16F, VTexFormat.RG1616F,
-               VTexFormat.R32F, VTexFormat.RG3232F, VTexFormat.RGB323232F, VTexFormat.RGBA32323232F}
+HDR_FORMATS = {
+    VTexFormat.BC6H,
+    VTexFormat.R16,
+    VTexFormat.RG1616,
+    VTexFormat.RGBA16161616,
+    VTexFormat.R16F,
+    VTexFormat.RG1616F,
+    VTexFormat.RGBA16161616F,
+    VTexFormat.R32F,
+    VTexFormat.RG3232F,
+    VTexFormat.RGB323232F,
+    VTexFormat.RGBA32323232F,
+}
+
+BLOCK_COMPRESSED_FORMATS = {
+    VTexFormat.DXT1,
+    VTexFormat.DXT5,
+    VTexFormat.BC6H,
+    VTexFormat.BC7,
+    VTexFormat.ETC2,
+    VTexFormat.ETC2_EAC,
+    VTexFormat.R11_EAC,
+    VTexFormat.RG11_EAC,
+    VTexFormat.ATI1N,
+    VTexFormat.ATI2N,
+}
+
+POTENTIALLY_PACKED_FORMATS = {VTexFormat.DXT5, VTexFormat.BC7, VTexFormat.ATI2N}
+MAX_CACHED_MIPS = 2
 
 
 @dataclass(slots=True)
 class CompiledTextureResource(CompiledResource):
-    _cached_mips: dict[int, tuple[npt.NDArray, bool]] = field(default_factory=dict)
+    _cached_mips: dict[tuple[int, bool, tuple[str, ...]], npt.NDArray[np.float32]] = field(default_factory=dict)
+
+    resource_kind = ResourceKind.TEXTURE
+    declared_capabilities = ResourceCapabilities(
+        read=Maturity.STABLE,
+        extract=Maturity.STABLE,
+        render=Maturity.STABLE,
+    )
+
+    @classmethod
+    def from_buffer(
+            cls,
+            buffer: Buffer | bytes | bytearray | memoryview,
+            filename: TinyPath | str | PathLike[str] | None = None,
+    ):
+        if isinstance(buffer, Buffer):
+            raw_data = buffer.read()
+        elif isinstance(buffer, (bytes, bytearray, memoryview)):
+            raw_data = bytes(buffer)
+        else:
+            raise TypeError(
+                "buffer must be a SourceIO Buffer or bytes-like object, "
+                f"got {type(buffer).__name__}"
+            )
+        path = TinyPath(filename or "<memory>")
+        if len(raw_data) < 4:
+            return super().from_buffer(raw_data, path)
+        declared_resource_size = int.from_bytes(raw_data[:4], "little")
+        if not 0 < declared_resource_size <= len(raw_data):
+            return super().from_buffer(raw_data, path)
+
+        # VTEX stores its mip payload after the resource section counted by the compiled header.
+        try:
+            header = CompiledHeader.from_buffer(MemoryBuffer(raw_data[:declared_resource_size]))
+        except Source2Error as exc:
+            if exc.path is None:
+                exc.path = str(path)
+            raise
+        return cls(
+            MemoryBuffer(raw_data),
+            path,
+            header,
+            _capabilities=cls.declared_capabilities,
+        )
 
     def get_data_block_type(self):
         return TextureData
 
     @staticmethod
+    def _resolve_mip_level(texture_info, mip_level: int) -> int:
+        if texture_info.mip_count < 1:
+            raise ValueError("Texture declares no mip levels")
+        return min(max(int(mip_level), 0), texture_info.mip_count - 1)
+
+    @staticmethod
+    def _mip_dimensions(data_block: TextureData, mip_level: int) -> tuple[int, int, int, int, int]:
+        texture_info = data_block.texture_info
+        width = max(texture_info.width >> mip_level, 1)
+        height = max(texture_info.height >> mip_level, 1)
+        flags = texture_info.flags
+        if flags & VTexFlags.VOLUME_TEXTURE:
+            depth = max(texture_info.depth >> mip_level, 1)
+            array_layers = 1
+        else:
+            depth = 1
+            array_layers = max(texture_info.depth, 1)
+        face_count = 6 if flags & VTexFlags.CUBE_TEXTURE else 1
+        return width, height, depth, array_layers, face_count
+
+    @staticmethod
+    def _calculate_slice_size(pixel_format: VTexFormat, width: int, height: int) -> int:
+        block_size = VTexFormat.block_size(pixel_format)
+        if pixel_format in BLOCK_COMPRESSED_FORMATS:
+            width = max((width + 3) & ~3, 4)
+            height = max((height + 3) & ~3, 4)
+            return width * height // 16 * block_size
+        return width * height * block_size
+
+    @staticmethod
     def _calculate_buffer_size_for_mip(data_block: TextureData, mip_level):
         texture_info = data_block.texture_info
-        bytes_per_pixel = VTexFormat.block_size(texture_info.pixel_format)
-        width = texture_info.width >> mip_level
-        height = texture_info.height >> mip_level
-        depth = texture_info.depth >> mip_level
-        if depth < 1:
-            depth = 1
-        if texture_info.pixel_format in [
-            VTexFormat.DXT1,
-            VTexFormat.DXT5,
-            VTexFormat.BC6H,
-            VTexFormat.BC7,
-            VTexFormat.ETC2,
-            VTexFormat.ETC2_EAC,
-            VTexFormat.R11_EAC,
-            VTexFormat.RG11_EAC,
-            VTexFormat.ATI1N,
-            VTexFormat.ATI2N,
-        ]:
-            misalign = width % 4
-            if misalign > 0:
-                width += 4 - misalign
-            misalign = height % 4
-            if misalign > 0:
-                height += 4 - misalign
+        width, height, depth, array_layers, face_count = CompiledTextureResource._mip_dimensions(
+            data_block,
+            mip_level,
+        )
+        subresources = depth * array_layers * face_count
+        if texture_info.pixel_format in BLOCK_COMPRESSED_FORMATS and 1 < subresources < 4:
+            subresources = 4
+        return (
+            CompiledTextureResource._calculate_slice_size(texture_info.pixel_format, width, height)
+            * subresources
+        )
 
-            if 4 > width > 0:
-                width = 4
-            if 4 > height > 0:
-                height = 4
-            if 4 > depth > 1:
-                depth = 4
+    def _data_block(self) -> TextureData:
+        data_block = self.get_block(TextureData, block_name="DATA")
+        if data_block is None:
+            raise ValueError("Compiled texture has no DATA block")
+        return data_block
 
-            num_blocks = (width * height) >> 4
-            num_blocks *= depth
+    def _payload_offset(self) -> int:
+        info_block = next((block for block in self._header.blocks if block.name == "DATA"), None)
+        if info_block is None:
+            raise ValueError("Compiled texture has no DATA block descriptor")
+        return info_block.absolute_offset + info_block.size
 
-            size = num_blocks * bytes_per_pixel
-        else:
-            size = width * height * depth * bytes_per_pixel
-        return size
+    def get_mip_layout(self, mip_level: int = 0) -> TextureMipLayout:
+        data_block = self._data_block()
+        texture_info = data_block.texture_info
+        mip_level = self._resolve_mip_level(texture_info, mip_level)
+        compression_info: CompressedMip | None = data_block.extra_data.get(VTexExtraData.COMPRESSED_MIP_SIZE)
+        if compression_info is not None and len(compression_info.mip_sizes) < texture_info.mip_count:
+            raise ValueError(
+                f"Texture has {texture_info.mip_count} mips but compression metadata has "
+                f"{len(compression_info.mip_sizes)} sizes"
+            )
+
+        offset = 0
+        for level in range(texture_info.mip_count - 1, mip_level, -1):
+            offset += (
+                compression_info.mip_sizes[level]
+                if compression_info is not None
+                else self._calculate_buffer_size_for_mip(data_block, level)
+            )
+
+        width, height, depth, array_layers, face_count = self._mip_dimensions(data_block, mip_level)
+        decoded_size = self._calculate_buffer_size_for_mip(data_block, mip_level)
+        stored_size = compression_info.mip_sizes[mip_level] if compression_info is not None else decoded_size
+        return TextureMipLayout(
+            mip_level,
+            width,
+            height,
+            depth,
+            array_layers,
+            face_count,
+            offset,
+            stored_size,
+            decoded_size,
+        )
+
+    def get_mip_layouts(self) -> tuple[TextureMipLayout, ...]:
+        mip_count = self._data_block().texture_info.mip_count
+        return tuple(self.get_mip_layout(level) for level in range(mip_count))
 
     def get_texture_format(self) -> VTexFormat:
-        data_block = self.get_block(TextureData, block_name='DATA')
-        return data_block.texture_info.pixel_format
+        return self._data_block().texture_info.pixel_format
 
     def is_hdr(self) -> bool:
         return self.get_texture_format() in HDR_FORMATS
@@ -151,9 +275,8 @@ class CompiledTextureResource(CompiledResource):
         extension = ENCODED_IMAGE_EXTENSIONS.get(self.get_texture_format())
         if extension is None:
             return None
-        info_block = next(block for block in self._header.blocks if block.name == 'DATA')
         buffer = self._buffer
-        buffer.seek(info_block.absolute_offset + info_block.size)
+        buffer.seek(self._payload_offset())
         data = buffer.read()
         if extension == 'png':
             size = 8
@@ -169,109 +292,256 @@ class CompiledTextureResource(CompiledResource):
         return data, extension
 
     def is_cubemap(self) -> bool:
-        data_block = self.get_block(TextureData, block_name='DATA')
-        return data_block.texture_info.flags & VTexFlags.CUBE_TEXTURE
+        return bool(self._data_block().texture_info.flags & VTexFlags.CUBE_TEXTURE)
+
+    def is_texture_array(self) -> bool:
+        return bool(self._data_block().texture_info.flags & VTexFlags.TEXTURE_ARRAY)
+
+    def is_volume_texture(self) -> bool:
+        return bool(self._data_block().texture_info.flags & VTexFlags.VOLUME_TEXTURE)
 
     def get_resolution(self, mip_level: int = 0):
-        data_block = self.get_block(TextureData, block_name='DATA')
+        data_block = self._data_block()
         texture_info = data_block.texture_info
-        width = texture_info.width >> mip_level
-        height = texture_info.height >> mip_level
-        return width, height
+        mip_level = self._resolve_mip_level(texture_info, mip_level)
+        return self._mip_dimensions(data_block, mip_level)[:2]
 
     def get_cubemap_face(self, face: int = 0, mip_level: int = 0):
         if not self.is_cubemap():
             return None
-        info_block = None
-        for block in self._header.blocks:
-            if block.name == 'DATA':
-                info_block = block
-                break
-        data_block = self.get_block(TextureData, block_name='DATA')
-        buffer = self._buffer
-        buffer.seek(info_block.absolute_offset + info_block.size)
+        if not 0 <= face < 6:
+            raise ValueError(f"Cubemap face must be in range 0..5, got {face}")
+        artifact = self.get_texture_artifact(TextureImportSettings(mip_level=mip_level, cubemap_face=face))
+        return artifact.image_pixels(), (artifact.width, artifact.height)
 
-        compression_info: Optional[CompressedMip] = data_block.extra_data.get(VTexExtraData.COMPRESSED_MIP_SIZE, None)
-
-        face_size = self._calculate_buffer_size_for_mip(data_block, mip_level)
-
-        if compression_info and compression_info.compressed:
-            compressed_size = compression_info.mip_sizes[mip_level]
-            total_size = 0
-            for size in reversed(compression_info.mip_sizes[mip_level + 1:]):
-                total_size += size
-            buffer.seek(total_size, io.SEEK_CUR)
-            data = buffer.read(compressed_size)
-            if compressed_size != face_size * 6:
-                data = lz4_decompress(data, face_size * 6)
-            assert len(data) == face_size * 6, "Uncompressed data size != expected uncompressed size"
+    def _read_mip_data(self, layout: TextureMipLayout) -> bytes:
+        data_block = self._data_block()
+        compression_info: CompressedMip | None = data_block.extra_data.get(VTexExtraData.COMPRESSED_MIP_SIZE)
+        self._buffer.seek(self._payload_offset() + layout.offset)
+        data = self._buffer.read(layout.stored_size)
+        if len(data) != layout.stored_size:
+            raise ValueError(
+                f"Mip {layout.mip_level} is truncated: expected {layout.stored_size} bytes, got {len(data)}"
+            )
+        if compression_info is None or layout.stored_size >= layout.decoded_size:
+            if len(data) != layout.decoded_size:
+                raise ValueError(
+                    f"Mip {layout.mip_level} has {len(data)} bytes, expected {layout.decoded_size}"
+                )
+            return data
+        if compression_info.compression_method is VTexMipCompression.LZ4:
+            data = lz4_decompress(data, layout.decoded_size)
+        elif compression_info.compression_method is VTexMipCompression.ZSTD:
+            data = zstd_decompress(data, layout.decoded_size)
         else:
-            total_size = 0
-            for i in range(data_block.texture_info.mip_count - 1, mip_level, -1):
-                total_size += self._calculate_buffer_size_for_mip(data_block, i) * 6
-            buffer.seek(total_size, io.SEEK_CUR)
-            data = buffer.read(face_size * 6)
+            raise ValueError(
+                f"Mip {layout.mip_level} is smaller than its decoded size but compression is disabled"
+            )
+        if len(data) != layout.decoded_size:
+            raise ValueError(
+                f"Mip {layout.mip_level} decompressed to {len(data)} bytes, expected {layout.decoded_size}"
+            )
+        return data
 
-        face_data = data[face_size * face:face_size * face + face_size]
+    def _decode_semantics(self) -> tuple[tuple[str, ...], tuple[Diagnostic, ...]]:
+        resource_info_block = (
+            self.get_block(ResourceEditInfo, block_name="REDI")
+            or self.get_block(ResourceEditInfo2, block_name="RED2")
+        )
+        if resource_info_block is None:
+            if self.get_texture_format() in POTENTIALLY_PACKED_FORMATS:
+                diagnostic = Diagnostic(
+                    "source2.texture.edit-info-missing",
+                    "Texture edit information is stripped; packed normal, roughness, or color "
+                    "transforms cannot be safely identified",
+                    DiagnosticSeverity.WARNING,
+                    path=self._filepath.as_posix(),
+                )
+                resource_diagnostics = getattr(self, "_diagnostics", None)
+                if resource_diagnostics is not None and diagnostic not in resource_diagnostics:
+                    resource_diagnostics.append(diagnostic)
+                return ("edit-info-missing",), (diagnostic,)
+            return (), ()
 
-        pixel_format = data_block.texture_info.pixel_format
-        width = data_block.texture_info.width >> mip_level
-        height = data_block.texture_info.height >> mip_level
+        processors = {
+            spec.string.removeprefix("Texture Compiler Version ")
+            for spec in resource_info_block.special_deps
+            if spec.string.startswith("Texture Compiler Version ")
+        }
+        recognized = tuple(sorted(processors & {
+            "Image Inverse",
+            "Image NormalizeNormals",
+            "Image YCoCg Conversion",
+            "LegacySource1InvertNormals",
+            "Mip AnisoRoughness_RG",
+            "Mip HemiOctAnisoRoughness",
+            "Mip HemiOctIsoRoughness_RG_B",
+            "Mip HemiOctNormal",
+        }))
+        return recognized, ()
 
-        data = self._decompress_texture(face_data, height, pixel_format, width)
-        return data, (width, height)
+    def get_cache_identity(self, settings: TextureImportSettings | None = None) -> str:
+        settings = settings or TextureImportSettings()
+        data_block = self._data_block()
+        resolved_mip = self._resolve_mip_level(data_block.texture_info, settings.mip_level)
+        decode_semantics, _ = self._decode_semantics()
+        return settings.cache_identity(
+            resolved_mip=resolved_mip,
+            decode_semantics=decode_semantics,
+            pixel_format=data_block.texture_info.pixel_format,
+        )
 
+    @staticmethod
+    def _selected_subresources(
+            layout: TextureMipLayout,
+            settings: TextureImportSettings,
+            flags: VTexFlags,
+    ) -> tuple[tuple[int, ...], tuple[TextureSubresource, ...]]:
+        indices = []
+        descriptions = []
+        for array_layer in range(layout.array_layers):
+            for volume_slice in range(layout.depth):
+                for face in range(layout.face_count):
+                    index = (
+                        array_layer * layout.depth * layout.face_count
+                        + volume_slice * layout.face_count
+                        + face
+                    )
+                    if settings.array_layer is not None and array_layer != min(
+                            max(settings.array_layer, 0), layout.array_layers - 1):
+                        continue
+                    if settings.volume_slice is not None and volume_slice != min(
+                            max(settings.volume_slice, 0), layout.depth - 1):
+                        continue
+                    if settings.cubemap_face is not None and face != min(
+                            max(settings.cubemap_face, 0), layout.face_count - 1):
+                        continue
+                    indices.append(index)
+                    descriptions.append(TextureSubresource(
+                        array_layer=array_layer,
+                        volume_slice=volume_slice,
+                        cubemap_face=face if flags & VTexFlags.CUBE_TEXTURE else None,
+                    ))
+        return tuple(indices), tuple(descriptions)
 
-    def get_texture_data(self, mip_level: int = 0) -> tuple[npt.NDArray, tuple[int, int]]:
-        logger.info(f'Loading texture {self._filepath.as_posix()!r}')
-        info_block = None
-        for block in self._header.blocks:
-            if block.name == 'DATA':
-                info_block = block
-                break
-
-        data_block = self.get_block(TextureData, block_name='DATA')
-        if not 0 <= mip_level < data_block.texture_info.mip_count:
-            raise ValueError(f"Mip {mip_level} requested, texture has {data_block.texture_info.mip_count}")
-        buffer = self._buffer
-        buffer.seek(info_block.absolute_offset + info_block.size)
-        compression_info: Optional[CompressedMip] = data_block.extra_data.get(VTexExtraData.COMPRESSED_MIP_SIZE, None)
-
-        desired_mip_size = self._calculate_buffer_size_for_mip(data_block, mip_level)
-        if self.is_cubemap():
-            desired_mip_size *= 6
+    def get_texture_artifact(
+            self,
+            settings: TextureImportSettings | None = None,
+    ) -> TextureArtifact:
+        settings = settings or TextureImportSettings()
+        data_block = self._data_block()
         texture_info = data_block.texture_info
-        if compression_info and compression_info.compressed:
-            compressed_size = compression_info.mip_sizes[mip_level]
-            total_size = 0
-            for size in reversed(compression_info.mip_sizes[mip_level + 1:]):
-                total_size += size
-            buffer.seek(total_size, io.SEEK_CUR)
-            data = buffer.read(compressed_size)
-            if compressed_size < desired_mip_size:
-                data = lz4_decompress(data, desired_mip_size)
-            assert len(data) == desired_mip_size, "Uncompressed data size != expected uncompressed size"
-        else:
-            total_size = 0
-            for i in range(texture_info.mip_count - 1, mip_level, -1):
-                total_size += self._calculate_buffer_size_for_mip(data_block, i)
-            if self.is_cubemap():
-                total_size *= 6
-            buffer.seek(total_size, io.SEEK_CUR)
-            data = buffer.read(desired_mip_size)
+        layout = self.get_mip_layout(settings.mip_level)
+        decode_semantics, diagnostics = self._decode_semantics()
+        cache_identity = settings.cache_identity(
+            resolved_mip=layout.mip_level,
+            decode_semantics=decode_semantics,
+            pixel_format=texture_info.pixel_format,
+        )
+        indices, subresources = self._selected_subresources(layout, settings, texture_info.flags)
 
-        pixel_format = texture_info.pixel_format
-        width = max(texture_info.width >> mip_level, 1)
-        height = max(texture_info.height >> mip_level, 1)
-        if self.is_cubemap():
-            height *= 6
-        if texture_info.depth > 1:
-            height *= texture_info.depth
-        data = self._decompress_texture(data, height, pixel_format, width)
-        return data, (width, height)
+        encoded = self.get_encoded_image()
+        if encoded is not None:
+            encoded_data, encoded_extension = encoded
+            if settings.invert_y:
+                diagnostics += (Diagnostic(
+                    "source2.texture.embedded-invert-unsupported",
+                    "Green-channel inversion cannot be applied without decoding the embedded image",
+                    DiagnosticSeverity.WARNING,
+                    path=self._filepath.as_posix(),
+                ),)
+            for diagnostic in diagnostics:
+                logger.warning("%s: %s", diagnostic.code, diagnostic.message)
+            return TextureArtifact(
+                settings,
+                settings.mip_level,
+                layout.mip_level,
+                layout.width,
+                layout.height,
+                layout.depth,
+                layout.array_layers,
+                layout.face_count,
+                texture_info.pixel_format,
+                self.is_hdr(),
+                cache_identity,
+                data_block.metadata,
+                subresources,
+                decode_semantics,
+                diagnostics,
+                encoded_data=encoded_data,
+                encoded_extension=encoded_extension,
+            )
+
+        cache_key = (layout.mip_level, settings.decode_packed_channels, decode_semantics)
+        pixel_data = self._cached_mips.get(cache_key)
+        if pixel_data is None:
+            data = self._read_mip_data(layout)
+            actual_data_size = (
+                self._calculate_slice_size(texture_info.pixel_format, layout.width, layout.height)
+                * layout.subresource_count
+            )
+            data = data[:actual_data_size]
+            pixel_data = self._decompress_texture(
+                data,
+                layout.height * layout.subresource_count,
+                texture_info.pixel_format,
+                layout.width,
+                settings.decode_packed_channels,
+            ).reshape(layout.subresource_count, layout.height, layout.width, -1)
+            if len(self._cached_mips) >= MAX_CACHED_MIPS:
+                self._cached_mips.pop(next(iter(self._cached_mips)))
+            self._cached_mips[cache_key] = pixel_data
+
+        selected_pixels = pixel_data[np.asarray(indices, dtype=np.intp)]
+        if settings.invert_y and not self.is_hdr():
+            selected_pixels = selected_pixels.copy()
+            selected_pixels[..., 1] = 1 - selected_pixels[..., 1]
+
+        for diagnostic in diagnostics:
+            logger.warning("%s: %s", diagnostic.code, diagnostic.message)
+        return TextureArtifact(
+            settings,
+            settings.mip_level,
+            layout.mip_level,
+            layout.width,
+            layout.height,
+            layout.depth,
+            layout.array_layers,
+            layout.face_count,
+            texture_info.pixel_format,
+            self.is_hdr(),
+            cache_identity,
+            data_block.metadata,
+            subresources,
+            decode_semantics,
+            diagnostics,
+            selected_pixels,
+        )
+
+    def get_texture_data(
+            self,
+            mip_level: int = 0,
+            *,
+            settings: TextureImportSettings | None = None,
+    ) -> tuple[npt.NDArray, tuple[int, int]]:
+        logger.info(f'Loading texture {self._filepath.as_posix()!r}')
+        if settings is None:
+            settings = TextureImportSettings(mip_level=mip_level)
+        artifact = self.get_texture_artifact(settings)
+        pixels = artifact.image_pixels()
+        if pixels is None:
+            raise ValueError(f"{artifact.pixel_format!r} embeds an image file, use get_encoded_image()")
+        return pixels, (artifact.width, artifact.height * artifact.subresource_count)
 
 
-    def _decompress_texture(self, data: bytes, height, pixel_format, width)-> npt.NDArray:
+    def _decompress_texture(
+            self,
+            data: bytes,
+            height,
+            pixel_format,
+            width,
+            decode_packed_channels: bool = True,
+    ) -> npt.NDArray:
         resource_info_block = (self.get_block(ResourceEditInfo, block_name="REDI") or
                                self.get_block(ResourceEditInfo2, block_name="RED2"))
 
@@ -280,7 +550,7 @@ class CompiledTextureResource(CompiledResource):
         hemi_oct_aniso_roughness = False
         y_co_cg = False
         hemi_oct_normal = False
-        if resource_info_block:
+        if decode_packed_channels and resource_info_block:
             for spec in resource_info_block.special_deps:
                 if spec.string == "Texture Compiler Version Mip HemiOctIsoRoughness_RG_B":
                     hemi_oct_aniso_roughness = True
@@ -303,15 +573,15 @@ class CompiledTextureResource(CompiledResource):
                 invert = normalize = hemi_oct_aniso_roughness = hemi_oct_normal = False
 
         if pixel_format == VTexFormat.RGBA8888:
-            pixel_data = np.frombuffer(data, np.uint8).reshape((width, height, 4)).astype(np.float32) / 255
+            pixel_data = np.frombuffer(data, np.uint8).reshape((height, width, 4)).astype(np.float32) / 255
         elif pixel_format == VTexFormat.BC6H:
             t_data = decode_texture(data, width, height, "BC6H")
-            tmp = np.frombuffer(t_data, np.float16, width * height * 3).reshape((width, height, 3))
-            pixel_data = np.ones((width, height, 4), dtype=np.float32)
+            tmp = np.frombuffer(t_data, np.float16, width * height * 3).reshape((height, width, 3))
+            pixel_data = np.ones((height, width, 4), dtype=np.float32)
             pixel_data[:, :, :3] = tmp
         elif pixel_format == VTexFormat.BC7:
             pixel_data = decode_texture(data, width, height, "BC7")
-            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((width, height, 4))
+            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((height, width, 4))
             output = pixel_data.copy()
             del pixel_data
             if hemi_oct_aniso_roughness:
@@ -324,15 +594,15 @@ class CompiledTextureResource(CompiledResource):
             pixel_data = output.astype(np.float32) / 255
         elif pixel_format == VTexFormat.ATI1N:
             pixel_data = decode_texture(data, width, height, "ATI1N")
-            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((width, height, 1)).astype(np.float32) / 255
-            output = np.zeros((width, height, 4), dtype=np.float32)
+            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((height, width, 1)).astype(np.float32) / 255
+            output = np.zeros((height, width, 4), dtype=np.float32)
             output[..., 0] = pixel_data[..., 0]
             output[..., 3] = 1
             pixel_data = output
         elif pixel_format == VTexFormat.ATI2N:
             pixel_data = decode_texture(data, width, height, "ATI2N")
-            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((width, height, 2))
-            output = np.zeros((width, height, 4), dtype=np.uint8)
+            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((height, width, 2))
+            output = np.zeros((height, width, 4), dtype=np.uint8)
             output[..., :2] = pixel_data[..., :2]
             output[..., 3] = 255
             pixel_data = output
@@ -346,10 +616,10 @@ class CompiledTextureResource(CompiledResource):
             pixel_data = pixel_data.astype(np.float32) / 255
         elif pixel_format == VTexFormat.DXT1:
             pixel_data = decode_texture(data, width, height, "DXT1")
-            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((width, height, 4)).astype(np.float32) / 255
+            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((height, width, 4)).astype(np.float32) / 255
         elif pixel_format == VTexFormat.DXT5:
             pixel_data = decode_texture(data, width, height, "DXT5")
-            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((width, height, 4))
+            pixel_data = np.frombuffer(pixel_data, np.uint8).reshape((height, width, 4))
             output = pixel_data.copy()
             if y_co_cg:
                 output = self._y_co_cg(output)
@@ -359,17 +629,17 @@ class CompiledTextureResource(CompiledResource):
                 else:
                     output = self._normalize(output)
             if invert:
-                output[:, :, 1] = 1 - output[:, :, 1]
+                output[:, :, 1] = np.invert(output[:, :, 1])
 
             pixel_data = output
             pixel_data = pixel_data.astype(np.float32) / 255
         elif pixel_format == VTexFormat.RGBA16161616F:
-            pixel_data = np.frombuffer(data, np.float16, width * height * 4).astype(np.float32).reshape((width, height, 4))
+            pixel_data = np.frombuffer(data, np.float16, width * height * 4).astype(np.float32).reshape((height, width, 4))
         elif pixel_format == VTexFormat.I8:
             r = np.frombuffer(data, np.uint8)[:, None]
             pixel_data = np.repeat(r, 4, axis=1).astype(np.float32) / 255
             pixel_data[:, 3] = 1
-            pixel_data.reshape((width, height, 4))
+            pixel_data = pixel_data.reshape((height, width, 4))
         elif pixel_format in (VTexFormat.ETC2, VTexFormat.ETC2_EAC):
             block_size = 8 if pixel_format == VTexFormat.ETC2 else 16
             blocks = np.frombuffer(data, np.uint8).reshape(-1, block_size)
@@ -386,28 +656,28 @@ class CompiledTextureResource(CompiledResource):
                                                             width, height)
             pixel_data[..., 3] = 1
         elif pixel_format == VTexFormat.BGRA8888:
-            pixel_data = np.frombuffer(data, np.uint8, width * height * 4).reshape((width, height, 4))
+            pixel_data = np.frombuffer(data, np.uint8, width * height * 4).reshape((height, width, 4))
             pixel_data = pixel_data[..., [2, 1, 0, 3]].astype(np.float32) / 255
         elif pixel_format == VTexFormat.IA88:
-            ia = np.frombuffer(data, np.uint8, width * height * 2).reshape((width, height, 2)).astype(np.float32) / 255
-            pixel_data = np.empty((width, height, 4), np.float32)
+            ia = np.frombuffer(data, np.uint8, width * height * 2).reshape((height, width, 2)).astype(np.float32) / 255
+            pixel_data = np.empty((height, width, 4), np.float32)
             pixel_data[..., :3] = ia[..., :1]
             pixel_data[..., 3] = ia[..., 1]
         elif pixel_format == VTexFormat.A8:
-            pixel_data = np.ones((width, height, 4), np.float32)
-            pixel_data[..., 3] = np.frombuffer(data, np.uint8, width * height).reshape((width, height)) / 255
+            pixel_data = np.ones((height, width, 4), np.float32)
+            pixel_data[..., 3] = np.frombuffer(data, np.uint8, width * height).reshape((height, width)) / 255
         elif pixel_format == VTexFormat.R32_UINT:
-            pixel_data = np.zeros((width, height, 4), np.float32)
-            values = np.frombuffer(data, np.uint32, width * height).reshape((width, height))
+            pixel_data = np.zeros((height, width, 4), np.float32)
+            values = np.frombuffer(data, np.uint32, width * height).reshape((height, width))
             pixel_data[..., 0] = np.minimum(values, 255) / 255
             pixel_data[..., 3] = 1
         elif pixel_format in UNCOMPRESSED_FORMATS:
             dtype, channels, divisor = UNCOMPRESSED_FORMATS[pixel_format]
-            values = np.frombuffer(data, dtype, width * height * channels).reshape((width, height, channels))
+            values = np.frombuffer(data, dtype, width * height * channels).reshape((height, width, channels))
             values = values.astype(np.float32)
             if divisor is not None:
                 values /= divisor
-            pixel_data = np.zeros((width, height, 4), np.float32)
+            pixel_data = np.zeros((height, width, 4), np.float32)
             pixel_data[..., :channels] = values
             if channels < 4:
                 pixel_data[..., 3] = 1

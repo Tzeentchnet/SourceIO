@@ -82,6 +82,13 @@ class VTexExtraData(IntEnum):
     UNKNOWN = 0
     FALLBACK_BITS = 1
     SHEET = 2
-    FILL_TO_POWER_OF_TWO = 3
+    METADATA = 3
+    FILL_TO_POWER_OF_TWO = METADATA
     COMPRESSED_MIP_SIZE = 4
     CUBEMAP_RADIANCE_SH = 5
+
+
+class VTexMipCompression(IntEnum):
+    NONE = 0
+    LZ4 = 1
+    ZSTD = 2

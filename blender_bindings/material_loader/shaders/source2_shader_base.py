@@ -5,7 +5,6 @@ import numpy as np
 from ..shader_base import (ShaderBase, Nodes, ExtraMaterialParameters,
                                                                    MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT)
 from ...source2.vtex_loader import import_texture
-from ...utils.texture_utils import check_texture_cache
 from ....library.shared.content_manager import ContentManager
 from ....library.source2.blocks.texture_data import TextureData
 from ....library.source2.keyvalues3.types import NullObject
@@ -138,6 +137,7 @@ class Source2ShaderBase(ShaderBase):
         self.content_manager = content_manager
         self.load_source2_nodes()
         self._material_resource = source2_material
+        self.texture_import_settings = source2_material.texture_import_settings
         self.unused_textures = set(self._material_resource.get_used_textures().keys())
         # Paths loaded by any means; shaders that read texture properties directly never touch unused_textures.
         self.loaded_textures: set[str | int] = set()
@@ -273,11 +273,10 @@ class Source2ShaderBase(ShaderBase):
 
     def load_texture(self, texture_resource: Optional[CompiledTextureResource], texture_path, invert_y: bool = False):
         if texture_resource is not None:
-            texture = check_texture_cache(texture_path)
-            if texture is not None:
-                return texture
-            texture = import_texture(texture_resource, texture_path, invert_y)
-            return texture
+            settings = self.texture_import_settings.with_invert_y(
+                self.texture_import_settings.invert_y or invert_y
+            )
+            return import_texture(texture_resource, texture_path, settings=settings)
         return None
 
     def create_transform(self, uv_slot, scale: tuple[float, ...], offset: tuple[float, ...],

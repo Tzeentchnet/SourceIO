@@ -4,10 +4,13 @@ Ported from ValveResourceFormat (MIT, https://github.com/ValveResourceFormat/Val
 ``ResourceTypes/ModelAnimation/SegmentDecoders`` and ``SegmentHelpers.cs``. Unlike VRF, which decodes
 one frame at a time, every decoder here returns all frames of a segment at once as NumPy arrays.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
+from typing import Any, Mapping
 
 import numpy as np
+
+from ..interfaces import Diagnostic
 
 
 class ChannelAttribute(IntEnum):
@@ -71,6 +74,11 @@ class AnimationSegment:
     data: bytes
     wanted_elements: np.ndarray  # element index inside the segment, per target
     targets: np.ndarray  # bone (or flex controller) index, per target
+    target_names: tuple[str, ...] = ()
+    channel_class: str = ""
+    variable_name: str = ""
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    diagnostics: tuple[Diagnostic, ...] = ()
 
     @property
     def is_static(self) -> bool:
@@ -79,6 +87,10 @@ class AnimationSegment:
     @property
     def components(self) -> int:
         return _DECODERS[self.decoder][1]
+
+    @property
+    def channel_key(self) -> tuple[ChannelAttribute, str, str, tuple[str, ...], int]:
+        return self.attribute, self.channel_class, self.variable_name, self.target_names, self.components
 
     def decode(self, frame_count: int) -> np.ndarray:
         """Decode the targets for ``frame_count`` frames of the block, as ``(frames, targets, components)``.
@@ -93,12 +105,21 @@ class AnimationSegment:
 
         if self.decoder == "CCompressedDeltaVector3":
             base_size = count * 12
+            if len(data) < base_size:
+                raise ValueError(
+                    f"{self.decoder} segment needs {base_size} base bytes, got {len(data)}"
+                )
             base = np.frombuffer(data, dtype="<f4", count=count * 3).reshape(count, 3)
             deltas = self._frames(data[base_size:], 6, frame_count)
             deltas = np.frombuffer(deltas, dtype="<f2").reshape(-1, count, 3).astype(np.float32)
             return base[wanted][None] + deltas[:, wanted]
 
         if static:
+            required = count * element_size
+            if len(data) < required:
+                raise ValueError(
+                    f"{self.decoder} segment needs {required} bytes, got {len(data)}"
+                )
             raw = np.frombuffer(data, dtype=np.uint8, count=count * element_size).reshape(1, count, element_size)
         else:
             raw = np.frombuffer(self._frames(data, element_size, frame_count), dtype=np.uint8)
@@ -118,6 +139,21 @@ class AnimationSegment:
             return b""
         available = min(frame_count, len(data) // frame_size)
         return data[:available * frame_size]
+
+
+@dataclass(slots=True)
+class OpaqueAnimationSegment:
+    """A segment that cannot be decoded but remains available for inspection."""
+
+    decoder: str
+    attribute: ChannelAttribute
+    channel_class: str
+    variable_name: str
+    element_count: int
+    elements: np.ndarray
+    data: bytes
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    diagnostics: tuple[Diagnostic, ...] = ()
 
 
 def parse_segment_header(container: bytes) -> tuple[int, int, np.ndarray, bytes]:

@@ -11,10 +11,14 @@ so :meth:`ClipAnimation.decode` returns bone-local transforms in the model skele
 same as :meth:`SequenceAnimation.decode`.
 """
 from dataclasses import dataclass, field
+from typing import Any, Mapping
 
 import numpy as np
 
-from .animation import DecodedAnimation, Skeleton, _quat_multiply_xyzw
+from .animation import DecodedAnimation, DecodedDataChannel, Skeleton, _quat_multiply_xyzw
+from .document import _plain_value
+from .segments import ChannelAttribute
+from ..interfaces import Diagnostic, DiagnosticSeverity
 
 _QUAT_RANGE_MIN = np.float32(-1.0 / np.sqrt(2.0))
 _QUAT_RANGE_LENGTH = np.float32(2.0 / np.sqrt(2.0))
@@ -89,16 +93,48 @@ class ClipEvent:
     start: float
     duration: float
     label: str = ''
+    class_name: str = ''
+    sync_id: str = ''
+    attachment: str = ''
+    sound_position: str = ''
+    primary_id: str = ''
+    secondary_id: str = ''
+    curve_id: str = ''
+    material_attribute: str = ''
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    start_seconds: float = 0.0
+    duration_seconds: float = 0.0
 
     @classmethod
-    def from_kv(cls, data) -> 'ClipEvent':
-        kind = str(data.get('_class', '')).removeprefix('CNm').removesuffix('Event') or 'Event'
+    def from_kv(cls, data, clip_duration: float = 0.0) -> 'ClipEvent':
+        class_name = str(data.get('_class', ''))
+        kind = class_name.removeprefix('CNm').removesuffix('Event') or 'Event'
         label = str(data.get(_EVENT_LABELS.get(kind, ''), '') or '')
         if kind == 'Particle':
             label = label.replace('\\', '/').rsplit('/', 1)[-1].removesuffix('.vpcf')
-        elif kind == 'ID' and (secondary := str(data.get('m_secondaryID', '') or '')):
+        secondary = str(data.get('m_secondaryID', '') or '')
+        if kind == 'ID' and secondary:
             label = f'{label}/{secondary}'
-        return cls(kind, _event_time(data.get('m_flStartTime')), _event_time(data.get('m_flDuration')), label)
+        start = _event_time(data.get('m_flStartTime'))
+        duration = _event_time(data.get('m_flDuration'))
+        primary = str(data.get('m_ID', '') or '')
+        return cls(
+            kind,
+            start,
+            duration,
+            label,
+            class_name,
+            str(data.get('m_syncID', '') or ''),
+            str(data.get('m_attachmentName', '') or ''),
+            str(data.get('m_position', '') or ''),
+            primary,
+            secondary,
+            primary if kind == 'FloatCurve' else '',
+            str(data.get('m_attributeName', '') or ''),
+            _plain_value(data),
+            start * clip_duration,
+            duration * clip_duration,
+        )
 
     @property
     def marker_name(self) -> str:
@@ -107,6 +143,99 @@ class ClipEvent:
     def frame(self, frame_count: int) -> int:
         """The nearest frame to the event's start."""
         return round(min(max(self.start, 0.0), 1.0) * max(frame_count - 1, 0))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            'kind': self.kind,
+            'class_name': self.class_name,
+            'start': self.start,
+            'duration': self.duration,
+            'start_seconds': self.start_seconds,
+            'duration_seconds': self.duration_seconds,
+            'label': self.label,
+            'sync_id': self.sync_id,
+            'attachment': self.attachment,
+            'sound_position': self.sound_position,
+            'primary_id': self.primary_id,
+            'secondary_id': self.secondary_id,
+            'curve_id': self.curve_id,
+            'material_attribute': self.material_attribute,
+            'payload': self.payload,
+        }
+
+
+@dataclass(slots=True)
+class AnimationFloatCurve:
+    name: str
+    values: np.ndarray
+    static: bool
+    range_start: float
+    range_length: float
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+
+def _decode_float_curves(data, frame_count: int, clip_name: str) \
+        -> tuple[list[AnimationFloatCurve], tuple[Diagnostic, ...]]:
+    raw_identifiers = data.get('m_floatCurveIDs', [])
+    identifiers = [str(identifier) for identifier in ([] if raw_identifiers is None else raw_identifiers)]
+    if not identifiers:
+        return [], ()
+    raw_definitions = data.get('m_floatCurveDefs', [])
+    raw_samples = data.get('m_compressedFloatCurveData', [])
+    raw_offsets = data.get('m_compressedFloatCurveOffsets', [])
+    definitions = list([] if raw_definitions is None else raw_definitions)
+    if isinstance(raw_samples, (bytes, bytearray, memoryview)):
+        raw_samples = bytes(raw_samples)
+        samples = np.frombuffer(raw_samples[:len(raw_samples) // 2 * 2], dtype='<u2')
+    else:
+        samples = np.asarray([] if raw_samples is None else raw_samples, dtype=np.uint16).reshape(-1)
+    if isinstance(raw_offsets, (bytes, bytearray, memoryview)):
+        raw_offsets = bytes(raw_offsets)
+        offsets = np.frombuffer(raw_offsets[:len(raw_offsets) // 4 * 4], dtype='<u4').astype(np.int64)
+    else:
+        offsets = np.asarray([] if raw_offsets is None else raw_offsets, dtype=np.int64).reshape(-1)
+    diagnostics: list[Diagnostic] = []
+    curves = []
+    dynamic_rank = 0
+
+    for curve_index, identifier in enumerate(identifiers):
+        definition = definitions[curve_index] if curve_index < len(definitions) else {}
+        value_range = definition.get('m_range', {}) if hasattr(definition, 'get') else {}
+        start = float(value_range.get('m_flRangeStart', 0.0))
+        length = float(value_range.get('m_flRangeLength', 0.0))
+        static = bool(definition.get('m_bIsStatic', False)) if hasattr(definition, 'get') else True
+        values = np.full(frame_count, start, dtype=np.float32)
+        if not static:
+            decodable_frames = min(frame_count, len(offsets))
+            sample_indices = offsets[:decodable_frames] + dynamic_rank
+            valid = (sample_indices >= 0) & (sample_indices < len(samples))
+            if np.any(valid):
+                values[np.nonzero(valid)[0]] = _decode_unorm(
+                    samples[sample_indices[valid]], start, length
+                )
+            if decodable_frames < frame_count or not np.all(valid):
+                diagnostics.append(Diagnostic(
+                    'animation.float_curve.truncated',
+                    f"Float curve {identifier!r} in {clip_name!r} has missing samples",
+                    DiagnosticSeverity.WARNING,
+                    details={
+                        'clip': clip_name,
+                        'curve': identifier,
+                        'frames': frame_count,
+                        'offset_count': len(offsets),
+                        'sample_count': len(samples),
+                    },
+                ))
+            dynamic_rank += 1
+        curves.append(AnimationFloatCurve(
+            identifier,
+            values,
+            static,
+            start,
+            length,
+            _plain_value(definition),
+        ))
+    return curves, tuple(diagnostics)
 
 
 @dataclass(slots=True)
@@ -128,6 +257,8 @@ class AnimationClip:
     root_motion: np.ndarray | None = None  # (frames, 4, 4) or None when the clip has none
     secondary: list['AnimationClip'] = field(default_factory=list)
     events: list[ClipEvent] = field(default_factory=list)
+    float_curves: list[AnimationFloatCurve] = field(default_factory=list)
+    diagnostics: tuple[Diagnostic, ...] = ()
 
     @classmethod
     def from_kv(cls, data, name: str) -> 'AnimationClip':
@@ -159,7 +290,8 @@ class AnimationClip:
                    rotation_static, translation_static, scale_static, constant_rotations,
                    translation_ranges, scale_ranges, pose_data, pose_offsets, root_motion)
         clip.secondary = [cls.from_kv(secondary, name) for secondary in data.get('m_secondaryAnimations', []) or []]
-        clip.events = [ClipEvent.from_kv(event) for event in data.get('m_events', []) or []]
+        clip.events = [ClipEvent.from_kv(event, clip.duration) for event in data.get('m_events', []) or []]
+        clip.float_curves, clip.diagnostics = _decode_float_curves(data, clip.frame_count, name)
         return clip
 
     @property
@@ -316,13 +448,23 @@ class ClipAnimation:
     Has the attributes of :class:`SequenceAnimation` that importers use.
     """
 
-    def __init__(self, clip: AnimationClip, source: Skeleton, path: str = '', events: list[ClipEvent] | None = None):
+    def __init__(
+            self,
+            clip: AnimationClip,
+            source: Skeleton,
+            path: str = '',
+            events: list[ClipEvent] | None = None,
+            float_curves: list[AnimationFloatCurve] | None = None,
+            diagnostics: tuple[Diagnostic, ...] | None = None,
+    ):
         self.clip = clip
         self.source = source
         self.path = path or clip.name
         self.name = clip.name
         # Only a main clip has events, so a secondary animation is given its main clip's.
         self.events = clip.events if events is None else events
+        self.float_curves = clip.float_curves if float_curves is None else float_curves
+        self.diagnostics = clip.diagnostics if diagnostics is None else diagnostics
         self.fps = clip.fps
         self.frame_count = clip.frame_count
         self.looping = False
@@ -388,6 +530,18 @@ class ClipAnimation:
         result = DecodedAnimation(positions.astype(np.float32), rotations[..., [3, 0, 1, 2]].astype(np.float32),
                                   scales.astype(np.float32), mapped.copy(), mapped.copy(),
                                   np.any(np.abs(scales - 1) > 1e-4, axis=0))
+        if self.float_curves:
+            curve_values = np.stack([curve.values for curve in self.float_curves], axis=1)
+            result.data_channels = (DecodedDataChannel(
+                ChannelAttribute.USER,
+                "NmFloatCurve",
+                "value",
+                tuple(curve.name for curve in self.float_curves),
+                curve_values[:, :, None],
+                np.ones(len(self.float_curves), dtype=bool),
+                {"curve_definitions": [curve.metadata for curve in self.float_curves]},
+            ),)
+        result.diagnostics = self.diagnostics
         movement = self.clip.root_motion_movement()
         if movement is not None and not self.delta:
             result.movement_positions, result.movement_angles = movement

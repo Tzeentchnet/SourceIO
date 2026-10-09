@@ -15,16 +15,24 @@ VRF ``AnimationGraphLoader``) and loaded separately by :func:`load_graph_clips`,
 graphs reach thousands of them.
 """
 from fnmatch import fnmatchcase
+from typing import Any
 
 from ...shared.content_manager import ContentManager
 from .animation import (SequenceAnimation, Skeleton, animations_from_data,
                                                           animations_from_sequence_data)
 from .clip import AnimationClip, ClipAnimation, nm_skeleton
+from .document import (ANIMATION_CAPABILITIES, ANIMATION_DOCUMENT_CAPABILITIES,
+                       AnimationArtifact, AnimationDocument, AnimationImportOptions,
+                       normalize_animation_document, resource_kind_from_path)
 from ..blocks.agrp_block import AgrpBlock
 from ..blocks.aseq_block import AseqBlock
 from ..blocks.kv3_block import KVBlock, custom_type_kvblock
+from ..blocks.morph_block import MorphBlock
 from ..blocks.resource_external_reference_list import ResourceExternalReferenceList
 from ..compiled_resource import CompiledResource, DATA_BLOCK
+from ..interfaces import (Diagnostic, DiagnosticSeverity, ResourceKind, ResourceRef,
+                          ResourceResolver)
+from ...utils import MemoryBuffer
 from ...utils.tiny_path import TinyPath
 from ....logger import SourceLogMan
 
@@ -32,6 +40,52 @@ logger = SourceLogMan().get_logger("Source2::Animation")
 
 AnimationDataBlock = custom_type_kvblock("AnimationResourceData_t")
 ModelDataBlock = custom_type_kvblock("PermModelData_t")
+
+
+class MissingAnimationDecodeKeyError(ValueError):
+    """A standalone VANIM cannot be bound without its VAGRP decode key."""
+
+
+def register_animation_resources(registry):
+    """Register animation resource capabilities with a shared ``ResourceRegistry``."""
+    specifications = (
+        (ResourceKind.ANIMATION, ('.vanim_c', '.vnmskel_c'), ANIMATION_CAPABILITIES,
+         ('AnimationResourceData_t',)),
+        (ResourceKind.ANIMATION_GROUP, ('.vagrp_c',), ANIMATION_CAPABILITIES,
+         ('AnimationGroupResourceData_t',)),
+        (ResourceKind.ANIMATION_SEQUENCE, ('.vseq_c',), ANIMATION_CAPABILITIES,
+         ('SequenceGroupResourceData_t',)),
+        (ResourceKind.ANIMATION_GRAPH,
+          ('.vanmgrph_c', '.vnmgraph_c', '.vnmvar_c'),
+         ANIMATION_DOCUMENT_CAPABILITIES, ()),
+        (ResourceKind.ANIMATION_CLIP, ('.vnmclip_c',), ANIMATION_CAPABILITIES, ()),
+    )
+    registrations = []
+    for kind, extensions, capabilities, ntro_structs in specifications:
+        existing = tuple(
+            registration for registration in registry.registrations
+            if registration.kind is kind
+            and set(extensions).intersection(registration.extensions)
+        )
+        registered_extensions = {
+            extension
+            for registration in existing
+            for extension in registration.extensions
+        }
+        missing_extensions = tuple(
+            extension for extension in extensions if extension not in registered_extensions
+        )
+        registrations.extend(existing)
+        if not missing_extensions:
+            continue
+        registrations.append(registry.register(
+            kind,
+            CompiledResource,
+            extensions=missing_extensions,
+            capabilities=capabilities,
+            ntro_structs=ntro_structs,
+        ))
+    return tuple(registrations)
 
 
 def _compiled_path(path: str) -> TinyPath:
@@ -60,7 +114,7 @@ def _resource_references(resource: CompiledResource, values, extension: str) -> 
         references = resource.get_block(ResourceExternalReferenceList, block_name='RERL') or []
         for reference in references:
             name = str(reference.name)
-            if name.endswith(extension) and name not in paths:
+            if name.casefold().removesuffix('_c').endswith(extension.casefold()) and name not in paths:
                 paths.append(name)
     return paths
 
@@ -72,7 +126,13 @@ def model_skeleton(model_resource: CompiledResource) -> Skeleton | None:
     return Skeleton.from_model_data(data)
 
 
-def embedded_animations(model_resource: CompiledResource, skeleton: Skeleton) -> list[SequenceAnimation]:
+def model_morph_set(model_resource: CompiledResource) -> MorphBlock | None:
+    """The model-local morph rig used to turn animated controllers into shape weights."""
+    return model_resource.get_block(MorphBlock, block_name='MRPH') if model_resource.has_block('MRPH') else None
+
+
+def embedded_animations(model_resource: CompiledResource, skeleton: Skeleton,
+                        morph_set: MorphBlock | None = None) -> list[SequenceAnimation]:
     """Animations stored inside the model file (VRF EmbeddedSequenceGroup)."""
     ctrl = model_resource.get_block(KVBlock, block_name='CTRL')
     embedded = ctrl.get('embedded_animation') if ctrl else None
@@ -92,21 +152,31 @@ def embedded_animations(model_resource: CompiledResource, skeleton: Skeleton) ->
     if not group or not animation_data or not group.get('m_decodeKey'):
         return []
     decode_key = group['m_decodeKey']
+    morph_set = morph_set or model_morph_set(model_resource)
+    flex_names = morph_set.controller_names if morph_set else ()
     if sequence_data:
-        return animations_from_sequence_data(sequence_data, animation_data, decode_key, skeleton)
-    return animations_from_data(animation_data, decode_key, skeleton)
+        return animations_from_sequence_data(
+            sequence_data, animation_data, decode_key, skeleton, flex_names, morph_set
+        )
+    return animations_from_data(animation_data, decode_key, skeleton, flex_names, morph_set)
 
 
 def animation_group_animations(group_resource: CompiledResource, content_manager: ContentManager,
-                               skeleton: Skeleton) -> list[SequenceAnimation]:
+                               skeleton: Skeleton, flex_names=(),
+                               morph_set: MorphBlock | None = None) -> list[SequenceAnimation]:
     """Animations of a ``.vagrp_c`` (VRF AnimationGroupLoader)."""
     group = group_resource.get_block(AgrpBlock, block_id=DATA_BLOCK)
     if not group or not group.get('m_decodeKey'):
         return []
     decode_key = group['m_decodeKey']
     if group_resource.has_block('ANIM'):
-        return animations_from_data(group_resource.get_block(AnimationDataBlock, block_name='ANIM'), decode_key,
-                                    skeleton)
+        return animations_from_data(
+            group_resource.get_block(AnimationDataBlock, block_name='ANIM'),
+            decode_key,
+            skeleton,
+            flex_names,
+            morph_set,
+        )
 
     animations = []
     for animation_path in _resource_references(group_resource, group.get('m_localHAnimArray'), '.vanim'):
@@ -115,18 +185,23 @@ def animation_group_animations(group_resource: CompiledResource, content_manager
             continue
         animation_data = animation_resource.get_block(AnimationDataBlock, block_id=DATA_BLOCK)
         if animation_data:
-            animations.extend(animations_from_data(animation_data, decode_key, skeleton))
+            animations.extend(animations_from_data(
+                animation_data, decode_key, skeleton, flex_names, morph_set
+            ))
     return animations
 
 
 def referenced_group_animations(model_resource: CompiledResource, content_manager: ContentManager,
-                                skeleton: Skeleton) -> list[SequenceAnimation]:
+                                skeleton: Skeleton, flex_names=(),
+                                morph_set: MorphBlock | None = None) -> list[SequenceAnimation]:
     data = model_resource.get_block(ModelDataBlock, block_id=DATA_BLOCK)
     animations = []
     for group_path in _resource_references(model_resource, data.get('m_refAnimGroups') if data else None, '.vagrp'):
         group_resource = _load_resource(content_manager, group_path)
         if group_resource is not None:
-            animations.extend(animation_group_animations(group_resource, content_manager, skeleton))
+            animations.extend(animation_group_animations(
+                group_resource, content_manager, skeleton, flex_names, morph_set
+            ))
     return animations
 
 
@@ -136,8 +211,12 @@ def load_model_animations(model_resource: CompiledResource, content_manager: Con
     skeleton = skeleton or model_skeleton(model_resource)
     if skeleton is None or len(skeleton) == 0:
         return []
-    animations = embedded_animations(model_resource, skeleton)
-    animations.extend(referenced_group_animations(model_resource, content_manager, skeleton))
+    morph_set = model_morph_set(model_resource)
+    flex_names = morph_set.controller_names if morph_set else ()
+    animations = embedded_animations(model_resource, skeleton, morph_set)
+    animations.extend(referenced_group_animations(
+        model_resource, content_manager, skeleton, flex_names, morph_set
+    ))
 
     data = model_resource.get_block(ModelDataBlock, block_id=DATA_BLOCK)
     for model_path in _resource_references(model_resource, data.get('m_refAnimIncludeModels') if data else None,
@@ -145,9 +224,180 @@ def load_model_animations(model_resource: CompiledResource, content_manager: Con
         included = _load_resource(content_manager, model_path)
         if included is None:
             continue
-        animations.extend(embedded_animations(included, skeleton))
-        animations.extend(referenced_group_animations(included, content_manager, skeleton))
+        animations.extend(embedded_animations(included, skeleton, morph_set))
+        animations.extend(referenced_group_animations(
+            included, content_manager, skeleton, flex_names, morph_set
+        ))
     return animations
+
+
+def animation_group_decode_key(group_resource: CompiledResource):
+    group = group_resource.get_block(AgrpBlock, block_id=DATA_BLOCK)
+    return group.get('m_decodeKey') if group else None
+
+
+def animation_group_references(group_resource: CompiledResource) -> tuple[str, ...]:
+    group = group_resource.get_block(AgrpBlock, block_id=DATA_BLOCK)
+    if not group:
+        return ()
+    return tuple(_resource_references(
+        group_resource, group.get('m_localHAnimArray'), '.vanim'
+    ))
+
+
+def standalone_animation_animations(
+        animation_resource: CompiledResource,
+        decode_key,
+        skeleton: Skeleton,
+        *,
+        flex_names=(),
+        morph_set: MorphBlock | None = None,
+) -> list[SequenceAnimation]:
+    """Decode a VANIM with the decode key supplied by its owning VAGRP."""
+    if not decode_key:
+        raise MissingAnimationDecodeKeyError(
+            f"{animation_resource.name}: standalone .vanim_c requires its owning .vagrp_c decode key"
+        )
+    animation_data = animation_resource.get_block(AnimationDataBlock, block_id=DATA_BLOCK)
+    if not animation_data:
+        return []
+    return animations_from_data(
+        animation_data, decode_key, skeleton, flex_names, morph_set
+    )
+
+
+def animation_document_from_resource(
+        resource: CompiledResource,
+        path: str | None = None,
+        options: AnimationImportOptions | None = None,
+        *,
+        kind: ResourceKind | None = None,
+) -> AnimationDocument:
+    path = str(path or resource._filepath)
+    if kind is None or kind is ResourceKind.UNKNOWN:
+        kind = resource_kind_from_path(path)
+    if kind is ResourceKind.ANIMATION_GROUP:
+        data = resource.get_block(AgrpBlock, block_id=DATA_BLOCK)
+    elif kind is ResourceKind.ANIMATION_SEQUENCE:
+        data = resource.get_block(AseqBlock, block_id=DATA_BLOCK)
+    elif kind is ResourceKind.ANIMATION and path.casefold().removesuffix('_c').endswith('.vanim'):
+        data = resource.get_block(AnimationDataBlock, block_id=DATA_BLOCK)
+    else:
+        data = resource.get_block(KVBlock, block_id=DATA_BLOCK)
+    if data is None:
+        return AnimationDocument(
+            path,
+            kind,
+            diagnostics=(Diagnostic(
+                'animation.document.data_block',
+                f"{path} has no readable animation data block",
+                DiagnosticSeverity.ERROR,
+                path=path,
+            ),),
+        )
+    return normalize_animation_document(data, path, kind=kind, options=options)
+
+
+def load_animation_document(
+        reference: ResourceRef,
+        resolver: ResourceResolver,
+        options: AnimationImportOptions | None = None,
+) -> AnimationDocument:
+    """Resolve and normalize an animation resource through the shared resolver contract."""
+    resolved = resolver.resolve(reference)
+    path = reference.path or f"resource_{reference.resource_id:016x}"
+    if resolved is None:
+        return AnimationDocument(
+            str(path),
+            reference.kind,
+            diagnostics=(Diagnostic(
+                'animation.resource.unresolved',
+                f"Animation resource {path!r} could not be resolved",
+                DiagnosticSeverity.ERROR,
+                path=str(path),
+            ),),
+        )
+    if isinstance(resolved, (bytes, bytearray, memoryview)):
+        resolved = MemoryBuffer(bytes(resolved))
+    resource = CompiledResource.from_buffer(resolved, TinyPath(path))
+    return animation_document_from_resource(resource, str(path), options, kind=reference.kind)
+
+
+def animation_artifact_from_resource(
+        resource: CompiledResource,
+        *,
+        path: str | None = None,
+        content_manager: ContentManager | None = None,
+        skeleton: Skeleton | None = None,
+        decode_key=None,
+        flex_names=(),
+        morph_set: MorphBlock | None = None,
+        options: AnimationImportOptions | None = None,
+) -> AnimationArtifact:
+    """Create a normalized artifact, decoding frames when the required binding inputs exist."""
+    document = animation_document_from_resource(resource, path, options)
+    animations: list[SequenceAnimation | ClipAnimation] = []
+    diagnostics = list(document.diagnostics)
+    try:
+        if document.kind is ResourceKind.ANIMATION_GROUP and skeleton is not None:
+            if content_manager is None:
+                raise ValueError("Animation groups require a ContentManager for external VANIM resources")
+            animations.extend(animation_group_animations(
+                resource, content_manager, skeleton, flex_names, morph_set
+            ))
+        elif (document.kind is ResourceKind.ANIMATION
+              and document.path.casefold().removesuffix('_c').endswith('.vanim')
+              and skeleton is not None):
+            animations.extend(standalone_animation_animations(
+                resource,
+                decode_key,
+                skeleton,
+                flex_names=flex_names,
+                morph_set=morph_set,
+            ))
+        elif document.kind is ResourceKind.ANIMATION_CLIP:
+            data = resource.get_block(KVBlock, block_id=DATA_BLOCK)
+            if data:
+                clip = clip_from_resource(data, str(path or resource._filepath))
+                diagnostics.extend(clip.diagnostics)
+                if skeleton is not None and content_manager is not None:
+                    animation = ClipLoader(content_manager).bind(
+                        clip, skeleton, str(path or resource._filepath)
+                    )
+                    if animation is None:
+                        diagnostics.append(Diagnostic(
+                            'animation.artifact.clip_binding',
+                            f"{document.path} has no clip skeleton compatible with the target",
+                            DiagnosticSeverity.ERROR,
+                            path=document.path,
+                        ))
+                    else:
+                        animations.append(animation)
+    except (ValueError, IndexError, KeyError) as ex:
+        diagnostics.append(Diagnostic(
+            'animation.artifact.decode',
+            str(ex),
+            DiagnosticSeverity.ERROR,
+            path=document.path,
+            details={'exception': type(ex).__name__},
+        ))
+    for animation in animations:
+        diagnostics.extend(getattr(animation, 'diagnostics', ()))
+    unique_diagnostics = []
+    seen_diagnostics = set()
+    for diagnostic in diagnostics:
+        key = (
+            diagnostic.code,
+            diagnostic.message,
+            diagnostic.severity,
+            diagnostic.path,
+            diagnostic.offset,
+            diagnostic.block_name,
+        )
+        if key not in seen_diagnostics:
+            seen_diagnostics.add(key)
+            unique_diagnostics.append(diagnostic)
+    return AnimationArtifact(document, tuple(animations), tuple(unique_diagnostics))
 
 
 def graph_clip_paths(model_resource: CompiledResource, content_manager: ContentManager) -> list[str]:
@@ -247,7 +497,14 @@ class ClipLoader:
             source = self.skeleton(candidate.skeleton_name)
             if source is None:
                 continue
-            animation = ClipAnimation(candidate, source, path, clip.events)
+            animation = ClipAnimation(
+                candidate,
+                source,
+                path,
+                clip.events,
+                clip.float_curves,
+                clip.diagnostics,
+            )
             count = animation.mapped_bones(target)
             if count > best_count:
                 best, best_count = animation, count

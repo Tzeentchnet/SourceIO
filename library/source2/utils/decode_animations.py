@@ -3,6 +3,9 @@ import math
 import numpy as np
 
 from ...utils import Buffer, MemoryBuffer
+from ....logger import SourceLogMan
+
+logger = SourceLogMan().get_logger("Source2::LegacyAnimation")
 
 
 class _Decoder:
@@ -26,14 +29,21 @@ class _Decoder:
             self._type = '3Y'
 
         elif self.name in ["CCompressedAnimQuaternion",
-                           "CCompressedFullQuaternion",
                            "CCompressedStaticQuaternion"]:
             self.size = 6
             self._type = 'O'
 
+        elif self.name == "CCompressedFullQuaternion":
+            self.size = 16
+            self._type = '4f'
+
         elif self.name in ["CCompressedStaticFloat", "CCompressedFullFloat"]:
             self.size = 4
             self._type = 'f'
+
+        elif self.name in ["CCompressedStaticBool", "CCompressedFullBool"]:
+            self.size = 1
+            self._type = '?'
 
         else:
             raise NotImplementedError(f"Unknown decoder type {self.name}")
@@ -79,7 +89,6 @@ class _Decoder:
 
 
 def parse_anim_data(anim_block: dict, agroup_block: dict):
-    print("Parsing animation data")
     anim_array = anim_block['m_animArray']
     animations: list[Animation] = []
     if len(anim_array) == 0:
@@ -89,7 +98,7 @@ def parse_anim_data(anim_block: dict, agroup_block: dict):
     segment_array = anim_block['m_segmentArray']
     decode_key = agroup_block['m_decodeKey']
     for anim in anim_array:
-        print(f"Parsing {anim['m_name']}")
+        logger.debug(f"Parsing legacy animation {anim['m_name']}")
         animations.append(parse_anim(anim, decode_key, decoder_array, segment_array))
     return animations
 
@@ -154,6 +163,8 @@ class Frame:
     def __init__(self):
         self.morph_data = {}
         self.bone_data = {}
+        self.user_data = {}
+        self.unknown_data = {}
 
     def set_attribute(self, bone_name, channel_type, attr_name, value):
         if channel_type == 'BoneChannel':
@@ -164,6 +175,18 @@ class Frame:
             if bone_name not in self.morph_data:
                 self.morph_data[bone_name] = {}
             self.morph_data[bone_name][attr_name] = value
+        elif channel_type == 'UserChannel':
+            if bone_name not in self.user_data:
+                self.user_data[bone_name] = {}
+            self.user_data[bone_name][attr_name] = value
+        else:
+            key = (channel_type, bone_name)
+            if key not in self.unknown_data:
+                self.unknown_data[key] = {}
+            self.unknown_data[key][attr_name] = value
+            logger.warn(
+                f"Preserved unknown legacy animation channel {channel_type!r}/{attr_name!r}"
+            )
 
 
 class Animation:

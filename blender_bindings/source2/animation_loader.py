@@ -16,16 +16,21 @@ markers on its action.
 """
 from __future__ import annotations
 
+import json
+
 import bpy
 import numpy as np
 from mathutils import Matrix
 
-from ..models.import_animations import _make_continuous, _quat_multiply, _write_curves
+from ..models.import_animations import (_INTERPOLATION_LINEAR, _make_continuous,
+                                        _quat_multiply, _write_curves)
 from ..utils.bpy_utils import ActionCurveFactory
 from ...library.shared.content_manager import ContentManager
-from ...library.source2.animation import (AnimationClip, ClipAnimation, ClipLoader, DecodedAnimation,
-                                                SequenceAnimation, Skeleton, clip_names, load_graph_clips,
-                                                load_model_animations, model_skeleton)
+from ...library.source2.animation import (AnimationClip, ChannelAttribute, ClipAnimation,
+                                         ClipLoader, DecodedAnimation, DecodedDataChannel,
+                                         SequenceAnimation, Skeleton, clip_names,
+                                         load_graph_clips, load_model_animations,
+                                         model_skeleton)
 from ...library.source2.compiled_resource import CompiledResource
 from ...logger import SourceLogMan
 
@@ -96,6 +101,28 @@ def import_clips(content_manager: ContentManager, clips: list[tuple[str, Animati
     return _create_actions(factory, binding, animations, scale, apply_root_motion)
 
 
+def import_sequence_animations(
+        animations: list[SequenceAnimation],
+        armature_obj: bpy.types.Object,
+        scale: float,
+        apply_root_motion: bool = True,
+        source_name: str | None = None,
+) -> list[tuple[bpy.types.Action, bpy.types.ActionSlot]]:
+    """Import already-bound VANIM/VAGRP sequences onto an armature."""
+    if not animations:
+        return []
+    skeleton = armature_skeleton(armature_obj, scale)
+    binding = _ArmatureBinding(armature_obj, skeleton)
+    adt = armature_obj.animation_data
+    slot_name = (
+        adt.action_slot.name_display
+        if adt and adt.action_slot
+        else source_name or armature_obj.name
+    )
+    factory = ActionCurveFactory(slot_name, armature_obj, legacy_behavior=True)
+    return _create_actions(factory, binding, animations, scale, apply_root_motion)
+
+
 def armature_skeleton(armature_obj: bpy.types.Object, scale: float) -> Skeleton:
     """The armature's rest pose as a skeleton in Source units, bones in the armature's order."""
     bones = armature_obj.data.bones
@@ -124,13 +151,17 @@ def _create_actions(factory: ActionCurveFactory, binding: '_ArmatureBinding',
         try:
             decoded = animation.decode(binding.skeleton)
             action, slot = _create_action(factory, binding, animation, decoded, scale, apply_root_motion, name)
-        except Exception as ex:
+        except (ValueError, IndexError, KeyError, RuntimeError) as ex:
             logger.exception(f"Failed to import animation '{name}'", ex)
             continue
         if is_clip:
             action["clip"] = animation.path
             action["clip_skeleton"] = animation.clip.skeleton_name
-            # Events (sounds, particles, IDs, ...) become pose markers at their start frame.
+            action["sourceio_events"] = json.dumps(
+                [event.as_dict() for event in animation.events],
+                default=_json_default,
+                separators=(',', ':'),
+            )
             for event in animation.events:
                 action.pose_markers.new(event.marker_name).frame = event.frame(animation.frame_count)
         created.append((action, slot))
@@ -141,6 +172,7 @@ class _ArmatureBinding:
     """How every skeleton bone maps onto the armature's rest pose."""
 
     def __init__(self, armature_obj: bpy.types.Object, skeleton: Skeleton):
+        self.armature_obj = armature_obj
         self.skeleton = skeleton
         bones = armature_obj.data.bones
         # (skeleton index, bone name, rest pose relative to the Blender parent, Blender parent skeleton index)
@@ -260,6 +292,21 @@ def _create_action(factory: ActionCurveFactory, binding: _ArmatureBinding,
                 location[frame] = loc
                 rotation[frame] = rot
             _write_bone(factory, name, location, rotation, scales[:, index] if decoded.animated_scale[index] else None)
+    _write_data_channels(factory, binding.armature_obj, action, decoded.data_channels)
+    if decoded.diagnostics:
+        action["sourceio_animation_diagnostics"] = json.dumps(
+            [
+                {
+                    "code": diagnostic.code,
+                    "message": diagnostic.message,
+                    "severity": diagnostic.severity.value,
+                    "details": diagnostic.details,
+                }
+                for diagnostic in decoded.diagnostics
+            ],
+            default=_json_default,
+            separators=(',', ':'),
+        )
     return action, slot
 
 
@@ -275,3 +322,139 @@ def _write_bone(factory: ActionCurveFactory, bone_name: str, location: np.ndarra
     _write_curves(factory, bone_name, "rotation_quaternion", rotation.astype(np.float32), group)
     if scale is not None:
         _write_curves(factory, bone_name, "scale", np.repeat(scale[:, None], 3, axis=1).astype(np.float32), group)
+
+
+def _write_data_channels(factory: ActionCurveFactory, armature_obj: bpy.types.Object,
+                         action: bpy.types.Action, channels: tuple[DecodedDataChannel, ...]):
+    if not channels:
+        return
+    metadata = []
+    shape_keys_by_name = None
+    derived_morphs = any(channel.channel_class == "MorphTarget" for channel in channels)
+    for channel in channels:
+        if not len(channel.names) or channel.values.shape[0] == 0:
+            continue
+        category = _channel_category(channel)
+        group = factory.new_group({
+            "morph": "Morph targets",
+            "flex": "Flex controllers",
+            "curve": "Float curves",
+            "user": "User channels",
+            "data": "Data channels",
+        }.get(category, "Animation metadata"))
+        for target_index, name in enumerate(channel.names):
+            components = channel.values.shape[2]
+            property_name = f"sourceio:{category}:{name}"
+            initial = channel.values[0, target_index]
+            armature_obj[property_name] = float(initial[0]) if components == 1 else initial.tolist()
+            data_path = f'[{json.dumps(property_name)}]'
+            for component in range(components):
+                _write_property_curve(
+                    factory, data_path, component, channel.values[:, target_index, component], group
+                )
+            if (category == "morph"
+                    or category == "flex" and not derived_morphs):
+                if shape_keys_by_name is None:
+                    shape_keys_by_name = _shape_keys_for_armature(armature_obj)
+                _bind_shape_key_drivers(
+                    armature_obj, name, property_name, shape_keys_by_name
+                )
+        metadata.append({
+            "attribute": channel.attribute.name,
+            "channel_class": channel.channel_class,
+            "variable_name": channel.variable_name,
+            "names": channel.names,
+            "components": channel.values.shape[2],
+            "metadata": channel.metadata,
+        })
+    action["sourceio_animation_channels"] = json.dumps(
+        metadata, default=_json_default, separators=(',', ':')
+    )
+
+
+def _channel_category(channel: DecodedDataChannel) -> str:
+    if channel.channel_class == "MorphTarget":
+        return "morph"
+    if channel.channel_class == "MorphChannel":
+        return "flex"
+    if channel.channel_class == "NmFloatCurve":
+        return "curve"
+    if channel.attribute is ChannelAttribute.USER:
+        return "user"
+    if channel.attribute is ChannelAttribute.DATA:
+        return "data" if not channel.channel_class else "unknown"
+    return "unknown"
+
+
+def _write_property_curve(factory: ActionCurveFactory, data_path: str, component: int,
+                          values: np.ndarray, group):
+    frame_count = len(values)
+    curve = factory.new_fcurve(data_path=data_path, index=component, group=group)
+    curve.auto_smoothing = "NONE"
+    curve.keyframe_points.add(count=frame_count)
+    coordinates = np.empty((frame_count, 2), dtype=np.float32)
+    coordinates[:, 0] = np.arange(frame_count, dtype=np.float32)
+    coordinates[:, 1] = values
+    curve.keyframe_points.foreach_set("co_ui", coordinates.ravel())
+    curve.keyframe_points.foreach_set(
+        "interpolation", np.full(frame_count, _INTERPOLATION_LINEAR, dtype=np.int32)
+    )
+    curve.update()
+
+
+def _shape_keys_for_armature(armature_obj: bpy.types.Object):
+    result = {}
+    for obj in bpy.data.objects:
+        if obj.type != 'MESH' or obj.data.shape_keys is None:
+            continue
+        uses_armature = obj.parent == armature_obj or any(
+            modifier.type == 'ARMATURE' and modifier.object == armature_obj
+            for modifier in obj.modifiers
+        )
+        if not uses_armature:
+            continue
+        for key in obj.data.shape_keys.key_blocks:
+            result.setdefault(key.name.casefold(), []).append((obj, key))
+    return result
+
+
+def _bind_shape_key_drivers(
+        armature_obj: bpy.types.Object,
+        shape_name: str,
+        property_name: str,
+        shape_keys_by_name,
+):
+    for obj, key in shape_keys_by_name.get(shape_name.casefold(), ()):
+        shape_keys = obj.data.shape_keys
+        data_path = key.path_from_id('value')
+        animation_data = shape_keys.animation_data_create()
+        curve = animation_data.drivers.find(data_path)
+        if curve is not None and curve.driver.expression not in ('', 'sourceio_value'):
+            logger.warn(
+                f"Shape key {obj.name}:{shape_name} already has a non-SourceIO driver; "
+                "the animation channel was not bound"
+            )
+            continue
+        curve = curve or shape_keys.driver_add(data_path)
+        driver = curve.driver
+        driver.type = 'SCRIPTED'
+        driver.expression = 'sourceio_value'
+        while driver.variables:
+            driver.variables.remove(driver.variables[0])
+        variable = driver.variables.new()
+        variable.name = 'sourceio_value'
+        variable.type = 'SINGLE_PROP'
+        variable.targets[0].id = armature_obj
+        variable.targets[0].data_path = f'[{json.dumps(property_name)}]'
+
+
+def _json_default(value):
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return {"bytes_hex": bytes(value).hex()}
+    if isinstance(value, tuple):
+        return list(value)
+    return repr(value)

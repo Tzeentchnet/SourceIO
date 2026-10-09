@@ -16,6 +16,11 @@ from SourceIO.library.models.mdl.load_animations import (
 from SourceIO.library.shared.content_manager import ContentManager
 
 SAMPLES_DIR = Path(__file__).parent.parent.parent / "samples"
+DOG_INCLUDE_MODEL_NAMES = (
+    "dog_gestures.mdl",
+    "dog_postures.mdl",
+    "dog_animations.mdl",
+)
 
 
 @pytest.fixture
@@ -48,6 +53,20 @@ def dog_mdl():
     if not path.exists():
         pytest.skip("dog.mdl not found")
     return path
+
+
+@pytest.fixture
+def dog_include_models():
+    missing = [
+        name for name in DOG_INCLUDE_MODEL_NAMES
+        if not (SAMPLES_DIR / name).exists()
+    ]
+    if missing:
+        pytest.skip(
+            "dog include-model fixtures required for grouped loading are absent: "
+            f"{', '.join(missing)}; run tests/fetch_samples.py"
+        )
+    return tuple(SAMPLES_DIR / name for name in DOG_INCLUDE_MODEL_NAMES)
 
 
 class TestAniFileReader:
@@ -209,7 +228,7 @@ class TestGroupedLoading:
     def _load(self, path):
         cm = ContentManager()
         model_path = TinyPath(str(path))
-        cm.scan_for_content(model_path)
+        cm.scan_for_content(TinyPath(str(path.parent)))
         with FileBuffer(path) as buf:
             mdl = MdlV49.from_buffer(buf)
             groups = load_animations_by_model(mdl, buf, cm, model_path)
@@ -218,7 +237,7 @@ class TestGroupedLoading:
         cm.clean()
         return groups, flat
 
-    def test_groups_by_source_model(self, dog_mdl):
+    def test_groups_by_source_model(self, dog_mdl, dog_include_models):
         groups, flat = self._load(dog_mdl)
         assert [name for name, _ in groups] == [
             "dog.mdl", "dog_gestures.mdl", "dog_postures.mdl", "dog_animations.mdl"]

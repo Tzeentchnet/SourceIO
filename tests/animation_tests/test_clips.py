@@ -13,8 +13,8 @@ os.environ['NO_BPY'] = '1'
 import numpy as np
 import pytest
 
-from SourceIO.library.source2.animation import (AnimationClip, ClipAnimation, Skeleton, clip_matches, clip_names,
-                                                parse_clip_filter)
+from SourceIO.library.source2.animation import (AnimationClip, ClipAnimation, ClipEvent, ClipLoader, Skeleton,
+                                                clip_matches, clip_names, parse_clip_filter)
 from SourceIO.library.source2.animation.clip import _decode_quaternions, world_matrices, _matrices
 
 RANGE_MIN = -1 / np.sqrt(2)
@@ -232,6 +232,52 @@ def test_clip_names_take_parent_folders_only_when_needed():
     }
 
 
+def event(cls, start, duration=0.0, **fields):
+    return {'_class': cls, 'm_flStartTime': {'m_flValue': start}, 'm_flDuration': {'m_flValue': duration},
+            'm_syncID': '', **fields}
+
+
+def test_event_labels():
+    events = [ClipEvent.from_kv(e) for e in [
+        event('CNmSoundEvent', 0.25, m_name='Weapon_Nova.Pump_Q', m_attachmentName=''),
+        event('CNmParticleEvent', 0.0, m_hParticleSystem='particles/weapons/cs_weapon_fx/shell_9mm.vpcf'),
+        event('CNmIDEvent', 0.4, 0.5, m_ID='RinFront', m_secondaryID=''),
+        event('CNmIDEvent', 0.4, 0.5, m_ID='Plant', m_secondaryID='Left'),
+        event('CNmLegacyEvent', 0.0, m_animEventClassName='AE_WEAPON_PERFORM_ATTACK', m_KV=None),
+        event('CNmMaterialAttributeEvent', 0.0, 1.0, m_attributeName='c4_light'),
+        event('CNmFloatCurveEvent', 0.2, 0.4, m_ID='Reload'),
+        event('CNmOrientationWarpEvent', 0.1, 0.75),
+        event('CNmSomethingNewEvent', 1.0),
+    ]]
+    assert [e.marker_name for e in events] == [
+        'Sound: Weapon_Nova.Pump_Q', 'Particle: shell_9mm', 'ID: RinFront', 'ID: Plant/Left',
+        'Legacy: AE_WEAPON_PERFORM_ATTACK', 'MaterialAttribute: c4_light', 'FloatCurve: Reload',
+        'OrientationWarp', 'SomethingNew']
+    assert events[2].start == pytest.approx(0.4) and events[2].duration == pytest.approx(0.5)
+
+
+def test_event_frames_are_fractions_of_the_clip():
+    # 25 frames span 24 intervals; times are fractions of the clip, not seconds
+    assert ClipEvent('Sound', 7 / 24, 0.0).frame(25) == 7
+    assert ClipEvent('Sound', 0.0, 0.0).frame(25) == 0
+    assert ClipEvent('Sound', 1.0, 0.0).frame(25) == 24
+    assert ClipEvent('Sound', 1.0000001, 0.0).frame(25) == 24
+    assert ClipEvent('Sound', 0.5, 0.0).frame(1) == 0
+
+
+def test_secondary_animation_keeps_main_clip_events():
+    main = build_clip([track()], 3, skeleton='body.vnmskel')
+    weapon = build_clip([track(), track()], 3, skeleton='weapon.vnmskel')
+    main.secondary = [weapon]
+    main.events = [ClipEvent('Sound', 0.5, 0.0, 'Fire')]
+    loader = ClipLoader(None)
+    loader._skeletons = {'body.vnmskel': skeleton(['pelvis'], [-1], [(0, 0, 0)]),
+                         'weapon.vnmskel': skeleton(['weapon', 'mag'], [-1, 0], [(0, 0, 0), (0, 0, 1)])}
+    animation = loader.bind(main, skeleton(['weapon', 'mag'], [-1, 0], [(0, 0, 0), (0, 0, 1)]), 'a/fire.vnmclip')
+    assert animation.clip is weapon
+    assert [e.marker_name for e in animation.events] == ['Sound: Fire']
+
+
 def _load_kv(name):
     from SourceIO.library.source2.blocks.kv3_block import KVBlock
     from SourceIO.library.source2.compiled_resource import CompiledResource, DATA_BLOCK
@@ -272,6 +318,12 @@ def test_fixture_clips_decode(name):
         assert np.allclose(np.linalg.norm(rotations, axis=-1), 1, atol=1e-3)
     if name == "shoot1_nova.vnmclip_c":
         assert clip.duration == pytest.approx(0.8, abs=1e-4)
+        assert [(e.marker_name, e.frame(clip.frame_count)) for e in clip.events] == [
+            ("ID: WPN_BLOCK_INSPECT", 0), ("Particle: uweapon_muzflsh_shot_fps", 0),
+            ("Sound: Weapon_Nova.Pump_Q", 7), ("Particle: weapon_shell_casing_shotgun_nova", 10)]
+    else:
+        assert [e.marker_name for e in clip.events] == [
+            "Particle: weapon_shell_casing_9mm", "Particle: uweapon_muzzleflash_pist"]
 
 
 def test_fixture_chicken_skeleton():

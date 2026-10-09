@@ -65,6 +65,50 @@ def _decode_quaternions(data: np.ndarray) -> np.ndarray:
     return result
 
 
+# The field that names an event of each class; other classes go by their type alone.
+_EVENT_LABELS = {
+    'Sound': 'm_name',
+    'ID': 'm_ID',
+    'FloatCurve': 'm_ID',
+    'Particle': 'm_hParticleSystem',
+    'MaterialAttribute': 'm_attributeName',
+    'Legacy': 'm_animEventClassName',
+}
+
+
+def _event_time(value) -> float:
+    if hasattr(value, 'get'):  # {'m_flValue': ...}
+        value = value.get('m_flValue', 0.0)
+    return float(value or 0.0)
+
+
+@dataclass(slots=True)
+class ClipEvent:
+    """One entry of a clip's ``m_events``. Times are fractions of the clip, from 0 to 1."""
+    kind: str  # the class without ``CNm`` and ``Event``: Sound, ID, Particle, ...
+    start: float
+    duration: float
+    label: str = ''
+
+    @classmethod
+    def from_kv(cls, data) -> 'ClipEvent':
+        kind = str(data.get('_class', '')).removeprefix('CNm').removesuffix('Event') or 'Event'
+        label = str(data.get(_EVENT_LABELS.get(kind, ''), '') or '')
+        if kind == 'Particle':
+            label = label.replace('\\', '/').rsplit('/', 1)[-1].removesuffix('.vpcf')
+        elif kind == 'ID' and (secondary := str(data.get('m_secondaryID', '') or '')):
+            label = f'{label}/{secondary}'
+        return cls(kind, _event_time(data.get('m_flStartTime')), _event_time(data.get('m_flDuration')), label)
+
+    @property
+    def marker_name(self) -> str:
+        return f'{self.kind}: {self.label}' if self.label else self.kind
+
+    def frame(self, frame_count: int) -> int:
+        """The nearest frame to the event's start."""
+        return round(min(max(self.start, 0.0), 1.0) * max(frame_count - 1, 0))
+
+
 @dataclass(slots=True)
 class AnimationClip:
     """One ``CNmClip``: the main clip, or one of its secondary animations for another skeleton."""
@@ -83,6 +127,7 @@ class AnimationClip:
     pose_offsets: np.ndarray  # (frames,), in uint16 units
     root_motion: np.ndarray | None = None  # (frames, 4, 4) or None when the clip has none
     secondary: list['AnimationClip'] = field(default_factory=list)
+    events: list[ClipEvent] = field(default_factory=list)
 
     @classmethod
     def from_kv(cls, data, name: str) -> 'AnimationClip':
@@ -114,6 +159,7 @@ class AnimationClip:
                    rotation_static, translation_static, scale_static, constant_rotations,
                    translation_ranges, scale_ranges, pose_data, pose_offsets, root_motion)
         clip.secondary = [cls.from_kv(secondary, name) for secondary in data.get('m_secondaryAnimations', []) or []]
+        clip.events = [ClipEvent.from_kv(event) for event in data.get('m_events', []) or []]
         return clip
 
     @property
@@ -270,11 +316,13 @@ class ClipAnimation:
     Has the attributes of :class:`SequenceAnimation` that importers use.
     """
 
-    def __init__(self, clip: AnimationClip, source: Skeleton, path: str = ''):
+    def __init__(self, clip: AnimationClip, source: Skeleton, path: str = '', events: list[ClipEvent] | None = None):
         self.clip = clip
         self.source = source
         self.path = path or clip.name
         self.name = clip.name
+        # Only a main clip has events, so a secondary animation is given its main clip's.
+        self.events = clip.events if events is None else events
         self.fps = clip.fps
         self.frame_count = clip.frame_count
         self.looping = False

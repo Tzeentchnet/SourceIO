@@ -111,13 +111,14 @@ def summarize_model() -> dict:
     drivers = sum(len(key.animation_data.drivers) for key in bpy.data.shape_keys if key.animation_data)
     slots = sum(len(action.slots) for action in bpy.data.actions)
     clips = sum(1 for action in bpy.data.actions if "clip" in action)
+    markers = sum(len(action.pose_markers) for action in bpy.data.actions)
     nla_tracks = sum(len(obj.animation_data.nla_tracks) for obj in bpy.data.objects if obj.animation_data)
     bone_collections = {}
     for armature in bpy.data.armatures:
         for collection in armature.collections_all:
             bone_collections[collection.name] = bone_collections.get(collection.name, 0) + len(collection.bones)
     return {"shape_keys": shape_keys, "flex_drivers": drivers, "action_slots": slots, "clip_actions": clips,
-            "nla_tracks": nla_tracks, "bone_collections": bone_collections}
+            "pose_markers": markers, "nla_tracks": nla_tracks, "bone_collections": bone_collections}
 
 
 def load_placeholders(result: dict):

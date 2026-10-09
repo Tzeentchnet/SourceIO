@@ -247,7 +247,7 @@ class ClipLoader:
             source = self.skeleton(candidate.skeleton_name)
             if source is None:
                 continue
-            animation = ClipAnimation(candidate, source, path)
+            animation = ClipAnimation(candidate, source, path, clip.events)
             count = animation.mapped_bones(target)
             if count > best_count:
                 best, best_count = animation, count

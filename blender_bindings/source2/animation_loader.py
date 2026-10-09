@@ -11,7 +11,8 @@ into the root bones, the same way VRF's glTF exporter does.
 
 Animation graph 2 clips (``.vnmclip_c``) are authored on their own NM skeleton and play on the model by
 bone name: :func:`import_animations` takes the model's graph clips that match a name filter, and
-:func:`import_clips` puts clip files on any armature whose bone names match.
+:func:`import_clips` puts clip files on any armature whose bone names match. A clip's events become pose
+markers on its action.
 """
 from __future__ import annotations
 
@@ -129,6 +130,9 @@ def _create_actions(factory: ActionCurveFactory, binding: '_ArmatureBinding',
         if is_clip:
             action["clip"] = animation.path
             action["clip_skeleton"] = animation.clip.skeleton_name
+            # Events (sounds, particles, IDs, ...) become pose markers at their start frame.
+            for event in animation.events:
+                action.pose_markers.new(event.marker_name).frame = event.frame(animation.frame_count)
         created.append((action, slot))
     return created
 

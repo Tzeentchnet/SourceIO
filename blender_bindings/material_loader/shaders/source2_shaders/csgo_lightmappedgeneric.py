@@ -11,6 +11,12 @@ from .....library.source2.blocks.kv3_block import KVBlock
 class CSGOLightmappedGeneric(Source2ShaderBase):
     SHADER: str = 'csgo_lightmappedgeneric.vfx'
 
+    def _connect_layer_uv(self, texture_node, prefix: str):
+        """Each layer's albedo, normal and the blend modulation have their own UV transform, scaled about its
+        center (g_v<prefix>TexCoordScale and so on)."""
+        transform = self._texcoord_transform(prefix, scale_about_center=True)
+        self.connect_nodes(transform.outputs[0], texture_node.inputs[0])
+
     def _apply_layer_detail(self, layer: int, color_output):
         """Source 1's mod2x detail: the albedo times twice the detail texture (0.5 is neutral), faded by the blend
         factor in g_vLayer<n>DetailTintAndBlend.w. F_DETAILTEXTURE 1 details layer 1, 2 both layers."""
@@ -47,6 +53,7 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
 
         if self._have_texture("g_tColor"):
             color0_texture = self._get_texture("g_tColor", (1, 1, 1, 1))
+            self._connect_layer_uv(color0_texture, "Layer1")
             self.connect_nodes(self._apply_layer_detail(1, color0_texture.outputs[0]), shader.inputs["TextureColor0"])
             if (material_data.get_int_property("F_ALPHA_TEST", 0) or
                     self._is_translucent() or
@@ -55,6 +62,7 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
 
         if self._have_texture("g_tLayer2Color"):
             color_texture = self._get_texture("g_tLayer2Color", (1, 1, 1, 1))
+            self._connect_layer_uv(color_texture, "Layer2")
             if (material_data.get_int_property("F_ALPHA_TEST", 0) or
                     self._is_translucent() or
                     material_data.get_int_property("F_OVERLAY", 0)):
@@ -64,17 +72,19 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
 
         if self._have_texture("g_tLayer1NormalRoughness"):
             normal0_texture = self._get_texture("g_tLayer1NormalRoughness", (0.5, 0.5, 1, 1))
+            self._connect_layer_uv(normal0_texture, "Layer1Normal")
             self.connect_nodes(normal0_texture.outputs[0], shader.inputs["TextureNormal0"])
             self.connect_nodes(normal0_texture.outputs[1], shader.inputs["TextureRoughness0"])
 
         if self._have_texture("g_tLayer2NormalRoughness"):
             normal_texture = self._get_texture("g_tLayer2NormalRoughness", (0.5, 0.5, 1, 1))
+            self._connect_layer_uv(normal_texture, "Layer2Normal")
             self.connect_nodes(normal_texture.outputs[0], shader.inputs["TextureNormal1"])
             self.connect_nodes(normal_texture.outputs[1], shader.inputs["TextureRoughness1"])
 
         if self._have_texture("g_tBlendModulation"):
             color_texture = self._get_texture("g_tBlendModulation", (1, 1, 1, 1))
-
+            self._connect_layer_uv(color_texture, "BlendModulate")
             self.connect_nodes(color_texture.outputs[0], shader.inputs["BlendModulate"])
 
         # TODO: tinting

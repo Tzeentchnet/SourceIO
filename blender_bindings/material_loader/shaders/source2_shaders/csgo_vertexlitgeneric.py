@@ -11,6 +11,13 @@ from .....library.source2.blocks.kv3_block import KVBlock
 class CSGOVertexLitGeneric(Source2ShaderBase):
     SHADER: str = 'csgo_vertexlitgeneric.vfx'
 
+    def _detail_uv(self, flag: str):
+        if self._material_resource.get_int_property(flag, 1):
+            return self._secondary_uv_or_primary()
+        uv_node = self.create_node(Nodes.ShaderNodeUVMap)
+        uv_node.uv_map = "TEXCOORD"
+        return uv_node.outputs[0]
+
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
         self._skip_texture("g_tAmbientOcclusion")
@@ -21,26 +28,10 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
         data = self._material_resource.get_block(KVBlock,block_name='DATA')
         self.logger.info(pformat(dict(data)))
 
+        uv_output = self._texcoord_transform().outputs[0]
         if self._have_texture("g_tColor"):
-            scale = material_data.get_vector_property("g_vTexCoordScale", None)
-            offset = material_data.get_vector_property("g_vTexCoordOffset", None)
-            center = material_data.get_vector_property("g_vTexCoordCenter", None)
-
             color_texture = self._get_texture("g_tColor", (1, 1, 1, 1))
-            if scale is not None or offset is not None or center is not None:
-                uv_node = self.create_node(Nodes.ShaderNodeUVMap)
-                uv_transform = self.create_node_group("UVTransform")
-                if scale is not None:
-                    uv_transform.inputs["g_vTexCoordScale"].default_value = scale[:3]
-                if offset is not None:
-                    uv_transform.inputs["g_vTexCoordOffset"].default_value = offset[:3]
-                if center is not None:
-                    uv_transform.inputs["g_vTexCoordCenter"].default_value = center[:3]
-
-                self.connect_nodes(uv_node.outputs[0], uv_transform.inputs[0])
-
-                self.connect_nodes(uv_transform.outputs[0], color_texture.inputs[0])
-
+            self.connect_nodes(uv_output, color_texture.inputs[0])
             color_output = color_texture.outputs[0]
             if self._check_flag("F_DECAL_TEXTURE") and self._have_texture("g_tDecal"):
                 color_output = self._apply_decal(color_output)
@@ -49,25 +40,17 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
         else:
             alpha_output = None
         if self._have_texture("g_tDetail"):
-            scale = material_data.get_vector_property("g_vDetailTexCoordScale", None)
-            offset = material_data.get_vector_property("g_vDetailTexCoordOffset", None)
-
+            # The detail and its mask read the secondary UV set unless these are 0.
+            detail_uv = self._detail_uv("g_bUseSecondaryUvForDetailTexture")
             detail_texture = self._get_texture("g_tDetail", (1, 1, 1, 1))
+            detail_transform = self.create_transform(
+                detail_uv,
+                material_data.get_vector_property("g_vDetailTexCoordScale", (1.0, 1.0, 0.0)),
+                material_data.get_vector_property("g_vDetailTexCoordOffset", (0.0, 0.0, 0.0)),
+                (0.5, 0.5, 0.0), material_data.get_float_property("g_flDetailTexCoordRotation", 0.0))
+            self.connect_nodes(detail_transform.outputs[0], detail_texture.inputs[0])
             detail_mask_texture = self._get_texture("g_tDetailMask", (1, 0, 0, 1))
-            if scale is not None or offset is not None:
-                uv_name = "TEXCOORD_1" if material_data.get_int_property("F_SECONDARY_UV", 0) else "TEXCOORD"
-                uv_node = self.create_node(Nodes.ShaderNodeUVMap)
-                uv_node.uv_map = uv_name
-                uv_transform = self.create_node_group("UVTransform")
-                if scale is not None:
-                    uv_transform.inputs["g_vTexCoordScale"].default_value = scale[:3]
-                if offset is not None:
-                    uv_transform.inputs["g_vTexCoordOffset"].default_value = offset[:3]
-                uv_transform.inputs["g_vTexCoordCenter"].default_value = (0.5, 0.5, 0)
-
-                self.connect_nodes(uv_node.outputs[0], uv_transform.inputs[0])
-
-                self.connect_nodes(uv_transform.outputs[0], detail_texture.inputs[0])
+            self.connect_nodes(self._detail_uv("g_bUseSecondaryUvForDetailMask"), detail_mask_texture.inputs[0])
 
             self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail"])
             self.connect_nodes(detail_mask_texture.outputs[0], shader.inputs["TextureDetailMask"])
@@ -78,6 +61,8 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
 
         if self._have_texture("g_tNormal"):
             normal_texture = self._get_texture("g_tNormal", (0.5, 0.5, 1, 1), True, True)
+            normal_transform = self._texcoord_transform("Normal", scale_about_center=True)
+            self.connect_nodes(normal_transform.outputs[0], normal_texture.inputs[0])
             self.connect_nodes(normal_texture.outputs[0], shader.inputs["TextureNormal"])
             self.connect_nodes(normal_texture.outputs[1], shader.inputs["TextureRoughness"])
 
@@ -110,7 +95,7 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
             "g_flModelTintAmount", 0.0)
 
         if self._have_texture("g_tMetalness"):
-            metalness_split = self._split_metalness_texture()
+            metalness_split = self._split_metalness_texture(uv_output)
             self.connect_nodes(metalness_split.outputs[1], shader.inputs["TextureMetalness"])
         elif material_data.get_int_property("F_METALNESS_TEXTURE", 0) == 1 and alpha_output is not None:
             self.connect_nodes(alpha_output, shader.inputs["TextureMetalness"])

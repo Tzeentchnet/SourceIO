@@ -17,6 +17,62 @@ logger = SourceLogMan().get_logger("Source2::Shader")
 
 # vmdl_loader names UV sets TEXCOORD, TEXCOORD_1, ...
 SECONDARY_UV = "TEXCOORD_1"
+UV_TRANSFORM_GROUP = "SourceIO UV Transform"
+
+
+def _uv_transform_group() -> bpy.types.ShaderNodeTree:
+    """The Source 2 texture coordinate transform (the g_v*TexCoordXform0/1 expressions in the shaders), in
+    Source's UV space: uv' = R(rotation) * (S * (uv - P) + P - center) + center + offset, where P, the point
+    scaling keeps fixed, is the origin in most CS2 shaders and the center in csgo_lightmappedgeneric's layers.
+    Rotation is in degrees. Imported UVs (and images) have V flipped, so V is flipped in and out."""
+    group = bpy.data.node_groups.get(UV_TRANSFORM_GROUP)
+    if group is not None:
+        return group
+    group = bpy.data.node_groups.new(UV_TRANSFORM_GROUP, "ShaderNodeTree")
+    interface = group.interface
+    interface.new_socket("UV", in_out="OUTPUT", socket_type="NodeSocketVector")
+    interface.new_socket("UV", in_out="INPUT", socket_type="NodeSocketVector")
+    interface.new_socket("g_vTexCoordScale", in_out="INPUT", socket_type="NodeSocketVector").default_value = (1, 1, 1)
+    interface.new_socket("g_vTexCoordOffset", in_out="INPUT", socket_type="NodeSocketVector")
+    interface.new_socket("g_flTexCoordRotation", in_out="INPUT", socket_type="NodeSocketFloat")
+    interface.new_socket("g_vTexCoordCenter", in_out="INPUT",
+                         socket_type="NodeSocketVector").default_value = (0.5, 0.5, 0)
+    interface.new_socket("Scale About Center", in_out="INPUT", socket_type="NodeSocketBool")
+    nodes, links = group.nodes, group.links
+    group_input = nodes.new("NodeGroupInput")
+    group_output = nodes.new("NodeGroupOutput")
+
+    def vector_math(operation, *inputs):
+        node = nodes.new("ShaderNodeVectorMath")
+        node.operation = operation
+        for index, value in enumerate(inputs):
+            if isinstance(value, bpy.types.NodeSocket):
+                links.new(value, node.inputs[index])
+            else:
+                node.inputs[index].default_value = value
+        return node.outputs[0]
+
+    flip_v = ((1.0, -1.0, 1.0), (0.0, 1.0, 0.0))
+    uv = vector_math('MULTIPLY_ADD', group_input.outputs["UV"], *flip_v)
+    pivot = nodes.new("ShaderNodeMix")
+    pivot.data_type = 'VECTOR'
+    links.new(group_input.outputs["Scale About Center"], pivot.inputs["Factor"])
+    pivot.inputs[4].default_value = (0, 0, 0)  # A
+    links.new(group_input.outputs["g_vTexCoordCenter"], pivot.inputs[5])  # B
+    pivot_output = pivot.outputs[1]
+    scaled = vector_math('MULTIPLY_ADD', vector_math('SUBTRACT', uv, pivot_output),
+                         group_input.outputs["g_vTexCoordScale"], pivot_output)
+    radians = nodes.new("ShaderNodeMath")
+    radians.operation = 'RADIANS'
+    links.new(group_input.outputs["g_flTexCoordRotation"], radians.inputs[0])
+    rotate = nodes.new("ShaderNodeVectorRotate")
+    rotate.rotation_type = 'Z_AXIS'
+    links.new(scaled, rotate.inputs["Vector"])
+    links.new(group_input.outputs["g_vTexCoordCenter"], rotate.inputs["Center"])
+    links.new(radians.outputs[0], rotate.inputs["Angle"])
+    moved = vector_math('ADD', rotate.outputs[0], group_input.outputs["g_vTexCoordOffset"])
+    links.new(vector_math('MULTIPLY_ADD', moved, *flip_v), group_output.inputs["UV"])
+    return group
 
 
 class Source2ShaderBase(ShaderBase):
@@ -168,17 +224,56 @@ class Source2ShaderBase(ShaderBase):
             return texture
         return None
 
-    def create_transform(self, uv_slot: str, scale: tuple[float, ...], offset: tuple[float, ...],
-                         center: tuple[float, ...]):
-        uv_node = self.create_node(Nodes.ShaderNodeUVMap)
-        uv_node.uv_map = uv_slot  # "TEXCOORD_1" if self._material_resource.get_int_property("F_SECONDARY_UV", 0) else "TEXCOORD"
-        uv_transform = self.create_node_group("UVTransform")
-        uv_transform.inputs["g_vTexCoordScale"].default_value = scale[:3]
-        uv_transform.inputs["g_vTexCoordOffset"].default_value = offset[:3]
-        uv_transform.inputs["g_vTexCoordCenter"].default_value = center[:3]
-        self.connect_nodes(uv_node.outputs[0], uv_transform.inputs[0])
+    def create_transform(self, uv_slot, scale: tuple[float, ...], offset: tuple[float, ...],
+                         center: tuple[float, ...], rotation: float = 0.0, scale_about_center: bool = False):
+        """A UV map (a UV set name or a UV output socket) through the shaders' texture coordinate transform,
+        see ``_uv_transform_group``."""
+        if isinstance(uv_slot, str):
+            uv_node = self.create_node(Nodes.ShaderNodeUVMap)
+            uv_node.uv_map = uv_slot
+            uv_slot = uv_node.outputs[0]
+        uv_transform = self.create_node(Nodes.ShaderNodeGroup, UV_TRANSFORM_GROUP)
+        uv_transform.node_tree = _uv_transform_group()
+        uv_transform.inputs["g_vTexCoordScale"].default_value = self.ensure_length(list(scale[:3]), 3, 0.0)
+        uv_transform.inputs["g_vTexCoordOffset"].default_value = self.ensure_length(list(offset[:3]), 3, 0.0)
+        uv_transform.inputs["g_vTexCoordCenter"].default_value = self.ensure_length(list(center[:3]), 3, 0.0)
+        uv_transform.inputs["g_flTexCoordRotation"].default_value = rotation
+        uv_transform.inputs["Scale About Center"].default_value = scale_about_center
+        self.connect_nodes(uv_slot, uv_transform.inputs[0])
 
         return uv_transform
+
+    def _secondary_uv_or_primary(self):
+        """The secondary UV set, or the primary one where a mesh has none (a missing UV map reads as 0, 0).
+        Models carry the set the material asks for; CS2's map meshes don't, and share the materials."""
+        secondary = self.create_node(Nodes.ShaderNodeUVMap)
+        secondary.uv_map = SECONDARY_UV
+        primary = self.create_node(Nodes.ShaderNodeUVMap)
+        primary.uv_map = "TEXCOORD"
+        length = self.create_node(Nodes.ShaderNodeVectorMath)
+        length.operation = 'LENGTH'
+        self.connect_nodes(secondary.outputs[0], length.inputs[0])
+        has_secondary = self.create_node(Nodes.ShaderNodeMath)
+        has_secondary.operation = 'GREATER_THAN'
+        has_secondary.inputs[1].default_value = 0.0
+        self.connect_nodes(length.outputs['Value'], has_secondary.inputs[0])
+        choose = self.create_node(Nodes.ShaderNodeMix)
+        choose.data_type = 'VECTOR'
+        self.connect_nodes(has_secondary.outputs[0], choose.inputs[0])
+        self.connect_nodes(primary.outputs[0], choose.inputs[4])
+        self.connect_nodes(secondary.outputs[0], choose.inputs[5])
+        return choose.outputs[1]
+
+    def _texcoord_transform(self, prefix: str = "", uv_slot: str = "TEXCOORD", scale_about_center: bool = False):
+        """create_transform from the material's g_v<prefix>TexCoordScale/Offset/Center and
+        g_fl<prefix>TexCoordRotation, with the shaders' defaults."""
+        material = self._material_resource
+        return self.create_transform(uv_slot,
+                                     material.get_vector_property(f"g_v{prefix}TexCoordScale", (1.0, 1.0, 0.0)),
+                                     material.get_vector_property(f"g_v{prefix}TexCoordOffset", (0.0, 0.0, 0.0)),
+                                     material.get_vector_property(f"g_v{prefix}TexCoordCenter", (0.5, 0.5, 0.0)),
+                                     material.get_float_property(f"g_fl{prefix}TexCoordRotation", 0.0),
+                                     scale_about_center)
 
     def _check_flag(self, name: str, default: int = 0):
         return self._material_resource.get_int_property(name, default) == 1

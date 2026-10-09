@@ -22,47 +22,22 @@ class CSGOStaticOverlay(Source2ShaderBase):
         self.logger.info(pformat(dict(data)))
 
         if self._have_texture("g_tColor"):
-            scale = material_data.get_vector_property("g_vTexCoordScale", None)
-            offset = material_data.get_vector_property("g_vTexCoordOffset", None)
-            center = material_data.get_vector_property("g_vTexCoordCenter", None)
-
             color_texture = self._get_texture("g_tColor", (1, 1, 1, 1))
-            if scale is not None or offset is not None or center is not None:
-                uv_node = self.create_node(Nodes.ShaderNodeUVMap)
-                uv_transform = self.create_node_group("UVTransform")
-                if scale is not None:
-                    uv_transform.inputs["g_vTexCoordScale"].default_value = scale[:3]
-                if offset is not None:
-                    uv_transform.inputs["g_vTexCoordOffset"].default_value = offset[:3]
-                if center is not None:
-                    uv_transform.inputs["g_vTexCoordCenter"].default_value = center[:3]
-
-                self.connect_nodes(uv_node.outputs[0], uv_transform.inputs[0])
-
-                self.connect_nodes(uv_transform.outputs[0], color_texture.inputs[0])
+            self.connect_nodes(self._texcoord_transform().outputs[0], color_texture.inputs[0])
 
             self.connect_nodes(color_texture.outputs[0], shader.inputs["TextureColor"])
             alpha_output = color_texture.outputs[1]
         else:
             alpha_output = None
         if self._have_texture("g_tDetail"):
-            scale = material_data.get_vector_property("g_vDetailTexCoordScale", None)
-            offset = material_data.get_vector_property("g_vDetailTexCoordOffset", None)
-
             detail_texture = self._get_texture("g_tDetail", (1, 1, 1, 1))
             detail_mask_texture = self._get_texture("g_tDetailMask", (1, 0, 0, 1))
-            if scale is not None or offset is not None:
-                uv_node = self.create_node(Nodes.ShaderNodeUVMap)
-                uv_transform = self.create_node_group("UVTransform")
-                if scale is not None:
-                    uv_transform.inputs["g_vTexCoordScale"].default_value = scale[:3]
-                if offset is not None:
-                    uv_transform.inputs["g_vTexCoordOffset"].default_value = offset[:3]
-                uv_transform.inputs["g_vTexCoordCenter"].default_value = (0.5, 0.5, 0)
-
-                self.connect_nodes(uv_node.outputs[0], uv_transform.inputs[0])
-
-                self.connect_nodes(uv_transform.outputs[0], detail_texture.inputs[0])
+            detail_transform = self.create_transform(
+                "TEXCOORD",
+                material_data.get_vector_property("g_vDetailTexCoordScale", (1.0, 1.0, 0.0)),
+                material_data.get_vector_property("g_vDetailTexCoordOffset", (0.0, 0.0, 0.0)),
+                (0.5, 0.5, 0.0), material_data.get_float_property("g_flDetailTexCoordRotation", 0.0))
+            self.connect_nodes(detail_transform.outputs[0], detail_texture.inputs[0])
 
             self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail"])
             self.connect_nodes(detail_mask_texture.outputs[0], shader.inputs["TextureDetailMask"])

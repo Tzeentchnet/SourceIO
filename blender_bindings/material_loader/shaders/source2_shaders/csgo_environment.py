@@ -19,7 +19,8 @@ class CSGOEnvironment(Source2ShaderBase):
         center = material_data.get_vector_property("g_vTexCoordCenter1", (0.5, 0.5, 0.0))
         offset = material_data.get_vector_property("g_vTexCoordOffset1", (0.0, 0.0, 0.0))
         scale = material_data.get_vector_property("g_vTexCoordScale1", (1.0, 1.0, 0.0))
-        transform_node = self.create_transform("TEXCOORD", scale, offset, center)
+        rotation = material_data.get_float_property("g_flTexCoordRotation1", 0.0)
+        transform_node = self.create_transform("TEXCOORD", scale, offset, center, rotation)
 
         albedo_node = self._get_texture("g_tColor1", (1, 1, 1, 1))
         normal_node = self._get_texture("g_tNormal1", (0.5, 0.5, 1, 1), True)

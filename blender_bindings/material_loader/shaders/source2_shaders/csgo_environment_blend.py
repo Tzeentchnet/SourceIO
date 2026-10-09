@@ -63,19 +63,8 @@ class CSGOEnvironmentBlend(Source2ShaderBase):
             self.connect_nodes(split.outputs[0], shader.inputs["V1"])
 
         if self._have_texture("g_tSharedColorOverlay"):
-            scale = material_data.get_vector_property("g_vOverlayTexCoordScale", None)
-
             detail_texture = self._get_texture("g_tSharedColorOverlay", (1, 1, 1, 1))
-            if scale is not None:
-                uv_node = self.create_node(Nodes.ShaderNodeUVMap)
-                uv_node.uv_map = "TEXCOORD"
-                uv_transform = self.create_node_group("UVTransform")
-                if scale is not None:
-                    uv_transform.inputs["g_vTexCoordScale"].default_value = scale[:3]
-
-                self.connect_nodes(uv_node.outputs[0], uv_transform.inputs[0])
-
-                self.connect_nodes(uv_transform.outputs[0], detail_texture.inputs[0])
+            self.connect_nodes(self._texcoord_transform("Overlay").outputs[0], detail_texture.inputs[0])
 
             self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail0"])
             self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail1"])

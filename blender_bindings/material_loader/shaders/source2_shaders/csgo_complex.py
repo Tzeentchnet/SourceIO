@@ -39,10 +39,7 @@ class CSGOComplex(Source2ShaderBase):
         data = self._material_resource.get_block(KVBlock, block_name='DATA')
         self.logger.info(pformat(dict(data)))
 
-        center = material_data.get_vector_property("g_vTexCoordCenter", (0.5, 0.5, 0.0))
-        offset = material_data.get_vector_property("g_vTexCoordOffset", (0.0, 0.0, 0.0))
-        scale = material_data.get_vector_property("g_vTexCoordScale", (1.0, 1.0, 0.0))
-        transform_node = self.create_transform("TEXCOORD", scale, offset, center)
+        transform_node = self._texcoord_transform()
         if self._have_texture("g_tColor"):
             color_texture = self._get_texture("g_tColor", (1, 1, 1, 1))
             self.connect_nodes(transform_node.outputs[0], color_texture.inputs[0])
@@ -55,15 +52,16 @@ class CSGOComplex(Source2ShaderBase):
         else:
             albedo_output = alpha_output = None
         if self._have_texture("g_tDetail"):
-            scale = material_data.get_vector_property("g_vDetailTexCoordScale", None)
-            offset = material_data.get_vector_property("g_vDetailTexCoordOffset", None)
+            scale = material_data.get_vector_property("g_vDetailTexCoordScale", (1.0, 1.0, 0.0))
+            offset = material_data.get_vector_property("g_vDetailTexCoordOffset", (0.0, 0.0, 0.0))
+            rotation = material_data.get_float_property("g_flDetailTexCoordRotation", 0.0)
 
             detail_texture = self._get_texture("g_tDetail", (1, 1, 1, 1))
             detail_mask_texture = self._get_texture("g_tDetailMask", (1, 0, 0, 1))
             use_secondary = (self._check_flag("F_SECONDARY_UV") and
                              material_data.get_int_property("g_bUseSecondaryUvForDetailTexture", 1))
             detail_uv_slot = SECONDARY_UV if use_secondary else "TEXCOORD"
-            detail_transform_node = self.create_transform(detail_uv_slot, scale, offset, (0.5, 0.5, 0))
+            detail_transform_node = self.create_transform(detail_uv_slot, scale, offset, (0.5, 0.5, 0), rotation)
             self.connect_nodes(detail_transform_node.outputs[0], detail_texture.inputs[0])
 
             self.connect_nodes(detail_texture.outputs[0], shader.inputs["TextureDetail"])

@@ -231,6 +231,8 @@ class CompiledTextureResource(CompiledResource):
                 break
 
         data_block = self.get_block(TextureData, block_name='DATA')
+        if not 0 <= mip_level < data_block.texture_info.mip_count:
+            raise ValueError(f"Mip {mip_level} requested, texture has {data_block.texture_info.mip_count}")
         buffer = self._buffer
         buffer.seek(info_block.absolute_offset + info_block.size)
         compression_info: Optional[CompressedMip] = data_block.extra_data.get(VTexExtraData.COMPRESSED_MIP_SIZE, None)
@@ -259,8 +261,8 @@ class CompiledTextureResource(CompiledResource):
             data = buffer.read(desired_mip_size)
 
         pixel_format = texture_info.pixel_format
-        width = texture_info.width
-        height = texture_info.height
+        width = max(texture_info.width >> mip_level, 1)
+        height = max(texture_info.height >> mip_level, 1)
         if self.is_cubemap():
             height *= 6
         if texture_info.depth > 1:

@@ -17,6 +17,8 @@ Checks, with the current baseline:
 cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 258 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_flex_controllers', argv=['x'], exit=False)"   # 7 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_skins', argv=['x'], exit=False)"   # 7 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_material_paths', argv=['x'], exit=False)"   # 7 pass
 blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py                                      # 87 PASS / 6 WARN / 0 FAIL
 blender -b --factory-startup --python tests/blender_tests/run_renamed_smoke.py                                       # 443/443 modules, register/unregister/register OK
 blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
@@ -25,35 +27,49 @@ blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 ```
 
-1. **Bone collections for the other builders** (optional): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified (no samples). GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
-2. **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
-3. **Clip follow-ups** (rounds 9 and 11):
+### Actionable
+
+1. **Release 5.8.0** (rounds 10–12; minor bump because of the module layout change, the new panel and the per-include-model compact actions). First check the flex slider drag by hand in the UI: `sourceio.flex_slider_handler` is modal and the headless tests don't cover it (drag, cancel, auto keying, the L/R balance on a stereo controller; TF2 HWM Heavy has 37 controllers). Then bump `blender_manifest.toml`, write the release notes and README in the 5.6.0 layout, and build the packages with `tools/build_extension.py`.
+2. **Unused Source 2 textures** (round 11): the remaining "Unused texture" warnings are textures SourceIO's node setups don't wire up: `csgo_vertexlitgeneric` metalness and AO (172 each on de_dust2), `csgo_lightmappedgeneric` layer AO and detail, `csgo_foliage` AO/noise/transmissive, `csgo_complex` AO, `generic.vfx` roughness. The material loader still adds an unconnected image node for each.
+3. **Smaller CS2 follow-ups** (round 8): `skybox_reference` entities don't import the 3D skybox; unhandled CS2 entities include `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points.
+4. **Clip follow-ups** (rounds 9 and 11):
    - Event markers sit at the start frame only; durations (ID events, material attribute and float curve events) and the other fields (attachments, sound positions, curves) aren't kept.
    - Weapon viewmodel clips can't be found from any model: the viewmodel graph pulls them in at runtime through `m_externalGraphSlots` (per-weapon graphs such as `viewmodel_inspects.vnmgraph+ak47.vnmgraph`). The clip importer handles them once extracted; finding them automatically needs whatever ties a weapon to its graphs (item schema or weapon vdata, unverified).
    - The clip importer (`sourceio.vnmclip`) treats the armature's rest pose as Source bone orientations. That holds for SourceIO's Source 2 armatures; other rigs would need their bone orientation corrected.
-   - Float curves (`m_floatCurveIDs`, VRF's newer format) aren't decoded; no CS2 clip has any.
-4. **Smaller CS2 follow-ups** (round 8): `skybox_reference` entities don't import the 3D skybox; unhandled CS2 entities include `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points.
-5. **Unused Source 2 textures** (round 11): the remaining "Unused texture" warnings are textures SourceIO's node setups don't wire up: `csgo_vertexlitgeneric` metalness and AO (172 each on de_dust2), `csgo_lightmappedgeneric` layer AO and detail, `csgo_foliage` AO/noise/transmissive, `csgo_complex` AO, `generic.vfx` roughness. The material loader still adds an unconnected image node for each.
-6. **Upstream #477 leftovers** (round 12, deferred on purpose): moving the scene settings into one `Scene.sourceio_props` group needs a versioned migration (old .blend values are otherwise lost: tested in the review) and compatibility for mounted-resource collections. Upstream's automatically embedded flex UI script (`Text.use_module`, runs only with auto-execution on) could come back only as an explicit *Embed standalone flex UI* action. The slider drag handler (`sourceio.flex_slider_handler`, modal) isn't covered by the headless tests; check it by hand in the UI.
-7. **External mesh morph atlas** (unverified, round 11): `load_external_mesh` resolves `m_pTextureAtlas` against the model resource, as before; it may belong to the mesh or morph set resource. No CS2 or sample model uses this path.
+5. **Upstream #477 leftovers** (round 12, deferred on purpose): moving the scene settings into one `Scene.sourceio_props` group needs a versioned migration (old .blend values are otherwise lost: tested in the review) and compatibility for mounted-resource collections. Upstream's automatically embedded flex UI script (`Text.use_module`, runs only with auto-execution on) could come back only as an explicit *Embed standalone flex UI* action.
+6. **Expected sample WARNs** (small): the 6 WARN in the sample run are all missing content (HL2 materials and skybox, external WADs, `stone_tranquility_helm`'s `_vmorf.vtex`, which VRF doesn't ship). Marking them as expected in `run_sample_imports.py` would make any new WARN stand out.
 
-Source 2 flex/morph animation channels: the legacy ANIM path still skips `MorphChannel` segments; CS2 clips carry no float channels, so a model with legacy morph animation is needed to test it. Bone masks (`m_maskDefinitions` in a `.vnmskel`) and pose-parameter blending are graph-evaluation features, not needed to import clips.
-Future work, not started: the Source 1 / Source 2 export plan in [TODO.md](TODO.md).
-Blocked until a v49 game is installed (CS:GO, L4D2, Portal 2, SFM; CS2 ships only Source 2 content): checking the round 6 FRAMEANIM decoder against a real model.
+### Blocked on assets
+
+- **Bone collections for the other builders** (optional, no samples): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified. GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
+- **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
+- **External mesh morph atlas** (unverified, round 11): `load_external_mesh` resolves `m_pTextureAtlas` against the model resource, as before; it may belong to the mesh or morph set resource. No CS2 or sample model uses this path.
+- **Source 2 flex/morph animation channels**: the legacy ANIM path still skips `MorphChannel` segments; CS2 clips carry no float channels, so a model with legacy morph animation is needed to test it.
+- **Clip float curves** (`m_floatCurveIDs`, VRF's newer format) aren't decoded; no CS2 clip has any.
+- **v49 FRAMEANIM against a real model** (round 6): needs a v49 game (CS:GO, L4D2, Portal 2, SFM; CS2 ships only Source 2 content).
+
+Not needed to import clips: bone masks (`m_maskDefinitions` in a `.vnmskel`) and pose-parameter blending are graph-evaluation features.
+
+### Future work
+
+The Source 1 / Source 2 export plan in [TODO.md](TODO.md); not started.
 
 ## Verification
 
-Every change must pass the headless smoke test. It imports every hand-written module, then runs register → unregister → register:
+Every change must pass the unit tests and `run_renamed_smoke.py` from the checks under Next. The smoke test loads the shipped files under another package name, imports every module, then runs register → unregister → register; it exits with 1 on any failure. Run the sample, game and Blender test suites when the change touches what they cover.
+
+Real-asset samples (hash-verified downloads into the git-ignored `samples/`):
 
 ```
-"D:/Blender Foundation/Blender 5.2/blender.exe" -b --factory-startup --python <scratchpad>/smoke.py
+"<blender>/5.2/python/bin/python.exe" -I tests/fetch_samples.py
+blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--filter TEXT] [--json report.json]
 ```
 
-The baseline (before any changes) fails with:
-- `csgo_weapon.py`: `NameError: name 'bpy' is not defined`
-- `IMAGE_MT_image` has 2 `vtf_export` entries after re-register
+## Round 1 (branch `blender-5.2-modernization`)
 
-## Phase 1 — Bugs users hit
+All five phases are done. Phase 1 also fixed the GoldSrc `ActionCurveFactory` callers in mdl4/6/10 (broken by the same overhaul) and the old Principled socket names (`Specular`, `Transmission`, `Emission`) that fail on 5.2. Before round 1 the smoke test failed on the missing `import bpy` in `csgo_weapon.py` (1.9) and the duplicate `vtf_export` Image menu entry (1.5).
+
+### Phase 1 — Bugs users hit
 
 | # | Bug | Location | Fix |
 |---|-----|----------|-----|
@@ -67,14 +83,16 @@ The baseline (before any changes) fails with:
 | 1.8 | VTF import leaks a file handle; unformatted report string; progress bar stuck on error | `source1_operators.py:185,460`, `shared_operators.py:81` | Context manager, f-string, try/finally |
 | 1.9 | `csgo_weapon.py` is missing `import bpy` | `material_loader/shaders/source2_shaders/csgo_weapon.py` | Add the import |
 
-## Phase 2 — Remove Blender 4 code paths
+### Phase 2 — Remove Blender 4 code paths
 
-- Delete `is_blender_4*`/`is_blender_5` helpers and every branch (~60 call sites): `use_auto_smooth`, `shadow_method`, `material.use_nodes`, the legacy `node_group.inputs.new`, and the non-channelbag path in `ActionCurveFactory`.
-- Replace deprecated material properties: `use_screen_refraction` → `use_raytrace_refraction`, `show_transparent_back` → `use_transparency_overlap`, `blend_method` → `surface_render_method` (via `set_blend_mode`).
-- Replace `ShaderNodeMixRGB` (legacy) with `ShaderNodeMix` (`data_type='RGBA'`) through one helper on `ShaderBase`.
-- Remove the 4.x-only `get_directory()` fallback and the conditional `directory` property in `operator_helper.py`; register the file handlers unconditionally.
+No `is_blender_*`, `shadow_method`, `use_auto_smooth`, `ShaderNodeMixRGB` or deprecated material properties remain; the helpers are deleted.
 
-## Phase 3 — Performance (benchmarked on 5.2.2)
+- Deleted the `is_blender_4*`/`is_blender_5` helpers and every branch (~60 call sites): `use_auto_smooth`, `shadow_method`, `material.use_nodes`, the legacy `node_group.inputs.new`, and the non-channelbag path in `ActionCurveFactory`.
+- Replaced deprecated material properties: `use_screen_refraction` → `use_raytrace_refraction`, `show_transparent_back` → `use_transparency_overlap`, `blend_method` → `surface_render_method` (via `set_blend_mode`).
+- Replaced `ShaderNodeMixRGB` (legacy) with `ShaderNodeMix` (`data_type='RGBA'`) through one helper on `ShaderBase`.
+- Removed the 4.x-only `get_directory()` fallback and the conditional `directory` property in `operator_helper.py`; the file handlers register unconditionally.
+
+### Phase 3 — Performance (benchmarked on 5.2.2; old vs new verified equal)
 
 | Change | Before | After |
 |--------|--------|-------|
@@ -83,45 +101,26 @@ The baseline (before any changes) fails with:
 | Keyframe interpolation: `foreach_set("interpolation")` instead of a per-key `setattr` | per-key Python | single call |
 | `FastMesh.from_pydata(shade_flat=False)` where the faces are set smooth right after | double write | single write |
 
-## Phase 4 — Packaging as a 5.2 extension
+### Phase 4 — Packaging as a 5.2 extension
 
-- Add `blender_manifest.toml`: `blender_version_min = "5.2.0"`; platforms windows-x64, linux-x64, macos-x64, macos-arm64; `files` permission.
-- Fix the module alias in `__init__.py` (`sys.modules[__name__]` instead of a lookup by folder name, which breaks under `bl_ext.*`).
-- Bump the version floor checks and `bl_info["blender"]` to 5.2.0.
+The manifest validates, all 4 platform packages build, and the add-on installs and enables as `bl_ext.user_default.sourceio`.
 
-## Phase 5 — Features
+- `blender_manifest.toml`: `blender_version_min = "5.2.0"`; platforms windows-x64, linux-x64, macos-x64, macos-arm64; `files` permission.
+- Version floor checks and `bl_info["blender"]` bumped to 5.2.0.
+- The `sys.modules` alias fix from this phase was superseded in round 10: the add-on now uses relative imports and has no alias.
 
-- Put delta animations on NLA strips with `blend_type='COMBINE'` automatically.
-- File handlers for `.vmdl_c`, `.vphys_c`, `.dmx` (camera); fix the copy-pasted handler labels.
-- Collapsible `layout.panel()` sections in the import dialogs.
+### Phase 5 — Features (verified in the 5.2.2 UI)
 
-Deferred (larger, needs test assets): ~~replacing `bpy.ops` mode switching in MDL armature builders~~ (round 7), ~~bone collections and colours~~ (round 5). The CLI command was done in round 2; `Object.visible_shadow` was dropped because material-level shadow disabling already covers sky materials.
+- Delta animations go on NLA strips with `blend_type='COMBINE'` (option).
+- File handlers for `.vmdl_c`, `.vphys_c`, `.dmx` (camera); the copy-pasted handler labels are fixed.
+- Collapsible `layout.panel()` sections in the MDL import dialog.
 
-## Execution / ownership
+The deferred items are all done: `bpy.ops` mode switching (round 7), bone collections and colours (round 5), the CLI command (round 2), the `walk1`-only mdl10 import and per-platform zips (round 2). `Object.visible_shadow` was dropped because material-level shadow disabling already covers sky materials.
 
-To avoid edit conflicts, file ownership is split, and everyone works in the same tree:
+### Sample fixes
 
-| Owner | Files |
-|-------|-------|
-| Agent A (Sonnet 5.5) | `blender_bindings/material_loader/**`, `goldsrc/bsp/import_bsp.py` material block — Phases 1.3, 1.4, 1.9, 2 (materials, MixRGB) |
-| Agent B (Sonnet 5.5) | `blender_bindings/models/**` except `import_animations.py` and `prop_animations.py`; `source2/vmdl_loader.py`; `utils/fast_mesh.py` — Phases 2 (meshes) and 3 (normals, weights, `shade_flat`) |
-| Lead | `__init__.py`, `bindings.py`, `attributes/`, `operators/`, `utils/bpy_utils.py`, `import_animations.py`, `prop_animations.py`, `source1/bsp/import_bsp.py`, manifest — Phases 1.1, 1.2, 1.5–1.8, 2 (operators/animation), 4, 5 |
+Sample suite: 59 PASS / 4 WARN / 8 FAIL before, **66 PASS / 5 WARN / 0 FAIL** after (the other samples unchanged). The WARN are missing game content: `dm_lockdown.bsp` (HL2 materials), `rot_main.bsp` (HL2 skybox), GoldSrc `test1-3.bsp` (external WAD textures).
 
-The lead deletes the `is_blender_*` helpers last, after a grep shows no remaining users.
-
-## Real-asset tests
-
-```
-"<blender>/5.2/python/bin/python.exe" -I tests/fetch_samples.py        # 76 files, 16 MB, hash-verified, into git-ignored samples/
-blender -b --factory-startup --python tests/blender_tests/run_sample_imports.py -- [--filter TEXT] [--json report.json]
-```
-
-Baseline (`master` and the branch before fixes): 59 PASS / 4 WARN / 8 FAIL.
-After the importer fixes: **66 PASS / 5 WARN / 0 FAIL**. All other samples are identical to `master`.
-
-WARN (expected: game content isn't present): `dm_lockdown.bsp` (HL2 materials), `rot_main.bsp` (HL2 skybox), GoldSrc `test1-3.bsp` (external WAD textures).
-
-Fixed (all pre-existing on `master`):
 | Sample | Was | Fix |
 |--------|-----|-----|
 | `source1/maps/rot_main.bsp` | `'NoneType' object has no attribute 'surf_edges'` | Brush entities in maps without face/edge lumps get an empty mesh instead of crashing (`abstract_entity_handlers.py`) |
@@ -132,21 +131,6 @@ Fixed (all pre-existing on `master`):
 | `source2/maps/small_map_with_material.vpk` | assertion, map not found | Falls back to any `*.vmap_c` in the VPK; physics paths follow the found map |
 
 Found while verifying the textures (also pre-existing): every HDR texture (BC6H, RGBA16161616F) imported with reversed channels, because the native EXR writer stores values in EXR's alphabetical channel order (A, B, G, R). In-memory HDR images were also created as 8-bit sRGB placeholders. Both fixed in `texture_utils.py`, and float formats (R16F…RGBA32323232F) now use the HDR path. Verified pixel-exact for BC6H and RGBA16161616F (memory and disk cache), and within half-float precision for R32F.
-
-Still needs game installs: real CS2/Dota 2 maps. (Source 1 animated/flexed models: done in round 3 against TF2.)
-
-## Status
-
-- [x] Phase 1 — all items; also fixed the GoldSrc `ActionCurveFactory` callers in mdl4/6/10 (broken by the same overhaul) and the old Principled socket names (`Specular`, `Transmission`, `Emission`) that fail on 5.2
-- [x] Phase 2 — no `is_blender_*`, `shadow_method`, `use_auto_smooth`, `ShaderNodeMixRGB` or deprecated material properties remain; helpers deleted
-- [x] Phase 3 — free normals, batched weights, `shade_flat=False`, vectorized keyframes (old vs new verified equal)
-- [x] Phase 4 — manifest validates; all 4 platform packages build; installs and enables as `bl_ext.user_default.sourceio`
-- [x] Phase 5 — delta → NLA COMBINE option, new file handlers, collapsible MDL import dialog (verified in the 5.2.2 UI)
-
-Follow-ups found during execution:
-- ~~`models/mdl10/import_mdl.py` only imports the `walk1` sequence~~ — fixed in round 2 (all sequences, rest-relative).
-- ~~Every platform zip bundles all three native libs~~ — fixed in round 2 (`tools/build_extension.py`).
-- ~~The extension still relies on a top-level `SourceIO` alias in `sys.modules`~~ — fixed in round 10 (relative imports).
 
 ## Round 2 (2026-10-07, branch `continue-work`)
 

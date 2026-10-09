@@ -9,6 +9,7 @@ Also resolves include_models to gather animations from animation sub-MDLs
 (e.g. dog.mdl → dog_animations.mdl → dog_animations.ani).
 """
 from dataclasses import dataclass
+from pathlib import PureWindowsPath
 from typing import Optional
 
 import numpy.typing as npt
@@ -113,29 +114,54 @@ def load_all_animations_with_models(mdl: MdlV49, mdl_buffer: Buffer,
     resolving a sequence name needs the include models too -- and they are already
     parsed here, so hand them back rather than making the caller re-read them.
     """
-    all_animations = load_animations_from_mdl(mdl, mdl_buffer, content_manager, model_path)
-    mdls = [mdl]
+    all_animations = []
+    mdls = []
+    for _, model, animations in _iter_model_animations(mdl, mdl_buffer, content_manager, model_path):
+        all_animations.extend(animations)
+        mdls.append(model)
+    return all_animations, mdls
 
-    if not mdl.include_models:
-        return all_animations, mdls
+
+def load_animations_by_model(mdl: MdlV49, mdl_buffer: Buffer,
+                             content_manager: ContentManager,
+                             model_path: TinyPath | None = None
+                             ) -> list[tuple[str, list[AnimationData]]]:
+    """As :func:`load_all_animations`, but grouped by the model each animation comes from.
+
+    Returns ``(model name, animations)`` for the main MDL and then each include model
+    that loaded, in include order. The name is the model's file name (``dog_animations.mdl``).
+    """
+    return [(_model_name(path), animations)
+            for path, _, animations in _iter_model_animations(mdl, mdl_buffer, content_manager, model_path)]
+
+
+def _iter_model_animations(mdl: MdlV49, mdl_buffer: Buffer,
+                           content_manager: ContentManager,
+                           model_path: TinyPath | None):
+    """Yield ``(path, mdl, animations)`` for the main MDL, then for each include model that loads."""
+    yield model_path, mdl, load_animations_from_mdl(mdl, mdl_buffer, content_manager, model_path)
 
     for include_path in mdl.include_models:
-        inc_buffer = content_manager.find_file(TinyPath(include_path))
+        include_path = TinyPath(include_path)
+        inc_buffer = content_manager.find_file(include_path)
         if inc_buffer is None:
             logger.info(f"Include model not found: {include_path}")
             continue
 
         try:
             inc_mdl = MdlV49.from_buffer(inc_buffer)
-            inc_anims = load_animations_from_mdl(
-                inc_mdl, inc_buffer, content_manager, TinyPath(include_path))
-            all_animations.extend(inc_anims)
-            mdls.append(inc_mdl)
+            inc_anims = load_animations_from_mdl(inc_mdl, inc_buffer, content_manager, include_path)
         except Exception as ex:
             logger.error(f"Failed to load include model '{include_path}': {ex}")
             continue
+        yield include_path, inc_mdl, inc_anims
 
-    return all_animations, mdls
+
+def _model_name(model_path: str | None) -> str:
+    """The file name of ``model_path``: stable, and the same whether the path is absolute or game-relative."""
+    if not model_path:
+        return 'animations'
+    return PureWindowsPath(model_path).name  # splits on both / and \
 
 def load_all_animations_in_model(mdl: MdlV49, mdl_buffer: Buffer,
                                     content_manager: ContentManager,

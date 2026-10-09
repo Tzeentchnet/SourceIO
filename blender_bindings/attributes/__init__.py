@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import CollectionProperty, IntProperty, StringProperty
+from bpy.props import CollectionProperty, FloatProperty, IntProperty, StringProperty
 
 from ..operators.flex_operators import SourceIO_PG_FlexController
 from ..operators.shared_operators import SOURCEIO_UL_MountedResource
@@ -28,8 +28,13 @@ def register_props():
         name="Replace entity",
         default=True
     )
-    bpy.types.Mesh.flex_controllers = CollectionProperty(type=SourceIO_PG_FlexController)
-    bpy.types.Mesh.flex_selected_index = IntProperty(default=0)
+    bpy.types.Object.flex_controllers = CollectionProperty(type=SourceIO_PG_FlexController)
+    bpy.types.Object.flex_controller_index = IntProperty(default=0, options=set())
+    bpy.types.Scene.sourceio_flex_lr_balance = FloatProperty(
+        name="Left/Right balance",
+        description="How much the stereo flex sliders move the left (-1) or right (1) side",
+        default=0.0, min=-1.0, max=1.0, options=set()
+    )
 
     bpy.types.Scene.mounted_resources = CollectionProperty(type=SOURCEIO_UL_MountedResource)
     bpy.types.Scene.mounted_resources_index = IntProperty(default=0)
@@ -37,8 +42,9 @@ def register_props():
 
 def unregister_props():
     del bpy.types.Scene.TextureCachePath
-    del bpy.types.Mesh.flex_controllers
-    del bpy.types.Mesh.flex_selected_index
+    del bpy.types.Object.flex_controllers
+    del bpy.types.Object.flex_controller_index
+    del bpy.types.Scene.sourceio_flex_lr_balance
     del bpy.types.Scene.use_bvlg
     del bpy.types.Scene.use_instances
     del bpy.types.Scene.replace_entity

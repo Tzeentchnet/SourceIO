@@ -110,6 +110,9 @@ def summarize_model() -> dict:
     shape_keys = sum(len(mesh.shape_keys.key_blocks) - 1 for mesh in bpy.data.meshes if mesh.shape_keys)
     drivers = sum(len(key.animation_data.drivers) for key in bpy.data.shape_keys if key.animation_data)
     slots = sum(len(action.slots) for action in bpy.data.actions)
+    flex_controllers = sum(len(obj.flex_controllers) for obj in bpy.data.objects)
+    # Source 1 compact animations: one action per source model, named after it, with a slot per animation
+    actions = sorted(action.name for action in bpy.data.actions if action.name.endswith(".mdl"))
     clips = sum(1 for action in bpy.data.actions if "clip" in action)
     markers = sum(len(action.pose_markers) for action in bpy.data.actions)
     nla_tracks = sum(len(obj.animation_data.nla_tracks) for obj in bpy.data.objects if obj.animation_data)
@@ -117,7 +120,8 @@ def summarize_model() -> dict:
     for armature in bpy.data.armatures:
         for collection in armature.collections_all:
             bone_collections[collection.name] = bone_collections.get(collection.name, 0) + len(collection.bones)
-    return {"shape_keys": shape_keys, "flex_drivers": drivers, "action_slots": slots, "clip_actions": clips,
+    return {"shape_keys": shape_keys, "flex_drivers": drivers, "flex_controllers": flex_controllers,
+            "action_slots": slots, "compact_actions": actions, "clip_actions": clips,
             "pose_markers": markers, "nla_tracks": nla_tracks, "bone_collections": bone_collections}
 
 

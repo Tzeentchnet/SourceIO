@@ -9,7 +9,7 @@ from ...library.models.vtx.v7.structs.mesh import Mesh as VtxMesh
 from ...library.models.mdl import Mdl
 from ...library.models.mdl.structs.bone import Bone, BoneRole
 
-from ...library.models.mdl.load_animations import load_all_animations, load_mdl_animations
+from ...library.models.mdl.load_animations import load_all_animations, load_animations_by_model, load_mdl_animations
 from .import_animations import import_animations_to_armature
 from ...library.utils import Buffer
 from ...library.shared.content_manager import ContentManager
@@ -38,13 +38,19 @@ def assign_bone_collections(armature: bpy.types.Armature, bones: list[Bone], edi
 
 def import_animations_common(mdl, buffer: Buffer, content_manager: ContentManager, model_path: str, scale: float, compact_animations: bool, include_all: bool, armature: bpy.types.Object,
                              delta_animations_to_nla: bool = False):
-    #if options.import_animations and armature:
-    if include_all:
-        animations = load_all_animations(mdl, buffer, content_manager, model_path)
+    if not include_all:
+        groups = [(model_path, load_mdl_animations(mdl, buffer, content_manager, model_path))]
+    elif compact_animations:
+        # One compact action per source model, named after it, so animations that share a name across
+        # include models (Heavy's @user_ref) keep it.
+        groups = load_animations_by_model(mdl, buffer, content_manager, model_path)
     else:
-        animations = load_mdl_animations(mdl, buffer, content_manager, model_path)
-        
-    import_animations_to_armature(armature, model_path, animations, scale, compact_animations, delta_animations_to_nla)
+        # Every animation is its own action already; they keep one slot name so swapping actions keeps the binding.
+        groups = [(model_path, load_all_animations(mdl, buffer, content_manager, model_path))]
+
+    for model_name, animations in groups:
+        import_animations_to_armature(armature, model_name, animations, scale, compact_animations,
+                                      delta_animations_to_nla)
 
 def merge_strip_groups(vtx_mesh: VtxMesh):
     indices_accumulator = []
@@ -349,7 +355,6 @@ def generate_wrinkle_map_node_group(obj: bpy.types.Object):
 
 def create_flex_drivers(obj, mdl):
     from string import ascii_lowercase
-    from ...library.models.mdl.structs.flex import FlexController, FlexControllerUI, FlexOpType, FlexRule
     if not obj.data.shape_keys:
         return
     
@@ -360,7 +365,6 @@ def create_flex_drivers(obj, mdl):
     #lower_eye_expr = '(1-abs(max({}, 0)))*(1-{})*{}'
 
     all_exprs: list[tuple[str, tuple]] = mdl.rebuild_flex_rules()
-    bpy.types.Scene.t = all_exprs # debug point
     data: bpy.types.Mesh = obj.data
     shape_keys = data.shape_keys
     kb = shape_keys.key_blocks
@@ -391,6 +395,20 @@ def create_flex_drivers(obj, mdl):
 
     flexcontrollers['Flex Scale'] = flex
 
+    # The Flex controllers panel lists these; each entry sets one property (or a left/right pair) made below.
+    sliders = obj.flex_controllers
+    sliders.clear()
+
+    def add_slider(name, display_name, minimum, maximum):
+        slider = sliders.add()
+        slider.name = name
+        slider.display_name = display_name
+        slider.minimum = minimum
+        slider.maximum = maximum
+        return slider
+
+    add_slider(flex_sort, 'Flex Scale', -10, 10)
+
     for flex_controller_ui in mdl.flex_ui_controllers:
         flex = dict()
         
@@ -412,12 +430,21 @@ def create_flex_drivers(obj, mdl):
             flex['right'] = right_controller.name
             make_custom_property(left_sort, left_controller.min, left_controller.max)
             make_custom_property(right_sort, right_controller.min, right_controller.max)
+
+            # Stereo controllers default to the additive slider, which splits by the L/R balance.
+            slider = add_slider(flex_controller_ui.name, flex_controller_ui.name,
+                                right_controller.min, right_controller.max)
+            slider.split = True
+            slider.L = left_sort
+            slider.R = right_sort
+            slider.realvalue = False
         else:
             flex['type'] = 0b00
             controller = next(filter(lambda a: a.name == flex_controller_ui.controller, mdl.flex_controllers))
             flexmap[controller.name] = controller_sort = f'{next(tally)}_{controller.name}'
             flex['controller'] = controller.name
             make_custom_property(controller_sort, controller.min, controller.max)
+            add_slider(controller_sort, flex_controller_ui.name, controller.min, controller.max)
         
         if flex_controller_ui.nway_controller:
             flex['type'] |= 0b10
@@ -430,6 +457,7 @@ def create_flex_drivers(obj, mdl):
             flexmap[nway.name] = nway_sort = f'{next(tally)}_{nway.name}'
             flex['nway'] = nway.name
             make_custom_property(nway_sort, nway.min, nway.max)
+            add_slider(nway_sort, nway.name, nway.min, nway.max)
 
         flexcontrollers[flex_controller_ui.name] = flex
     
@@ -539,7 +567,8 @@ def create_flex_drivers(obj, mdl):
                     targ.id = shape_keys
                     targ.data_path = data_path
 
-                expr = f'clamp({"*".join(all_vars)})/(pow(FS, {len(all_vars)-1})+1e-16)'
+                # Source multiplies the component flex values; the product is not clamped.
+                expr = f'({"*".join(all_vars)})/(pow(FS, {len(all_vars)-1})+1e-16)'
 
                 var = driv.variables.new()
                 var.name = 'FS'

@@ -11,7 +11,7 @@ from SourceIO.library.utils.tiny_path import TinyPath
 from SourceIO.library.models.mdl.v49.mdl_file import MdlV49
 from SourceIO.library.models.mdl.structs.ani_file import AniFile, read_anim_block_table
 from SourceIO.library.models.mdl.load_animations import (
-    load_animations_from_mdl, load_all_animations, AnimationData,
+    load_animations_from_mdl, load_all_animations, load_animations_by_model, AnimationData, _model_name,
 )
 from SourceIO.library.shared.content_manager import ContentManager
 
@@ -203,3 +203,42 @@ class TestAnimationLoading:
         ragdoll = next((a for a in anims if a.name == "@ragdoll"), None)
         assert ragdoll is not None
         assert ragdoll.frame_count == 2
+
+
+class TestGroupedLoading:
+    def _load(self, path):
+        cm = ContentManager()
+        model_path = TinyPath(str(path))
+        cm.scan_for_content(model_path)
+        with FileBuffer(path) as buf:
+            mdl = MdlV49.from_buffer(buf)
+            groups = load_animations_by_model(mdl, buf, cm, model_path)
+            buf.seek(0)
+            flat = load_all_animations(mdl, buf, cm, model_path)
+        cm.clean()
+        return groups, flat
+
+    def test_groups_by_source_model(self, dog_mdl):
+        groups, flat = self._load(dog_mdl)
+        assert [name for name, _ in groups] == [
+            "dog.mdl", "dog_gestures.mdl", "dog_postures.mdl", "dog_animations.mdl"]
+        # The flattened API still returns the same animations, in the same order.
+        assert [a.name for _, anims in groups for a in anims] == [a.name for a in flat]
+        assert len(flat) == 134
+
+    def test_model_without_includes(self, dog_gestures_mdl):
+        groups, flat = self._load(dog_gestures_mdl)
+        assert len(groups) == 1
+        name, anims = groups[0]
+        assert name == "dog_gestures.mdl"
+        assert [a.name for a in anims] == [a.name for a in flat]
+
+    @pytest.mark.parametrize("path, expected", [
+        ("models/dog.mdl", "dog.mdl"),  # str.lstrip("models/") would give "g.mdl"
+        ("models/player/heavy_animations.mdl", "heavy_animations.mdl"),
+        (r"C:\games\tf\models\player\heavy.mdl", "heavy.mdl"),
+        ("dog.mdl", "dog.mdl"),
+        (None, "animations"),
+    ])
+    def test_model_name(self, path, expected):
+        assert _model_name(path) == expected

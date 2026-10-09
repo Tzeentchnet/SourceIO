@@ -117,11 +117,14 @@ class Object(BaseType, dict[str, T]):
     if DEBUGGING:
         def __setitem__(self, key, value: T):
             if isinstance(value, np.ndarray):
-                assert value.dtype in (np.float32, np.float64,
-                                       np.int8, np.uint8,
-                                       np.int16, np.uint16,
-                                       np.int32, np.uint32,
-                                       np.int64, np.uint64)
+                if value.dtype not in (
+                        np.float32, np.float64,
+                        np.int8, np.uint8,
+                        np.int16, np.uint16,
+                        np.int32, np.uint32,
+                        np.int64, np.uint64,
+                ):
+                    raise TypeError(f"Unsupported KV3 numpy dtype: {value.dtype}")
             elif not isinstance(value, (BaseType, str, NoneType)):
                 raise TypeError(f'Only KV3 types are allowed, got {type(value)}')
             super(Object, self).__setitem__(key, value)
@@ -178,11 +181,13 @@ class Array(BaseType, list[T]):
         super(Array, self).__init__(initial)
 
     def append(self, value: T):
-        assert isinstance(value, BaseType)
+        if not isinstance(value, BaseType):
+            raise TypeError(f"Array values must be KV3 types, got {type(value)}")
         super(Array, self).append(value)
 
     def extend(self, values: Collection[T]):
-        assert all(map(partial(isinstance, __class_or_tuple=BaseType), values))
+        if not all(map(partial(isinstance, __class_or_tuple=BaseType), values)):
+            raise TypeError("Array values must all be KV3 types")
         super(Array, self).extend(values)
 
     def to_dict(self):
@@ -211,11 +216,13 @@ class TypedArray(BaseType, list[T]):
         self.data_specifier = data_specifier
 
     def append(self, value: T):
-        assert isinstance(value, BaseType)
+        if not isinstance(value, BaseType):
+            raise TypeError(f"TypedArray values must be KV3 types, got {type(value)}")
         super(TypedArray, self).append(value)
 
     def extend(self, values: Collection[T]):
-        assert all(map(partial(isinstance, __class_or_tuple=BaseType), values))
+        if not all(map(partial(isinstance, __class_or_tuple=BaseType), values)):
+            raise TypeError("TypedArray values must all be KV3 types")
         super(TypedArray, self).extend(values)
 
     def to_dict(self):

@@ -3,6 +3,7 @@ from typing import Type, cast
 from ..keyvalues3.binary_keyvalues import read_valve_keyvalue3, write_valve_keyvalue3
 from ..keyvalues3.enums import KV3Signature, KV3CompressionMethod, KV3Format
 from ..keyvalues3.types import AnyKVType, Object, Array, NullObject
+from ..exceptions import KV3ValidationError
 from ..utils.ntro_reader import NTROBuffer
 from .base import BaseBlock
 from ...utils import Buffer
@@ -27,12 +28,27 @@ class KVBlock(Object, BaseBlock):
     def from_buffer(cls, buffer: NTROBuffer) -> 'KVBlock':
         if buffer.size() > 0:
             data_start = buffer.tell()
+            if buffer.remaining() < 4:
+                raise KV3ValidationError(
+                    "Truncated KV3 or NTRO data block signature",
+                    offset=data_start,
+                )
             magic = buffer.read(4)
+            if magic[1:] == b"3VK" and not KV3Signature.is_valid(magic):
+                buffer.seek(data_start)
+                read_valve_keyvalue3(buffer)
+                raise KV3ValidationError("Unreachable KV3 version dispatch")
             if KV3Signature.is_valid(magic):
                 version = KV3Signature(magic)
-                if version is KV3Signature.VKV_LEGACY:
+                if version == KV3Signature.VKV_LEGACY:
                     buffer.skip(16)
-                format_ = KV3Format(buffer.read(16))
+                try:
+                    format_ = KV3Format(buffer.read(16))
+                except (BufferError, ValueError) as exc:
+                    raise KV3ValidationError(
+                        "Invalid or truncated KV3 format identifier",
+                        offset=buffer.tell(),
+                    ) from exc
                 buffer.seek(data_start)
                 kv3 = read_valve_keyvalue3(buffer)
             elif buffer.has_ntro:
@@ -41,7 +57,11 @@ class KVBlock(Object, BaseBlock):
                 version = KV3Signature.VKV_LEGACY
                 format_ = KV3Format.generic
             else:
-                raise NotImplementedError('Unknown data block format')
+                raise KV3ValidationError(
+                    f"Unknown DATA block format with magic {magic!r}",
+                    offset=data_start,
+                    details={"magic": magic.hex()},
+                )
             if isinstance(kv3, (NullObject, type(None))):
                 return cls({}, version, format_)
             if not isinstance(kv3, Object):
@@ -52,7 +72,6 @@ class KVBlock(Object, BaseBlock):
             # raise NotImplementedError('Unknown data block format')
 
     def to_buffer(self, buffer: Buffer) -> None:
-        self._version = KV3Signature.KV3_V3
         write_valve_keyvalue3(buffer, self, self._format, self._version, KV3CompressionMethod.UNCOMPRESSED)
 
 

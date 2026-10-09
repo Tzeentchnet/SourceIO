@@ -7,6 +7,7 @@ import numpy as np
 from ...utils import Buffer, MemoryBuffer, WritableMemoryBuffer
 from ...utils.pylib.compression import LZ4ChainDecoder, lz4_decompress, zstd_decompress_stream, \
     zstd_decompress, zstd_compress_stream, lz4_compress, zstd_compress, LZ4ChainEncoder
+from ..exceptions import KV3Error, KV3UnsupportedVersion, KV3ValidationError
 from .enums import *
 from .types import *
 
@@ -39,12 +40,37 @@ def zstd_decompress_frames(data: bytes) -> bytes:
     return bytes(out)
 
 
-class KV3UnsupportedVersion(Exception):
-    pass
-
-
 class KV3RecursiveReferenceError(Exception):
     pass
+
+
+_KV3_TRAILER = 0xFFEEDD00
+
+
+def _require(condition: bool, message: str):
+    if not condition:
+        raise KV3ValidationError(message)
+
+
+def _require_size(data: bytes, expected_size: int, description: str = "Decompressed data"):
+    actual_size = len(data)
+    if actual_size != expected_size:
+        raise KV3ValidationError(
+            f"{description} size does not match the declared size: "
+            f"got {actual_size}, expected {expected_size}",
+            details={"actual_size": actual_size, "expected_size": expected_size},
+        )
+
+
+def _require_trailer(buffer: Buffer):
+    offset = buffer.tell()
+    marker = buffer.read_uint32()
+    if marker != _KV3_TRAILER:
+        raise KV3ValidationError(
+            f"Invalid KV3 trailer 0x{marker:08X}; expected 0x{_KV3_TRAILER:08X}",
+            offset=offset,
+            details={"actual": marker, "expected": _KV3_TRAILER},
+        )
 
 
 def _legacy_block_decompress(in_buffer: Buffer) -> Buffer:
@@ -99,42 +125,90 @@ def _lz4_chain_blocks_compress(block_raw, block_sizes, frame_size=16384):
 
 
 def read_valve_keyvalue3(buffer: Buffer) -> AnyKVType:
-    sig = buffer.read(4)
-    if not KV3Signature.is_valid(sig):
-        raise BufferError("Not a KV3 buffer")
-    sig = KV3Signature(sig)
-    if sig == KV3Signature.VKV_LEGACY:
-        return read_legacy(buffer)
-    elif sig == KV3Signature.KV3_V1:
-        return read_v1(buffer)
-    elif sig == KV3Signature.KV3_V2:
-        return read_v2(buffer)
-    elif sig == KV3Signature.KV3_V3:
-        return read_v3(buffer)
-    elif sig == KV3Signature.KV3_V4:
-        return read_v4(buffer)
-    elif sig == KV3Signature.KV3_V5:
-        return read_v5(buffer)
-    raise KV3UnsupportedVersion(f"Unsupported KV3 version: {sig!r}")
+    signature_offset = buffer.tell()
+    try:
+        raw_signature = buffer.read(4)
+    except (BufferError, struct.error) as exc:
+        raise KV3ValidationError(
+            "Truncated KV3 signature",
+            offset=signature_offset,
+        ) from exc
+    if len(raw_signature) != 4:
+        raise KV3ValidationError(
+            f"Truncated KV3 signature: got {len(raw_signature)} of 4 bytes",
+            offset=signature_offset,
+        )
+    if not KV3Signature.is_valid(raw_signature):
+        if raw_signature[1:] == b"3VK":
+            raise KV3UnsupportedVersion(
+                f"Unsupported KV3 version {raw_signature[0]}",
+                offset=signature_offset,
+                details={"signature": raw_signature.hex()},
+            )
+        raise KV3ValidationError(
+            f"Not a KV3 buffer: unknown signature {raw_signature!r}",
+            offset=signature_offset,
+            details={"signature": raw_signature.hex()},
+        )
+
+    signature = KV3Signature(raw_signature)
+    try:
+        if signature == KV3Signature.VKV_LEGACY:
+            return read_legacy(buffer)
+        if signature == KV3Signature.KV3_V1:
+            return read_v1(buffer)
+        if signature == KV3Signature.KV3_V2:
+            return read_v2(buffer)
+        if signature == KV3Signature.KV3_V3:
+            return read_v3(buffer)
+        if signature == KV3Signature.KV3_V4:
+            return read_v4(buffer)
+        if signature == KV3Signature.KV3_V5:
+            return read_v5(buffer)
+    except KV3Error:
+        raise
+    except (BufferError, IndexError, KeyError, ValueError, struct.error) as exc:
+        raise KV3ValidationError(
+            f"Malformed {signature.name} payload: {exc}",
+            offset=buffer.tell(),
+            details={"signature": signature.name},
+        ) from exc
+    raise KV3UnsupportedVersion(
+        f"Unsupported KV3 version: {signature!r}",
+        offset=signature_offset,
+    )
 
 
 def write_valve_keyvalue3(buffer: Buffer, data: AnyKVType, fmt: KV3Format, sig: KV3Signature,
                           compression: KV3CompressionMethod):
-    buffer.write_fmt("4s", sig)
-    if sig == KV3Signature.VKV_LEGACY:
+    try:
+        signature = sig if isinstance(sig, KV3Signature) else KV3Signature(sig)
+    except ValueError as exc:
+        raw_signature = bytes(sig)
+        if len(raw_signature) == 4 and raw_signature[1:] == b"3VK":
+            raise KV3UnsupportedVersion(
+                f"Unsupported KV3 version {raw_signature[0]}",
+                details={"signature": raw_signature.hex()},
+            ) from exc
+        raise KV3ValidationError(f"Invalid KV3 signature {sig!r}") from exc
+
+    buffer.write_fmt("4s", signature)
+    if signature == KV3Signature.VKV_LEGACY:
         write_legacy(buffer, fmt, data, compression)
         return
     buffer.write_fmt("16s", fmt)
-    if sig == KV3Signature.KV3_V1:
+    if signature == KV3Signature.KV3_V1:
         write_v1(buffer, data, compression)
-    elif sig == KV3Signature.KV3_V2:
+    elif signature == KV3Signature.KV3_V2:
         write_v2(buffer, data, compression)
-    elif sig == KV3Signature.KV3_V3:
+    elif signature == KV3Signature.KV3_V3:
         write_v3(buffer, data, compression)
-    elif sig == KV3Signature.KV3_V4:
+    elif signature == KV3Signature.KV3_V4:
         write_v4(buffer, data, compression)
-    elif sig == KV3Signature.KV3_V5:
+    elif signature == KV3Signature.KV3_V5:
         write_v5(buffer, data, compression)
+    else:
+        raise KV3UnsupportedVersion(f"Unsupported KV3 version: {signature!r}")
 
 
 @dataclass
@@ -246,7 +320,7 @@ def _read_blob(context: KV3Context, specifier: Specifier):
             value = BinaryBlob(b"")
         else:
             data = context.binary_blob_buffer.read(expected_size)
-            assert len(data) == expected_size, "Binary blob is smaller than expected"
+            _require_size(data, expected_size, "Binary blob")
             value = BinaryBlob(data)
     else:
         value = BinaryBlob(context.active_buffer.byte_buffer.read(context.active_buffer.int_buffer.read_int32()))
@@ -460,7 +534,10 @@ def _write_array_typed_byte_size(context: KV3WriteContext, value: TypedArray, sp
 
 def _read_array_typed_byte_size2(context: KV3Context, specifier: Specifier):
     count = context.active_buffer.byte_buffer.read_uint8()
-    assert specifier == Specifier.UNSPECIFIED, f"Unsupported specifier {specifier!r}"
+    _require(
+        specifier == Specifier.UNSPECIFIED,
+        f"Unsupported specifier {specifier!r}",
+    )
     context.active_buffer = context.buffer0
     array = _read_array_typed_helper(context, count, specifier)
     context.active_buffer = context.buffer1
@@ -470,7 +547,10 @@ def _read_array_typed_byte_size2(context: KV3Context, specifier: Specifier):
 
 
 def _write_array_typed_byte_size2(context: KV3WriteContext, value: TypedArray, specifier: Specifier):
-    assert specifier == Specifier.UNSPECIFIED, f"Unsupported specifier {specifier!r}"
+    _require(
+        specifier == Specifier.UNSPECIFIED,
+        f"Unsupported specifier {specifier!r}",
+    )
     context.array_count += 1
     context.active_buffer.byte_buffer.write_uint8(len(value))
     context.active_buffer = context.buffer0
@@ -794,7 +874,7 @@ def read_v1(buffer: Buffer):
         buffer = MemoryBuffer(buffer.read(uncompressed_size))
     elif compression_method == 1:
         u_data = lz4_decompress(buffer.read(-1), uncompressed_size)
-        assert len(u_data) == uncompressed_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, uncompressed_size)
         buffer = MemoryBuffer(u_data)
         del u_data
     else:
@@ -807,7 +887,7 @@ def read_v1(buffer: Buffer):
     types_buffer = buffer.ro_view(size=types_size)
     buffer.skip(types_size)
     types_offset = 0
-    assert buffer.read_uint32() == 0xFFEEDD00
+    _require_trailer(buffer)
 
     type_array = []
     while types_offset < types_size:
@@ -884,14 +964,13 @@ def read_v2(buffer: Buffer):
 
         data = buffer.read(compressed_size)
         u_data = lz4_decompress(data, uncompressed_size)
-        assert len(u_data) == uncompressed_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, uncompressed_size)
         data_buffer = MemoryBuffer(u_data)
         del u_data, data
     elif compression_method == 2:
         data = buffer.read(compressed_size)
         u_data = zstd_decompress_frames(data)
-        assert len(
-            u_data) == uncompressed_size + block_total_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, uncompressed_size + block_total_size)
         data_buffer = MemoryBuffer(u_data)
         del u_data, data
     else:
@@ -911,11 +990,11 @@ def read_v2(buffer: Buffer):
 
     if block_count == 0:
         block_sizes = []
-        assert data_buffer.read_uint32() == 0xFFEEDD00
+        _require_trailer(data_buffer)
         block_buffer = None
     else:
         block_sizes = data_buffer.read_array("I", block_count)
-        assert data_buffer.read_uint32() == 0xFFEEDD00
+        _require_trailer(data_buffer)
         block_data = b''
         if block_total_size > 0:
             if compression_method == 0:
@@ -1020,14 +1099,13 @@ def read_v3(buffer: Buffer):
 
         data = buffer.read(compressed_size)
         u_data = lz4_decompress(data, uncompressed_size)
-        assert len(u_data) == uncompressed_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, uncompressed_size)
         data_buffer = MemoryBuffer(u_data)
         del u_data, data
     elif compression_method == 2:
         data = buffer.read(compressed_size)
         u_data = zstd_decompress_stream(data)
-        assert len(
-            u_data) == uncompressed_size + block_total_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, uncompressed_size + block_total_size)
         data_buffer = MemoryBuffer(u_data)
         del u_data, data
     else:
@@ -1041,12 +1119,12 @@ def read_v3(buffer: Buffer):
 
     if block_count == 0:
         block_sizes = []
-        assert data_buffer.read_uint32() == 0xFFEEDD00
+        _require_trailer(data_buffer)
         block_buffer = None
 
     else:
         block_sizes = list(data_buffer.read_array("I", block_count))
-        assert data_buffer.read_uint32() == 0xFFEEDD00
+        _require_trailer(data_buffer)
         block_data = b''
         if block_total_size > 0:
             if compression_method == 0:
@@ -1141,15 +1219,13 @@ def read_v4(buffer: Buffer):
 
         data = buffer.read(compressed_size)
         u_data = lz4_decompress(data, uncompressed_size)
-        assert len(
-            u_data) == uncompressed_size, f"Decompressed data size does not match expected size, got {len(u_data)} expected {uncompressed_size}"
+        _require_size(u_data, uncompressed_size)
         data_buffer = MemoryBuffer(u_data)
         del u_data, data
     elif compression_method == 2:
         data = buffer.read(compressed_size)
         u_data = zstd_decompress(data, uncompressed_size + block_total_size)
-        assert len(
-            u_data) == uncompressed_size + block_total_size, f"Decompressed data size does not match expected size, {len(u_data)} != {uncompressed_size + block_total_size}"
+        _require_size(u_data, uncompressed_size + block_total_size)
         data_buffer = MemoryBuffer(u_data)
         del u_data, data
     else:
@@ -1162,12 +1238,12 @@ def read_v4(buffer: Buffer):
 
     if block_count == 0:
         block_sizes = []
-        assert data_buffer.read_uint32() == 0xFFEEDD00
+        _require_trailer(data_buffer)
         block_buffer = None
 
     else:
         block_sizes = list(data_buffer.read_array("I", block_count))
-        assert data_buffer.read_uint32() == 0xFFEEDD00
+        _require_trailer(data_buffer)
         block_data = b''
         if block_total_size > 0:
             if compression_method == 0:
@@ -1275,17 +1351,17 @@ def read_v5(buffer: Buffer):
             raise NotImplementedError('Unknown compression method in KV3 v2 block')
 
         u_data = lz4_decompress_wrp(compressed_buffer0, buffer0_decompressed_size)
-        assert len(u_data) == buffer0_decompressed_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, buffer0_decompressed_size, "KV3 v5 buffer 0")
         buffer0 = MemoryBuffer(u_data)
         u_data = lz4_decompress_wrp(compressed_buffer1, buffer1_decompressed_size)
-        assert len(u_data) == buffer1_decompressed_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, buffer1_decompressed_size, "KV3 v5 buffer 1")
         buffer1 = MemoryBuffer(u_data)
     elif compression_method == 2:
         u_data = zstd_decompress(compressed_buffer0, buffer0_decompressed_size)
-        assert len(u_data) == buffer0_decompressed_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, buffer0_decompressed_size, "KV3 v5 buffer 0")
         buffer0 = MemoryBuffer(u_data)
         u_data = zstd_decompress(compressed_buffer1, buffer1_decompressed_size)
-        assert len(u_data) == buffer1_decompressed_size, "Decompressed data size does not match expected size"
+        _require_size(u_data, buffer1_decompressed_size, "KV3 v5 buffer 1")
         buffer1 = MemoryBuffer(u_data)
     else:
         raise NotImplementedError(f"Unknown {compression_method} KV3 compression method")
@@ -1303,10 +1379,10 @@ def read_v5(buffer: Buffer):
     if block_count == 0:
         block_sizes = None
         blocks_buffer = None
-        assert buffer1.read_uint32() == 0xFFEEDD00
+        _require_trailer(buffer1)
     else:
         block_sizes = list(buffer1.read_array("I", block_count))
-        assert buffer1.read_uint32() == 0xFFEEDD00
+        _require_trailer(buffer1)
 
         block_data = b''
         if block_total_size > 0:
@@ -1322,7 +1398,7 @@ def read_v5(buffer: Buffer):
                 block_data = zstd_decompress(zstd_compressed_data, block_total_size)
             else:
                 raise NotImplementedError(f"Unknown {compression_method} KV3 compression method")
-            assert buffer.read_uint32() == 0xFFEEDD00
+            _require_trailer(buffer)
         blocks_buffer = MemoryBuffer(block_data)
 
     type_array = []

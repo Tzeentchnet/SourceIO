@@ -5,6 +5,7 @@ from ...utils import ExtendedEnum
 
 class KV3Signature(bytes, ExtendedEnum):
     VKV_LEGACY = b'VKV\x03'
+    KV3_V0 = VKV_LEGACY
     KV3_V1 = b'\x013VK'
     KV3_V2 = b'\x023VK'
     KV3_V3 = b'\x033VK'

@@ -9,6 +9,7 @@ from ..blocks.resource_introspection_manifest.types import StructMember, KeyValu
 from ..keyvalues3.enums import Specifier, KV3Type
 from ..keyvalues3.types import Object, NullObject, TypedArray, String, UInt32, Int32, UInt64, \
     Int64, Double, Bool
+from ..exceptions import MissingIntrospectionError
 from ...utils import MemoryBuffer, Buffer
 from ...utils.file_utils import MemorySlice
 
@@ -301,7 +302,10 @@ class NTROSlice(MemorySlice, NTROHelper):
         NTROHelper.__init__(self, ntro, resource_list)
 
     def read_struct(self, name: str) -> Object | NullObject:
-        assert self._ntro is not None
+        if self._ntro is None:
+            raise MissingIntrospectionError(
+                f"Cannot read NTRO structure {name!r} without an NTRO manifest"
+            )
         struct = self._ntro.struct_by_name(name)
         return self._ntro.read_struct(self, struct)
 
@@ -316,7 +320,10 @@ class NTROBuffer(MemoryBuffer, NTROHelper):
         NTROHelper.__init__(self, ntro, resource_list)
 
     def read_struct(self, name: str) -> Object | NullObject:
-        assert self._ntro is not None
+        if self._ntro is None:
+            raise MissingIntrospectionError(
+                f"Cannot read NTRO structure {name!r} without an NTRO manifest"
+            )
         struct = self._ntro.struct_by_name(name)
         return self._ntro.read_struct(self, struct)
 
@@ -324,6 +331,7 @@ class NTROBuffer(MemoryBuffer, NTROHelper):
         if offset is None:
             offset = self._offset
         slice_offset = self.tell()
+        resource_list = self._ntro.resource_list if self._ntro is not None else None
         if size == -1:
-            return NTROSlice(self._buffer[offset:], slice_offset, self._ntro, self._ntro.resource_list)
-        return NTROSlice(self._buffer[offset:offset + size], slice_offset, self._ntro, self._ntro.resource_list)
+            return NTROSlice(self._buffer[offset:], slice_offset, self._ntro, resource_list)
+        return NTROSlice(self._buffer[offset:offset + size], slice_offset, self._ntro, resource_list)

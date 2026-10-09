@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from enum import IntEnum
 
+from ...exceptions import UnsupportedNTROVersionError
 from ....utils import Buffer
 
 
@@ -32,7 +33,8 @@ class Enum:
     @classmethod
     def from_buffer(cls, buffer: Buffer):
         version, s_id = buffer.read_fmt('2I')
-        assert version == 4, f'Introspection version {version} is not supported'
+        if version != 4:
+            raise UnsupportedNTROVersionError(version, offset=buffer.tell() - 8)
         name_offset = buffer.read_relative_offset32()
         disc_crc, user_version = buffer.read_fmt('2i')
         values_offset = buffer.read_relative_offset32()
@@ -122,7 +124,8 @@ class Struct:
     @classmethod
     def from_buffer(cls, buffer: Buffer):
         version, s_id = buffer.read_fmt('2I')
-        assert version == 4, f'Introspection version {version} is not supported'
+        if version != 4:
+            raise UnsupportedNTROVersionError(version, offset=buffer.tell() - 8)
         name_offset = buffer.read_relative_offset32()
         with buffer.read_from_offset(name_offset):
             name = buffer.read_ascii_string()

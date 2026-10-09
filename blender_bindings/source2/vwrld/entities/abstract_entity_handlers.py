@@ -9,7 +9,7 @@ from ....utils.texture_utils import check_texture_cache
 from .....library.source2.blocks.kv3_block import KVBlock
 from .base_entity_classes import *
 from ...vtex_loader import import_texture
-from ....utils.bpy_utils import get_or_create_collection
+from ....utils.bpy_utils import get_or_create_child_collection
 from .....library.shared.content_manager import ContentManager
 from .....library.source2 import CompiledMaterialResource, CompiledTextureResource
 from .....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
@@ -121,11 +121,12 @@ class AbstractEntityHandler:
             return name
 
     def _put_into_collection(self, name, obj, grouping_collection_name=None):
+        # Per map: a 3D skybox or a second map in the scene gets its own groups.
         if grouping_collection_name is not None:
-            parent_collection = get_or_create_collection(grouping_collection_name, self.parent_collection)
-            parent_collection = get_or_create_collection(name, parent_collection)
+            parent_collection = get_or_create_child_collection(grouping_collection_name, self.parent_collection)
+            parent_collection = get_or_create_child_collection(name, parent_collection)
         else:
-            parent_collection = get_or_create_collection(name, self.parent_collection)
+            parent_collection = get_or_create_child_collection(name, self.parent_collection)
         parent_collection.objects.link(obj)
 
     def _apply_light_rotation(self, obj, entity):

@@ -1,21 +1,25 @@
-from typing import Any, Type
+import math
+from typing import Any, Iterator, Type
 
 import bpy
-from mathutils import Matrix
+from mathutils import Euler, Matrix, Vector
 
 from ...shared.exceptions import RequiredFileNotFound
-from ...utils.bpy_utils import get_or_create_collection, pause_view_layer_update
+from ...utils.bpy_utils import get_or_create_child_collection, get_or_create_collection, pause_view_layer_update
 from ....library.shared.app_id import SteamAppId
 from ....library.shared.content_manager import ContentManager
+from ....library.shared.content_manager.providers.vpk_provider import VPKContentProvider
 from ....library.source2 import CompiledWorldResource, CompiledResource
 from ....library.source2.keyvalues3.types import Object, NullObject
 from ....library.source2.resource_types import CompiledManifestResource
 from ....library.source2.resource_types.compiled_world_resource import CompiledEntityLumpResource, \
     CompiledMapResource
+from ....library.utils import FileBuffer
 from ....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from ....library.utils.tiny_path import TinyPath
 from ....logger import SourceLogMan
 
+from .entities.abstract_entity_handlers import get_angles, get_origin, parse_float_vector
 from .entities.base_entity_handlers import BaseEntityHandler
 from .entities.cs2_entity_handlers import CS2EntityHandler
 from .entities.deadlock_entity_handlers import DeadlockEntityHandler
@@ -26,12 +30,23 @@ log_manager = SourceLogMan()
 
 logger = log_manager.get_logger("VWRLD")
 
+# A 3D skybox map has its own sun and sky, which the map that references it already has, and a sky_camera
+# that only says where the skybox goes.
+SKYBOX_SKIPPED_CLASSES = frozenset({"light_environment", "env_sky", "sky_camera", "skybox_reference"})
+
 
 def get_entity_name(entity_data: dict[str, Any]):
     return f'{entity_data.get("targetname", entity_data.get("hammeruniqueid", "missing_hammer_id"))}'
 
 
 def load_map(map_resource: CompiledMapResource, cm: ContentManager, scale: float = SOURCE2_HAMMER_UNIT_TO_METERS):
+    world_resource = find_world(map_resource, cm)
+    if world_resource is None:
+        return None
+    return import_world(world_resource, map_resource, cm, scale)
+
+
+def find_world(map_resource: CompiledMapResource, cm: ContentManager) -> CompiledWorldResource | None:
     manifest_resource_path = next(filter(lambda a: a.endswith(".vrman"), map_resource.get_child_resources()), None)
     if manifest_resource_path is not None:
         manifest_resource = map_resource.get_child_resource(manifest_resource_path, cm, CompiledManifestResource)
@@ -39,13 +54,11 @@ def load_map(map_resource: CompiledMapResource, cm: ContentManager, scale: float
             filter(lambda a: isinstance(a, str) and a.endswith(".vwrld"), manifest_resource.get_child_resources()),
             None)
         if world_resource_path is not None:
-            world_resource = manifest_resource.get_child_resource(world_resource_path, cm, CompiledWorldResource)
-            return import_world(world_resource, map_resource, cm, scale)
+            return manifest_resource.get_child_resource(world_resource_path, cm, CompiledWorldResource)
 
     world_resource_path = next(filter(lambda a: a.endswith(".vwrld"), map_resource.get_child_resources()), None)
     if world_resource_path is not None:
-        world_resource = map_resource.get_child_resource(world_resource_path, cm, CompiledWorldResource)
-        return import_world(world_resource, map_resource, cm, scale)
+        return map_resource.get_child_resource(world_resource_path, cm, CompiledWorldResource)
     return None
 
 
@@ -61,6 +74,14 @@ def import_world(world_resource: CompiledWorldResource, map_resource: CompiledMa
                  content_manager: ContentManager, scale=SOURCE2_HAMMER_UNIT_TO_METERS):
     map_name = map_resource.name
     master_collection = get_or_create_collection(map_name, bpy.context.scene.collection)
+    with pause_view_layer_update():
+        load_world_nodes(world_resource, map_resource, content_manager, master_collection, scale)
+        load_entities(world_resource, master_collection, scale, content_manager)
+        load_skyboxes(world_resource, master_collection, scale, content_manager)
+
+
+def load_world_nodes(world_resource: CompiledWorldResource, map_resource: CompiledMapResource,
+                     content_manager: ContentManager, master_collection: bpy.types.Collection, scale: float):
     data_block = world_resource.data_block
     uv_scale:list[float]|None = None
     if data_block:
@@ -71,47 +92,46 @@ def import_world(world_resource: CompiledWorldResource, map_resource: CompiledMa
     if uv_scale is None:
         uv_scale = [1., 1.]
 
-    with pause_view_layer_update():
-        for node_prefix in world_resource.get_worldnode_prefixes():
-            node_resource = map_resource.get_worldnode(node_prefix, content_manager)
-            if node_resource is None:
-                raise RequiredFileNotFound("Failed to find WorldNode resource")
-            collection = get_or_create_collection(f"static_props_{TinyPath(node_prefix).name}", master_collection)
-            for scene_object in node_resource.get_scene_objects():
-                renderable_model = scene_object["m_renderableModel"]
-                proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
-                if (transform := scene_object.get('m_vTransform', None)) is not None:
-                    matrix = Matrix(transform).to_4x4()
-                else:
-                    matrix = Matrix.Identity(4)
-                create_static_prop_placeholder(scene_object, proper_path, matrix, collection, scale, uv_scale)
-            for scene_object in node_resource.get_aggregate_scene_objects():
-                renderable_model = scene_object["m_renderableModel"]
-                proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
-                if scene_object["m_fragmentTransforms"] or scene_object["m_aggregateMeshes"]:
-                    fragments = []
-                    transforms: list | None = scene_object.get("m_fragmentTransforms", None)
-                    for i, draw_info in enumerate(scene_object["m_aggregateMeshes"]):
-                        if draw_info.get("m_bHasTransform", False) and transforms is not None:
-                            matrix = Matrix(transforms[i].reshape(3, 4)).to_4x4()
-                        else:
-                            matrix = Matrix.Identity(4)
+    for node_prefix in world_resource.get_worldnode_prefixes():
+        node_resource = map_resource.get_worldnode(node_prefix, content_manager)
+        if node_resource is None:
+            raise RequiredFileNotFound("Failed to find WorldNode resource")
+        collection = get_or_create_child_collection(f"static_props_{TinyPath(node_prefix).name}",
+                                                    master_collection)
+        for scene_object in node_resource.get_scene_objects():
+            renderable_model = scene_object["m_renderableModel"]
+            proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
+            if (transform := scene_object.get('m_vTransform', None)) is not None:
+                matrix = Matrix(transform).to_4x4()
+            else:
+                matrix = Matrix.Identity(4)
+            create_static_prop_placeholder(scene_object, proper_path, matrix, collection, scale, uv_scale)
+        for scene_object in node_resource.get_aggregate_scene_objects():
+            renderable_model = scene_object["m_renderableModel"]
+            proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
+            if scene_object["m_fragmentTransforms"] or scene_object["m_aggregateMeshes"]:
+                fragments = []
+                transforms: list | None = scene_object.get("m_fragmentTransforms", None)
+                for i, draw_info in enumerate(scene_object["m_aggregateMeshes"]):
+                    if draw_info.get("m_bHasTransform", False) and transforms is not None:
+                        matrix = Matrix(transforms[i].reshape(3, 4)).to_4x4()
+                    else:
+                        matrix = Matrix.Identity(4)
 
-                        transform_mat = matrix.to_4x4()
-                        loc, rot, scl = transform_mat.decompose()
-                        loc *= scale
-                        matrix = Matrix.LocRotScale(loc, rot, scl)
+                    transform_mat = matrix.to_4x4()
+                    loc, rot, scl = transform_mat.decompose()
+                    loc *= scale
+                    matrix = Matrix.LocRotScale(loc, rot, scl)
 
-                        fragment = {
-                            "draw_call": draw_info["m_nDrawCallIndex"],
-                            "tint_color": draw_info.get('m_vTintColor', [255, 255, 255]),
-                            "matrix": list(matrix)
-                        }
-                        fragments.append(fragment)
-                    create_aggregate_prop_placeholder(scene_object, proper_path, fragments, collection, scale, uv_scale)
-                else:
-                    create_static_prop_placeholder(scene_object, proper_path, None, collection, scale, uv_scale)
-        load_entities(world_resource, master_collection, scale, content_manager)
+                    fragment = {
+                        "draw_call": draw_info["m_nDrawCallIndex"],
+                        "tint_color": draw_info.get('m_vTintColor', [255, 255, 255]),
+                        "matrix": list(matrix)
+                    }
+                    fragments.append(fragment)
+                create_aggregate_prop_placeholder(scene_object, proper_path, fragments, collection, scale, uv_scale)
+            else:
+                create_static_prop_placeholder(scene_object, proper_path, None, collection, scale, uv_scale)
 
 
 def create_static_prop_placeholder(scene_object: Object, proper_path: TinyPath | None, matrix: Matrix | None,
@@ -161,34 +181,110 @@ def create_empty(name: str, scale: float, custom_data=None):
     return placeholder
 
 
-def load_entities(world_resource: CompiledWorldResource, collection: bpy.types.Collection,
-                  scale: float, cm: ContentManager):
-    data_block = world_resource.data_block
-    entity_lumps = data_block["m_entityLumps"]
-
+def get_entity_handler(cm: ContentManager) -> Type[BaseEntityHandler]:
     if cm.steam_id == SteamAppId.HALF_LIFE_ALYX:
-        handler = HLVREntityHandler
+        return HLVREntityHandler
     elif cm.steam_id == SteamAppId.SBOX_STEAM_ID:
-        handler = SBoxEntityHandler
+        return SBoxEntityHandler
     # elif cm.steam_id == 890 and 'steampal' in cm.content_providers:
-    #     handler = SteamPalEntityHandler
+    #     return SteamPalEntityHandler
     elif cm.steam_id == SteamAppId.COUNTER_STRIKE_GO:
-        handler = CS2EntityHandler
+        return CS2EntityHandler
     elif cm.steam_id == SteamAppId.DEADLOCK:
-        handler = DeadlockEntityHandler
-    else:
-        handler = BaseEntityHandler
+        return DeadlockEntityHandler
+    return BaseEntityHandler
 
-    for entity_lump in entity_lumps:
+
+def entity_values(entity: dict) -> dict:
+    # Newer lumps wrap each entity's keys in {"version": 1, "values": {...}, "attributes": {...}}
+    return entity["values"] if "values" in entity else entity
+
+
+def iter_entity_lumps(world_resource: CompiledWorldResource,
+                      cm: ContentManager) -> Iterator[CompiledEntityLumpResource]:
+    def walk(lump: CompiledEntityLumpResource):
+        yield lump
+        for child in lump.get_child_lumps(cm):
+            yield from walk(child)
+
+    for entity_lump in world_resource.data_block["m_entityLumps"]:
         if isinstance(entity_lump, NullObject):
             continue
-        entity_resource = world_resource.get_child_resource(entity_lump, cm, CompiledEntityLumpResource)
-        load_entity_lump(entity_resource, handler, collection, scale, cm)
+        yield from walk(world_resource.get_child_resource(entity_lump, cm, CompiledEntityLumpResource))
 
 
-def load_entity_lump(entity_resource: CompiledEntityLumpResource, handler_class: Type[BaseEntityHandler],
-                     collection: bpy.types.Collection, scale: float, cm: ContentManager):
-    handler = handler_class(list(entity_resource.get_entities()), collection, cm, scale)
-    handler.load_entities()
-    for child in entity_resource.get_child_lumps(cm):
-        load_entity_lump(child, handler_class, collection, scale, cm)
+def load_entities(world_resource: CompiledWorldResource, collection: bpy.types.Collection,
+                  scale: float, cm: ContentManager, skipped_classes: frozenset[str] = frozenset()):
+    handler_class = get_entity_handler(cm)
+    for entity_resource in iter_entity_lumps(world_resource, cm):
+        entities = [entity for entity in entity_resource.get_entities()
+                    if entity_values(entity).get("classname") not in skipped_classes]
+        handler_class(entities, collection, cm, scale).load_entities()
+
+
+def load_skyboxes(world_resource: CompiledWorldResource, collection: bpy.types.Collection,
+                  scale: float, cm: ContentManager):
+    """Import the 3D skybox of every ``skybox_reference``.
+
+    The skybox is a map of its own (CS2 ships ``maps/prefabs/de_dust2/de_dust2_skybox.vmap`` as
+    ``maps/prefabs/de_dust2/de_dust2_skybox.vpk``), built at ``1 / scale`` of its ``sky_camera``, which stands
+    for the referencing map's origin, as in Source 1.
+    """
+    references = [entity_values(entity) for lump in iter_entity_lumps(world_resource, cm)
+                  for entity in lump.get_entities()]
+    for reference in references:
+        if reference.get("classname") != "skybox_reference" or not reference.get("targetMapName"):
+            continue
+        target = TinyPath(reference["targetMapName"])
+        sky_map = open_skybox_map(target, cm)
+        sky_world = find_world(sky_map, cm) if sky_map is not None else None
+        if sky_world is None:
+            logger.warn(f"3D skybox {target.as_posix()} not found")
+            continue
+        sky_camera = next((values for lump in iter_entity_lumps(sky_world, cm) for entity in lump.get_entities()
+                           if (values := entity_values(entity)).get("classname") == "sky_camera"), None)
+        matrix = skybox_matrix(reference, sky_camera, scale)
+
+        sky_collection = get_or_create_child_collection(target.stem, collection)
+        load_world_nodes(sky_world, sky_map, cm, sky_collection, scale)
+        load_entities(sky_world, sky_collection, scale, cm, SKYBOX_SKIPPED_CLASSES)
+        for obj in sky_collection.all_objects:
+            if obj.parent is None:
+                obj.matrix_basis = matrix @ obj.matrix_basis
+
+
+def open_skybox_map(target: TinyPath, cm: ContentManager) -> CompiledMapResource | None:
+    """Mount the skybox's ``.vpk``, a loose file next to the map ones, and open its compiled map."""
+    stem = target.with_suffix("").as_posix()
+    map_path = TinyPath(stem + ".vmap_c")
+    if not cm.check(map_path):
+        vpk_buffer = cm.find_file(TinyPath(stem + ".vpk"), do_not_cache=True)
+        if vpk_buffer is None:
+            return None
+        if not isinstance(vpk_buffer, FileBuffer):
+            # A VPK packed in another archive; VPKContentProvider reads from disk.
+            logger.warn(f"{stem}.vpk is inside an archive, which can't be mounted")
+            return None
+        vpk_path = TinyPath(vpk_buffer.name)
+        vpk_buffer.close()
+        cm.add_child(VPKContentProvider(vpk_path))
+    buffer = cm.find_file(map_path)
+    if buffer is None:
+        return None
+    return CompiledMapResource.from_buffer(buffer, map_path)
+
+
+def skybox_matrix(reference: dict, sky_camera: dict | None, scale: float) -> Matrix:
+    """Where a skybox map's contents go: ``T(reference) R(reference) S(reference) S(sky scale) T(-sky_camera)``.
+
+    Translations are in Blender units (Hammer units times ``scale``). Without a ``sky_camera`` the map is placed
+    as it is, at the reference.
+    """
+    angles = get_angles(reference)
+    rotation = Euler((math.radians(angles[2]), math.radians(angles[0]), math.radians(angles[1])))
+    reference_scale = parse_float_vector(reference.get("scales", "1 1 1"))
+    matrix = Matrix.LocRotScale(Vector(get_origin(reference)) * scale, rotation, Vector(reference_scale))
+    if sky_camera is not None:
+        sky_scale = float(sky_camera.get("scale", 16))
+        matrix = matrix @ Matrix.Scale(sky_scale, 4) @ Matrix.Translation(-Vector(get_origin(sky_camera)) * scale)
+    return matrix

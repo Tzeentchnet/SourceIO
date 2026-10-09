@@ -338,34 +338,38 @@ class SourceIO_OT_LoadEntity(Operator):
             draw_calls = {draw_call: [(Matrix(d["matrix"]) if "matrix" in d else Matrix(), list(d["tint_color"])) for d in matrices] for (draw_call, matrices) in
                           itertools.groupby(sorted(fragments, key=get_draw_call), key=get_draw_call)}
             _preload_draw_calls([d for d, m in draw_calls.items() if len(m) > 1])
+            # The placeholder stands for the whole aggregate (it is unparented unless the user parented it);
+            # every fragment is placed relative to it.
+            base_matrix = obj.matrix_world.copy() if obj.parent else obj.matrix_basis.copy()
+            imported_collection = get_or_create_collection(f"IMPORTED_{parent.name}", parent)
+            loaded_entity_data = {key: value for key, value in obj["entity_data"].to_dict().items()
+                                  if key != "fragments"} | {"prop_path": None, "imported": True}
+            single_objects = []
             for draw_call, matrices_tints in draw_calls.items():
                 if len(matrices_tints) > 1:
+                    # A repeated draw call is one mesh instanced at each fragment.
                     instance_collection = get_collection(prop_path, str(draw_call), f'skin={skin}')
-                    if instance_collection is None:
+                    collection = bpy.data.collections.get(instance_collection, None) if instance_collection else None
+                    if collection is None:
                         raise ValueError("Failed to get draw call collection")
                     for matrix, tint in matrices_tints:
-                        if instance_collection:
-                            collection = bpy.data.collections.get(instance_collection, None)
-                            if collection is not None:
-                                obj.matrix_world @= matrix
-                                obj.instance_type = 'COLLECTION'
-                                obj.instance_collection = collection
-                                color = custom_prop_data.get("tint_color", [1.0, 1.0, 1.0, 1.0])
-                                if tint!=[255,255,255]:
-                                    tint = [c / 255.0 for c in tint]
-                                    tint.append(1.0)  # Ensure alpha is 1.0
-                                    color = [c * (t**2.2) for c, t in zip(color, tint)]
-                                obj.color = color
-                                obj["entity_data"]["prop_path"] = None
-                                obj["entity_data"]["imported"] = True
-                                return
+                        instance = bpy.data.objects.new(f"{obj.name}_{draw_call}", None)
+                        instance.instance_type = 'COLLECTION'
+                        instance.instance_collection = collection
+                        instance.matrix_basis = base_matrix @ matrix
+                        color = custom_prop_data.get("tint_color", [1.0, 1.0, 1.0, 1.0])
+                        if tint != [255, 255, 255]:
+                            tint = [c / 255.0 for c in tint]
+                            tint.append(1.0)  # Ensure alpha is 1.0
+                            color = [c * (t ** 2.2) for c, t in zip(color, tint)]
+                        instance.color = color
+                        instance["entity_data"] = loaded_entity_data
+                        imported_collection.objects.link(instance)
                 else:
                     matrix, tint = matrices_tints[0]
-                    matrix = Matrix(matrix)
                     import_context.draw_call_index = draw_call
                     container = load_model(content_manager, model_resource, import_context)
                     set_model_skin(container, skin)
-                    imported_collection = get_or_create_collection(f"IMPORTED_{parent.name}", parent)
                     s2_put_into_collections(container, model_resource.name, imported_collection,
                                             bodygroup_grouping=False)
                     for ob in container.objects:
@@ -375,10 +379,16 @@ class SourceIO_OT_LoadEntity(Operator):
                             tint.append(1.0)  # Ensure alpha is 1.0
                             color = [c * t for c, t in zip(color, tint)]
                         ob.color = color
-                    # self.add_matrix(container, matrix)
-                    obj.matrix_world @= matrix
-                    self.replace_placeholder(container, obj, False)
+                    for ob in chain(container.objects, container.physics_objects):
+                        if ob.parent is None:
+                            ob.matrix_basis = base_matrix @ matrix @ ob.matrix_basis
+                    if len(container.objects) == 1:
+                        container.objects[0]["entity_data"] = loaded_entity_data
+                        single_objects.append(container.objects[0])
+            name = obj.name
             bpy.data.objects.remove(obj)
+            for ob in single_objects:
+                ob.name = name
             return
 
         instance_collection = get_collection(prop_path, f'skin={skin}')

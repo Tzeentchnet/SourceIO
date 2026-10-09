@@ -1,5 +1,6 @@
 import contextlib
 import random
+import re
 
 import bpy
 
@@ -166,6 +167,21 @@ def get_or_create_collection(name, parent: bpy.types.Collection) -> bpy.types.Co
         parent.children.link(new_collection)
     KNOWN_COLLECTIONS_CACHE[name] = new_collection.name
     return new_collection
+
+
+def get_or_create_child_collection(name: str, parent: bpy.types.Collection) -> bpy.types.Collection:
+    """Return ``parent``'s child collection called ``name``, creating it if there is none.
+
+    Unlike :func:`get_or_create_collection`, a collection of that name elsewhere is not reused: the new one
+    gets Blender's ``.001`` suffix instead, and is found again under that name.
+    """
+    pattern = re.compile(rf"{re.escape(name)}(\.\d{{3,}})?")
+    for child in parent.children:
+        if pattern.fullmatch(child.name):
+            return child
+    collection = bpy.data.collections.new(name)
+    parent.children.link(collection)
+    return collection
 
 
 # def get_new_unique_collection(model_name, parent_collection):

@@ -27,13 +27,13 @@ class CSGOEnvironmentBlend(Source2ShaderBase):
             color0_texture = self._get_texture("g_tColor1", (1, 1, 1, 1))
             self.connect_nodes(color0_texture.outputs[0], shader.inputs["TextureColor0"])
             if (material_data.get_int_property("F_ALPHA_TEST", 0) or
-                    material_data.get_int_property("S_TRANSLUCENT", 0)):
+                    self._is_translucent()):
                 self.connect_nodes(color0_texture.outputs[1], shader.inputs["TextureAlpha0"])
 
         if self._have_texture("g_tColor2"):
             color_texture = self._get_texture("g_tColor2", (1, 1, 1, 1))
             if (material_data.get_int_property("F_ALPHA_TEST", 0) or
-                    material_data.get_int_property("S_TRANSLUCENT", 0)):
+                    self._is_translucent()):
                 self.connect_nodes(color_texture.outputs[1], shader.inputs["TextureAlpha1"])
 
             self.connect_nodes(color_texture.outputs[0], shader.inputs["TextureColor1"])
@@ -90,7 +90,7 @@ class CSGOEnvironmentBlend(Source2ShaderBase):
 
         if material_data.get_int_property("F_ALPHA_TEST", 0):
             self.set_blend_mode('CLIP')
-        elif material_data.get_int_property("S_TRANSLUCENT", 0):
+        elif self._is_translucent():
             self.set_blend_mode('HASHED')
         elif material_data.get_int_property("F_OVERLAY", 0):
             self.set_blend_mode('HASHED')

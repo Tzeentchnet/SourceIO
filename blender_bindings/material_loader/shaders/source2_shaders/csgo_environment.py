@@ -38,7 +38,7 @@ class CSGOEnvironment(Source2ShaderBase):
             alpha_test_reference = material_data.get_float_property("g_flAlphaTestReference", 0.5)
             self._handle_alpha_modes("TEST", alpha_test_reference,
                                      albedo_node.outputs['Alpha'], shader_node.inputs['Alpha'])
-        elif material_data.get_int_property("S_TRANSLUCENT", 0):
+        elif self._is_translucent():
             self._handle_alpha_modes("TRANSLUCENT", 0.5,
                                      albedo_node.outputs['Alpha'], shader_node.inputs['Alpha'])
         elif material_data.get_int_property("F_OVERLAY", 0):

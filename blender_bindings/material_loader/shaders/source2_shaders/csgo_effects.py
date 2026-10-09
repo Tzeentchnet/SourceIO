@@ -127,7 +127,7 @@ class CSGOEffects(Source2ShaderBase):
             self.set_blend_mode('CLIP')
             alpha_test_ref = material_data.get_float_property("g_flAlphaTestReference", 0.5)
             self.connect_nodes(self.insert_alpha_clip(alpha_output, alpha_test_ref), shader.inputs["Alpha"])
-        elif material_data.get_int_property("S_TRANSLUCENT", 0) and alpha_output is not None:
+        elif self._is_translucent() and alpha_output is not None:
             self.set_blend_mode('HASHED')
             self.connect_nodes(alpha_output, shader.inputs["Alpha"])
         elif material_data.get_int_property("F_ADDITIVE_BLEND", 0) and alpha_output is not None:

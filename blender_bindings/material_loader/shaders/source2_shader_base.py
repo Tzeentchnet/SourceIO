@@ -58,6 +58,24 @@ class Source2ShaderBase(ShaderBase):
         if slot_name in self.unused_textures:
             self.unused_textures.remove(slot_name)
 
+    def _skip_textures_with_prefix(self, *prefixes: str):
+        for slot_name in [name for name in self.unused_textures if name.startswith(prefixes)]:
+            self.unused_textures.remove(slot_name)
+
+    def _is_translucent(self) -> bool:
+        # CS2 materials set F_TRANSLUCENT; S_TRANSLUCENT is what older content uses.
+        return self._check_flag("F_TRANSLUCENT") or self._check_flag("S_TRANSLUCENT")
+
+    def _split_metalness_texture(self, uv_output=None):
+        """Load g_tMetalness and return its separated channels. In the CS2 shaders green is metalness;
+        red is roughness on weapons, blue the cloth mask on characters."""
+        metalness_texture = self._get_texture("g_tMetalness", (0, 0, 0, 1), True)
+        if uv_output is not None:
+            self.connect_nodes(uv_output, metalness_texture.inputs[0])
+        split = self.create_node(Nodes.ShaderNodeSeparateColor)
+        self.connect_nodes(metalness_texture.outputs[0], split.inputs[0])
+        return split
+
     def load_texture_or_default(self, name_or_id: Union[str, int], default_color: tuple = (1.0, 1.0, 1.0, 1.0),
                                 invert_y: bool = False):
         self.loaded_textures.add(name_or_id)

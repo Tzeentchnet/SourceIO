@@ -11,7 +11,15 @@ from .....library.source2.blocks.kv3_block import KVBlock
 class CSGOComplex(Source2ShaderBase):
     SHADER: str = 'csgo_complex.vfx'
 
+    def _skip_unsupported_textures(self):
+        # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
+        self._skip_texture("g_tAmbientOcclusion")
+
+    def _connect_roughness(self, normal_texture, metalness_split, roughness_input):
+        self.connect_nodes(normal_texture.outputs[1], roughness_input)
+
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
+        self._skip_unsupported_textures()
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         shader = self.create_node_group("csgo_complex.vfx", name=self.SHADER)
         self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
@@ -50,11 +58,15 @@ class CSGOComplex(Source2ShaderBase):
             shader.inputs["g_flDetailBlendFactor"].default_value = material_data.get_float_property(
                 "g_flDetailBlendFactor", 0)
 
+        metalness_split = None
+        if self._have_texture("g_tMetalness"):
+            metalness_split = self._split_metalness_texture(transform_node.outputs[0])
+
         if self._have_texture("g_tNormal"):
             normal_texture = self._get_texture("g_tNormal", (0.5, 0.5, 1, 1), True, True)
             self.connect_nodes(transform_node.outputs[0], normal_texture.inputs[0])
             self.connect_nodes(normal_texture.outputs[0], shader.inputs["TextureNormal"])
-            self.connect_nodes(normal_texture.outputs[1], shader.inputs["TextureRoughness"])
+            self._connect_roughness(normal_texture, metalness_split, shader.inputs["TextureRoughness"])
 
         if self._have_texture("g_tTintMask") and self._check_flag("F_TINT_MASK", 0):
             tint_texture = self._get_texture("g_tTintMask", (1, 0, 0, 1), True)
@@ -73,8 +85,7 @@ class CSGOComplex(Source2ShaderBase):
                 "g_flSelfIllumScale", 1)
 
         tint = material_data.get_vector_property("g_vColorTint", (1.0, 1.0, 1.0, 0.0))
-        if all(c == 1.0 for c in tint[:3]):
-            shader.inputs["g_vColorTint"].default_value = tint
+        shader.inputs["g_vColorTint"].default_value = (*tint[:3], 1.0)
 
         if self.tinted:
             vcolor_node = self.create_node(Nodes.ShaderNodeVertexColor)
@@ -87,19 +98,50 @@ class CSGOComplex(Source2ShaderBase):
         shader.inputs["g_flModelTintAmount"].default_value = material_data.get_float_property("g_flModelTintAmount",
                                                                                               0.0)
 
-        if self._check_flag("F_METALNESS_TEXTURE", 0) and alpha_output is not None:
+        if metalness_split is not None:
+            self.connect_nodes(metalness_split.outputs[1], shader.inputs["TextureMetalness"])
+        elif self._check_flag("F_METALNESS_TEXTURE", 0) and alpha_output is not None:
+            # Without a g_tMetalness texture the flag means metalness is in the color alpha.
             self.connect_nodes(alpha_output, shader.inputs["TextureMetalness"])
         else:
             shader.inputs["TextureMetalness"].default_value = material_data.get_float_property(
                 "g_flMetalness", 0)
 
-        if self._check_flag("F_ALPHA_TEST", 0):
+        if alpha_output is None:
+            pass
+        elif self._check_flag("F_ALPHA_TEST", 0):
             alpha_test_reference = material_data.get_float_property("g_flAlphaTestReference", 0.5)
             self._handle_alpha_modes("TEST", alpha_test_reference,
                                      alpha_output, shader.inputs['Alpha'])
-        elif self._check_flag("S_TRANSLUCENT", 0):
+        elif self._is_translucent():
             self._handle_alpha_modes("TRANSLUCENT", 0.5,
                                      alpha_output, shader.inputs['Alpha'])
         elif self._check_flag("F_OVERLAY", 0):
             self._handle_alpha_modes("OVERLAY", 0.5,
                                      alpha_output, shader.inputs['Alpha'])
+
+
+class CSGOCharacter(CSGOComplex):
+    SHADER: str = 'csgo_character.vfx'
+
+    def _skip_unsupported_textures(self):
+        super()._skip_unsupported_textures()
+        # Blood and inventory patches are applied by the game at runtime; the slots hold placeholders.
+        self._skip_textures_with_prefix("g_tBloodMask", "g_tPatch")
+
+
+class CSGOWeapon(CSGOComplex):
+    SHADER: str = 'csgo_weapon.vfx'
+
+    def _skip_unsupported_textures(self):
+        super()._skip_unsupported_textures()
+        # Stickers are applied by the game from the inventory; the slots hold placeholders.
+        self._skip_textures_with_prefix("g_tSticker", "g_tGlitterNormalSticker", "g_tHoloSpectrumSticker",
+                                        "g_tNormalRoughnessSticker", "g_tSfxMaskSticker")
+
+    def _connect_roughness(self, normal_texture, metalness_split, roughness_input):
+        # Weapons keep roughness in the red channel of g_tMetalness, not in the normal map.
+        if metalness_split is not None:
+            self.connect_nodes(metalness_split.outputs[0], roughness_input)
+        else:
+            super()._connect_roughness(normal_texture, metalness_split, roughness_input)

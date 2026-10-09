@@ -12,6 +12,8 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
     SHADER: str = 'csgo_vertexlitgeneric.vfx'
 
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
+        # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
+        self._skip_texture("g_tAmbientOcclusion")
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         shader = self.create_node_group("csgo_complex.vfx", name=self.SHADER)
         self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
@@ -104,7 +106,10 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
         shader.inputs["g_flModelTintAmount"].default_value = material_data.get_float_property(
             "g_flModelTintAmount", 0.0)
 
-        if material_data.get_int_property("F_METALNESS_TEXTURE", 0) == 1 and alpha_output is not None:
+        if self._have_texture("g_tMetalness"):
+            metalness_split = self._split_metalness_texture()
+            self.connect_nodes(metalness_split.outputs[1], shader.inputs["TextureMetalness"])
+        elif material_data.get_int_property("F_METALNESS_TEXTURE", 0) == 1 and alpha_output is not None:
             self.connect_nodes(alpha_output, shader.inputs["TextureMetalness"])
         else:
             shader.inputs["TextureMetalness"].default_value = material_data.get_float_property(
@@ -115,10 +120,6 @@ class CSGOVertexLitGeneric(Source2ShaderBase):
             alpha_test_ref = material_data.get_float_property("g_flAlphaTestReference", 0.5)
             self.connect_nodes(self.insert_alpha_clip(alpha_output, alpha_test_ref), shader.inputs["Alpha"])
 
-        elif material_data.get_int_property("S_TRANSLUCENT", 0) and alpha_output is not None:
-            self.set_blend_mode('HASHED')
-            self.connect_nodes(alpha_output, shader.inputs["Alpha"])
-
-        elif material_data.get_int_property("S_TRANSLUCENT", 0) and alpha_output is not None:
+        elif self._is_translucent() and alpha_output is not None:
             self.set_blend_mode('HASHED')
             self.connect_nodes(alpha_output, shader.inputs["Alpha"])

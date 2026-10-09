@@ -12,6 +12,8 @@ class CSGOStaticOverlay(Source2ShaderBase):
     SHADER: str = 'csgo_static_overlay.vfx'
 
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
+        # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
+        self._skip_texture("g_tAmbientOcclusion")
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         shader = self.create_node_group("csgo_complex.vfx", name=self.SHADER)
         self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])

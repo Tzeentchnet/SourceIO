@@ -12,6 +12,9 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
     SHADER: str = 'csgo_lightmappedgeneric.vfx'
 
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
+        # Source 2 applies ambient occlusion to indirect light only, which Blender's renderers compute themselves.
+        self._skip_texture("g_tLayer1AmbientOcclusion")
+        self._skip_texture("g_tLayer2AmbientOcclusion")
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         shader = self.create_node_group("csgo_lightmappedgeneric.vfx", name=self.SHADER)
         self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
@@ -23,14 +26,14 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
             color0_texture = self._get_texture("g_tColor", (1, 1, 1, 1))
             self.connect_nodes(color0_texture.outputs[0], shader.inputs["TextureColor0"])
             if (material_data.get_int_property("F_ALPHA_TEST", 0) or
-                    material_data.get_int_property("S_TRANSLUCENT", 0) or
+                    self._is_translucent() or
                     material_data.get_int_property("F_OVERLAY", 0)):
                 self.connect_nodes(color0_texture.outputs[1], shader.inputs["TextureAlpha0"])
 
         if self._have_texture("g_tLayer2Color"):
             color_texture = self._get_texture("g_tLayer2Color", (1, 1, 1, 1))
             if (material_data.get_int_property("F_ALPHA_TEST", 0) or
-                    material_data.get_int_property("S_TRANSLUCENT", 0) or
+                    self._is_translucent() or
                     material_data.get_int_property("F_OVERLAY", 0)):
                 self.connect_nodes(color_texture.outputs[1], shader.inputs["TextureAlpha1"])
 
@@ -62,7 +65,7 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
 
         if material_data.get_int_property("F_ALPHA_TEST", 0):
             self.set_blend_mode('CLIP')
-        elif material_data.get_int_property("S_TRANSLUCENT", 0):
+        elif self._is_translucent():
             self.set_blend_mode('HASHED')
         elif material_data.get_int_property("F_OVERLAY", 0):
             self.set_blend_mode('HASHED')

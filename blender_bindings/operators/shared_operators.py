@@ -502,7 +502,8 @@ class SOURCEIO_PT_Utils(UITools, Panel):
     @classmethod
     def poll(cls, context):
         obj: bpy.types.Object = context.active_object
-        return obj and (obj.get("entity_data", None) or obj.get("skin_groups", None))
+        return obj and (obj.get("entity_data", None) or obj.get("skin_groups", None)
+                        or len(getattr(obj, "flex_controllers", ())) > 0)
 
 
 # noinspection PyPep8Naming
@@ -514,7 +515,7 @@ class SOURCEIO_PT_EntityLoader(UITools, Panel):
     @classmethod
     def poll(cls, context):
         obj: bpy.types.Object = context.active_object
-        if not obj and not context.selected_objects:
+        if not obj and context.selected_objects:
             obj = context.selected_objects[0]
         return obj and obj.get("entity_data", None)
 
@@ -549,7 +550,7 @@ class SOURCEIO_PT_EntityInfo(UITools, Panel):
     @classmethod
     def poll(cls, context):
         obj: bpy.types.Object = context.active_object
-        if not obj and not context.selected_objects:
+        if not obj and context.selected_objects:
             obj = context.selected_objects[0]
         return obj and obj.get("entity_data", None)
 

@@ -80,6 +80,14 @@ class FlexControllerTests(unittest.TestCase):
         self.assertEqual((nway.minimum, nway.maximum), (-1.0, 1.0))
         self.assertTrue(all(s.name in self.obj.data for s in sliders if not s.split))
 
+    def test_panel_shows_without_skin_groups(self):
+        from SourceIO.blender_bindings.operators.shared_operators import SOURCEIO_PT_Utils
+        self.assertNotIn('skin_groups', self.obj)
+        self.assertTrue(SOURCEIO_PT_Utils.poll(SimpleNamespace(active_object=self.obj)))
+        empty = bpy.data.objects.new('empty', None)
+        self.assertFalse(SOURCEIO_PT_Utils.poll(SimpleNamespace(active_object=empty)))
+        bpy.data.objects.remove(empty)
+
     def test_combo_is_not_clamped(self):
         # a = 0.5 * 2 = 1.0 and b = 0.75 * 2 = 1.5 (not shape keys, so not clamped to 0..1);
         # a_b = a * b / FS = 0.75. Clamping the product first gave 1.0 / 2 = 0.5.

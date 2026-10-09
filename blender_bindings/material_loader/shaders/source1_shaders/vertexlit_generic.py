@@ -735,21 +735,38 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             self.connect_nodes(roughness_output, shader.inputs['Roughness'])
 
         # --- Rimlight ---
-        # SDK: `rimLighting = pow(LdotR, g_RimExponent)` masked by N.L and scaled
-        # by $rimlightboost, with the exponent texture's alpha as a per-pixel mask.
-        # Sheen is the closest Principled analogue for a broad edge-facing term.
+        # SDK: `rimLighting = pow(LdotR, g_RimExponent)` masked by N.L, plus the
+        # ambient rim, both scaled by `fRimFresnel = pow(1 - N.V, 4)` and the mask
+        # `fRimMask = lerp(1.0, vSpecExpMap.a, $rimmask)`, the ambient one also by
+        # $rimlightboost. Sheen is lit by the scene like the ambient rim, but on
+        # its own it covers the whole surface (a white haze seen head-on), so its
+        # weight carries the same Fresnel falloff.
         if self.rimlight and 'Sheen Weight' in shader.inputs:
             boost = self.rimlightboost
             weight = self.clamp_value(boost if boost else 1.0)
-            if rim_mask_output is not None:
+
+            facing = self.create_node(Nodes.ShaderNodeLayerWeight, 'rimlight fresnel')
+            facing.inputs['Blend'].default_value = 0.5  # Facing = 1 - N.V
+            if shader.inputs['Normal'].is_linked:
+                self.connect_nodes(shader.inputs['Normal'].links[0].from_socket, facing.inputs['Normal'])
+            rim_fresnel = self.create_node(Nodes.ShaderNodeMath, 'rimlight fresnel ^4')
+            rim_fresnel.operation = 'POWER'
+            self.connect_nodes(facing.outputs['Facing'], rim_fresnel.inputs[0])
+            rim_fresnel.inputs[1].default_value = 4.0
+            rim_weight = self.create_node(Nodes.ShaderNodeMath, 'rimlight weight')
+            rim_weight.operation = 'MULTIPLY'
+            self.connect_nodes(rim_fresnel.outputs[0], rim_weight.inputs[0])
+            rim_weight.inputs[1].default_value = weight
+            weight_output = rim_weight.outputs[0]
+
+            if rim_mask_output is not None and self._vmt.get_int('$rimmask', 0):
                 rim_mix = self.create_node(Nodes.ShaderNodeMix, 'rimlight mask')
                 rim_mix.data_type = 'FLOAT'
                 self.connect_nodes(rim_mask_output, rim_mix.inputs['Factor'])
                 rim_mix.inputs['A'].default_value = 0.0
-                rim_mix.inputs['B'].default_value = weight
-                self.connect_nodes(rim_mix.outputs[0], shader.inputs['Sheen Weight'])
-            else:
-                shader.inputs['Sheen Weight'].default_value = weight
+                self.connect_nodes(weight_output, rim_mix.inputs['B'])
+                weight_output = rim_mix.outputs[0]
+            self.connect_nodes(weight_output, shader.inputs['Sheen Weight'])
             if 'Sheen Roughness' in shader.inputs:
                 shader.inputs['Sheen Roughness'].default_value = phong_exponent_to_roughness(
                     self.rimlightexponent or 4.0)

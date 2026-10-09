@@ -435,10 +435,10 @@ class Source2MaterialTests(unittest.TestCase):
         self.assertEqual(linked_node(mask.inputs[MIX_B]), tint)
 
     @staticmethod
-    def render_over_background(material, background, size=4, vertex_color=None, uv_layers=None):
+    def render_over_background(material, background, size=4, vertex_color=None, uv_layers=None, object_color=None):
         """Render a quad filling the camera with this material in front of a uniform world color; the mean
         pixel. The file doesn't hold the radiance as rendered, so compare with ``render_constant``. uv_layers
-        adds UV maps with a constant value, {name: (u, v)}."""
+        adds UV maps with a constant value, {name: (u, v)}; object_color sets the quad's object color."""
         mesh = bpy.data.meshes.new('unlit_quad')
         mesh.from_pydata([(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)], [], [(0, 1, 2, 3)])
         mesh.uv_layers.new(name='TEXCOORD')
@@ -449,6 +449,8 @@ class Source2MaterialTests(unittest.TestCase):
             colors.data.foreach_set('color', np.tile(np.asarray(vertex_color, np.float32), len(colors.data)))
         mesh.materials.append(material)
         obj = bpy.data.objects.new('unlit_quad', mesh)
+        if object_color is not None:
+            obj.color = object_color
         camera = bpy.data.objects.new('camera', bpy.data.cameras.new('camera'))
         camera.data.type = 'ORTHO'
         camera.data.ortho_scale = 1.0
@@ -765,6 +767,437 @@ class Source2MaterialTests(unittest.TestCase):
         group = shader_node(material, 'csgo_lightmappedgeneric.vfx')
         self.assertFalse(group.inputs['BlendModulate'].is_linked)
         self.assertEqual(tuple(group.inputs['BlendModulate'].default_value)[:3], (0.0, 0.0, 0.0))
+
+    # csgo_environment and csgo_environment_blend, against Python ports of VRF's csgo_environment.frag.
+
+    def render_link(self, material, input_socket, vertex_color=(0.0, 0.0, 0.0, 0.0), uv_layers=None,
+                    object_color=None):
+        """What feeds an input socket, rendered as an Emission (a float as grey). Imported meshes always have a
+        COLOR attribute (zeros where the model has none), so the quad gets one."""
+        emission = material.node_tree.nodes.new('ShaderNodeEmission')
+        material.node_tree.links.new(input_socket.links[0].from_socket, emission.inputs['Color'])
+        material.node_tree.links.new(emission.outputs[0], output_node(material).inputs['Surface'])
+        return self.render_over_background(material, (0.0, 0.0, 0.0), vertex_color=vertex_color,
+                                           uv_layers=uv_layers, object_color=object_color)
+
+    def assert_rendered(self, rendered, value, message=''):
+        """rendered (from render_link) is what a surface emitting value renders as."""
+        value = tuple(float(v) for v in np.broadcast_to(np.asarray(value, np.float64), 3))
+        np.testing.assert_allclose(rendered, self.render_constant(value, (0.0, 0.0, 0.0)), atol=3e-3,
+                                   err_msg=message)
+
+    def assert_link_is(self, material, input_socket, value, message='', **kwargs):
+        self.assert_rendered(self.render_link(material, input_socket, **kwargs), value, message)
+
+    @staticmethod
+    def environment(shader, layers=1, textures=(), ints=None, floats=None, vectors=None, colors=None, heights=None,
+                    normals=None, average=(1.0, 1.0, 1.0)):
+        """An environment material with g_tColor<n>, g_tHeight<n>, g_tNormal<n> per layer, set to colors[n - 1]
+        (RGB), heights[n - 1] (height, tint mask, AO, metalness) and normals[n - 1] (normal, roughness)."""
+        from unittest import mock
+        slots = [f'{kind}{n}' for n in range(1, layers + 1) for kind in ('g_tColor', 'g_tHeight', 'g_tNormal')]
+        with mock.patch.object(Source2ShaderBase, '_texture_average_color', return_value=average):
+            material = build(shader, tuple(slots) + tuple(textures), ints=ints, floats=floats, vectors=vectors)
+        for n in range(1, layers + 1):
+            for slot, values, default in ((f'g_tColor{n}', colors, (1.0, 1.0, 1.0)),
+                                          (f'g_tHeight{n}', heights, (0.5, 1.0, 1.0, 0.0)),
+                                          (f'g_tNormal{n}', normals, (0.5, 0.5, 1.0, 0.5))):
+                value = tuple(values[n - 1]) if values else default
+                Source2MaterialTests.set_color(material, slot, value if len(value) == 4 else (*value, 1.0))
+        return material
+
+    @staticmethod
+    def bsdf(material, shader):
+        return material.node_tree.nodes[shader]
+
+    def test_environment_color_matrix(self):
+        # Untinted, g_mTextureAdjust is round 23's contrast, brightness and saturation; a grey tint does nothing,
+        # a white one is the identity.
+        from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import SATURATION_WEIGHTS
+        from SourceIO.blender_bindings.material_loader.shaders.source2_shaders.csgo_environment import color_matrix
+        color, average, contrast, saturation, brightness = np.array((0.5, 0.25, 0.75)), (0.4, 0.3, 0.2), 1.5, 0.5, 1.2
+        adjusted = brightness * ((color - average) * contrast + average)
+        grey = np.dot(adjusted, SATURATION_WEIGHTS)
+        np.testing.assert_allclose((np.append(color, 1.0) @ color_matrix(contrast, saturation, brightness, average))[:3],
+                                   grey + saturation * (adjusted - grey), atol=1e-9)
+        np.testing.assert_allclose(color_matrix(1, 1, 1, average, (0.3, 0.3, 0.3)), np.identity(4), atol=1e-9)
+        np.testing.assert_allclose(color_matrix(1, 1, 1, average), np.identity(4), atol=1e-9)
+
+    def test_environment_layer(self):
+        # The tint mask (height green through its contrast and brightness) blends in the color adjusted with the
+        # tint, over the color (mode 0) or the color adjusted without it (mode 1). Metalness is height alpha,
+        # roughness the normal map's alpha through its contrast and brightness.
+        from SourceIO.blender_bindings.material_loader.shaders.source2_shaders.csgo_environment import color_matrix
+        color, average, tint = np.array((0.5, 0.25, 0.75)), (0.4, 0.3, 0.2), (0.7, 0.5, 0.3)
+        raw_mask, rough = 0.6, 0.4
+        mask = np.clip(((raw_mask - 0.5) * 1.5 + 0.5) * 0.8, 0, 1)
+        floats = {'g_fTextureColorContrast1': 1.5, 'g_fTextureColorSaturation1': 0.5,
+                  'g_fTextureColorBrightness1': 1.2, 'g_fTintMaskContrast1': 1.5, 'g_fTintMaskBrightness1': 0.8,
+                  'g_fTextureRoughnessContrast1': 2.0, 'g_fTextureRoughnessBrightness1': 1.25}
+        tinted = (np.append(color, 1.0) @ color_matrix(1.5, 0.5, 1.2, average, tint))[:3]
+        untinted = (np.append(color, 1.0) @ color_matrix(1.5, 0.5, 1.2, average))[:3]
+        for mode, base in ((0, color), (1, untinted)):
+            material = self.environment('csgo_environment.vfx', ints={'g_nColorCorrectionMode1': mode}, floats=floats,
+                                        vectors={'g_vTextureColorTint1': (*tint, 0.0)}, colors=[color],
+                                        heights=[(0.5, raw_mask, 1.0, 0.3)], normals=[(0.5, 0.5, 1.0, rough)],
+                                        average=average)
+            bsdf = self.bsdf(material, 'csgo_environment.vfx')
+            self.assert_link_is(material, bsdf.inputs['Base Color'],
+                                np.clip(base + (tinted - base) * mask, 0, 1), f'mode {mode}')
+        self.assert_link_is(material, bsdf.inputs['Metallic'], 0.3)
+        self.assert_link_is(material, bsdf.inputs['Roughness'], np.clip(((rough - 0.5) * 2.0 + 0.5) * 1.25, 0, 1))
+        material = self.environment('csgo_environment.vfx', ints={'g_bMetalness1': 0}, heights=[(0.5, 1, 1, 0.3)])
+        self.assertFalse(self.bsdf(material, 'csgo_environment.vfx').inputs['Metallic'].is_linked)
+
+    def test_environment_vertex_color(self):
+        # The painted color times g_vColorTint (sRGB), faded by the paint's alpha, masked by the raw tint mask.
+        color, raw_mask, paint, tint = np.array((0.5, 0.25, 0.75)), 0.6, np.array((0.2, 0.4, 0.8, 0.5)), 0.8
+        linear_tint = ((tint + 0.055) / 1.055) ** 2.4
+        material = self.environment('csgo_environment.vfx', floats={'g_fTintMaskContrast1': 2.0},
+                                    vectors={'g_vColorTint': (tint, tint, tint, 0.0)}, colors=[color],
+                                    heights=[(0.5, raw_mask, 1.0, 0.0)])
+        vertex = linear_tint * (1 + (paint[:3] - 1) * paint[3])
+        self.assert_link_is(material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
+                            color * (1 + (vertex - 1) * raw_mask), vertex_color=paint)
+
+    def test_environment_model_tint(self):
+        # The model tint (the object color, stored sRGB) is colorized into the tint mask: VRF's ColorizeTint by
+        # g_flModelTintAmount × (1 - min(tint)) × tint mask; off with g_bModelTint1 0. The color ends clamped.
+        color, raw_mask, tint = np.array((0.5, 0.25, 0.75)), 0.7, np.array((0.9, 0.5, 0.3))
+        linear_tint = ((tint + 0.055) / 1.055) ** 2.4
+        for ints, amount in (({}, 0.8 * (1 - linear_tint.min()) * raw_mask), ({'g_bModelTint1': 0}, 0.0)):
+            material = self.environment('csgo_environment.vfx', ints=ints, floats={'g_flModelTintAmount': 0.8},
+                                        colors=[color], heights=[(0.5, raw_mask, 1.0, 0.0)])
+            self.assert_link_is(material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
+                                self.vrf_colorize(color, linear_tint, amount), f'{ints}',
+                                object_color=(*tint, 1.0))
+
+    @staticmethod
+    def rotate_and_contrast(normal, rotation, contrast):
+        angle = np.radians(rotation)
+        turned = np.array((np.cos(angle) * normal[0] - np.sin(angle) * normal[1],
+                           np.sin(angle) * normal[0] + np.cos(angle) * normal[1], normal[2]))
+        result = np.array((0.0, 0.0, 1.0)) + (turned - (0.0, 0.0, 1.0)) * contrast
+        return result / np.linalg.norm(result)
+
+    def test_environment_normal(self):
+        # The normal turns with the layer's UV rotation, then contrast: normalize(lerp(up, n, contrast)); a detail
+        # normal (its own rotation and contrast) folds in as normalize(n + detail - up).
+        normal, detail = np.array((-0.4, 0.2, 0.894)), np.array((0.3, -0.1, 0.949))
+        base = self.rotate_and_contrast(normal, 30.0, 1.5)
+        folded = base + self.rotate_and_contrast(detail, 10.0, 0.5) - (0.0, 0.0, 1.0)
+        for ints, expected in (({}, base), ({'F_DETAIL_NORMAL': 1}, folded / np.linalg.norm(folded))):
+            material = self.environment('csgo_environment.vfx', textures=('g_tNormalDetail1',), ints=ints,
+                                        floats={'g_flTexCoordRotation1': 30.0, 'g_fTextureNormalContrast1': 1.5,
+                                                'g_flDetailTexCoordRotation1': 10.0,
+                                                'g_fDetailTextureNormalContrast1': 0.5},
+                                        normals=[(*(normal * 0.5 + 0.5), 0.5)])
+            self.assertEqual('g_tNormalDetail1' in texture_nodes(material), bool(ints))
+            if ints:
+                self.set_color(material, 'g_tNormalDetail1', (*(detail * 0.5 + 0.5), 1.0))
+            normal_map = linked_node(self.bsdf(material, 'csgo_environment.vfx').inputs['Normal'])
+            self.assert_link_is(material, normal_map.inputs['Color'], expected * 0.5 + 0.5, f'{ints}')
+
+    def test_environment_normal_turns_with_image(self):
+        # A constant tangent-space slope through the layer's rotation tilts the shading normal the way a Bump of a
+        # height rising along the transformed U does (the image as the UV transform lays it on the surface).
+        from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import _uv_transform_group
+        from SourceIO.blender_bindings.material_loader.shaders.source2_shaders.csgo_environment import (
+            _layer_normal_group)
+
+        def tilt(rotation, bump):
+            material = bpy.data.materials.new('tilt')
+            nodes, links = material.node_tree.nodes, material.node_tree.links
+            nodes.clear()
+            emission = nodes.new('ShaderNodeEmission')
+            links.new(emission.outputs[0], nodes.new('ShaderNodeOutputMaterial').inputs['Surface'])
+            if bump:
+                uv = nodes.new('ShaderNodeUVMap')
+                uv.uv_map = 'TEXCOORD'
+                transform = nodes.new('ShaderNodeGroup')
+                transform.node_tree = _uv_transform_group()
+                transform.inputs['g_flTexCoordRotation'].default_value = rotation
+                links.new(uv.outputs[0], transform.inputs[0])
+                height = nodes.new('ShaderNodeSeparateXYZ')
+                links.new(transform.outputs[0], height.inputs[0])
+                bump_node = nodes.new('ShaderNodeBump')
+                bump_node.inputs['Distance'].default_value = 0.2
+                links.new(height.outputs['X'], bump_node.inputs['Height'])
+                normal = bump_node.outputs[0]
+            else:
+                layer = nodes.new('ShaderNodeGroup')
+                layer.node_tree = _layer_normal_group()
+                layer.inputs['Normal'].default_value = (0.3, 0.5, 0.958, 1.0)  # (-0.4, 0, 0.917): uphill along +U
+                layer.inputs['Rotation'].default_value = rotation
+                encode = nodes.new('ShaderNodeVectorMath')
+                encode.operation = 'MULTIPLY_ADD'
+                links.new(layer.outputs[0], encode.inputs[0])
+                encode.inputs[1].default_value = encode.inputs[2].default_value = (0.5, 0.5, 0.5)
+                normal_map = nodes.new('ShaderNodeNormalMap')
+                links.new(encode.outputs[0], normal_map.inputs['Color'])
+                normal = normal_map.outputs[0]
+            shown = nodes.new('ShaderNodeVectorMath')
+            shown.operation = 'MULTIPLY_ADD'
+            links.new(normal, shown.inputs[0])
+            shown.inputs[1].default_value = shown.inputs[2].default_value = (0.5, 0.5, 0.5)
+            links.new(shown.outputs[0], emission.inputs['Color'])
+            xy = self.render_over_background(material, (0.0, 0.0, 0.0))[:2] - self.render_constant(
+                (0.5, 0.5, 0.5), (0.0, 0.0, 0.0))[:2]
+            return np.degrees(np.arctan2(xy[1], xy[0]))
+
+        for rotation in (0.0, 90.0, 33.0, -60.0):
+            self.assertAlmostEqual(tilt(rotation, False), tilt(rotation, True), delta=1.0, msg=f'{rotation}')
+
+    @staticmethod
+    def vrf_band_weight(difference, factor, height, softness, mask_with_height):
+        softness = max(softness, 1e-4)
+        quarter, saturate = softness * 0.25, lambda v: min(max(v, 0.0), 1.0)
+        edge = 0.02 + quarter
+        crossfade = saturate(0.5 + difference / (2.0 * softness))
+        edge_high = saturate((saturate(factor + difference * 0.1 + 0.2) - (0.98 - quarter)) / edge)
+        crossfade += (1.0 - crossfade) * edge_high
+        edge_low = saturate((edge - saturate(factor + difference * 0.05 - 0.05)) / edge)
+        crossfade -= crossfade * edge_low
+        return saturate(crossfade * (0.5 + (height - 0.5) * mask_with_height) * 2.0)
+
+    @classmethod
+    def vrf_blend_layer(cls, below, factor, height, zero, scale, softness, influence=1.0, mask_with_height=0.0):
+        """VRF's BlendLayer; below and the result are (weight, difference, signed raw, signed carry, under height)."""
+        out = {'weight': 0.0, 'difference': 0.0, 'signed_raw': 0.0, 'signed_carry': 0.0,
+               'under': below['under']}
+        if factor <= 0.0:
+            return out
+        signed = 2.0 * factor - 1.0
+        plus_signed = (height - zero) * scale + signed + max(below['signed_raw'], 0.0)
+        difference = plus_signed - (below['signed_carry'] + (below['under'] - below['signed_carry']) * influence)
+        out.update(weight=cls.vrf_band_weight(difference, factor, height, softness, mask_with_height),
+                   difference=difference, signed_raw=signed)
+        if out['weight'] > 0.05:
+            out['signed_carry'] = signed * out['weight']
+            out['under'] = below['under'] + (max(below['under'], plus_signed) - below['under']) * out['weight']
+        return out
+
+    @staticmethod
+    def vrf_blend_weights(height1, height2, scale1, scale2, zero1, zero2, factor, softness):
+        """VRF's GetBlendWeights (heights are already minus their zero points)."""
+        h1 = scale1 + softness
+        top1 = height1 * h1
+        h2 = scale2 + softness
+        blend1 = (-zero1 * h1 - (1.0 - zero2) * h2) - softness
+        blend2 = (1.0 - zero1) * h1 + zero2 * h2
+        top2 = height2 * (scale2 - softness) + blend1 + (blend2 - blend1) * factor
+        top = max(top1, top2) - softness
+        weights = np.array((max(top1 - top, 0.0) + 0.001, max(top2 - top, 0.0)))
+        return weights / weights.sum()
+
+    def blend_layers(self, layers=2, ints=None, floats=None, colors=None, heights=None, paint=(0.0, 0.0),
+                     softness=0.0, socket='Base Color', vertex_color=(0.0, 0.0, 0.0, 0.0), **kwargs):
+        material = self.environment('csgo_environment_blend.vfx', layers, ints=ints, floats=floats, colors=colors,
+                                    heights=heights, **kwargs)
+        return self.render_link(material, self.bsdf(material, 'csgo_environment_blend.vfx').inputs[socket],
+                                vertex_color=vertex_color,
+                                uv_layers={'TEXCOORD_4': paint, 'TEXCOORD_4_2': (0.0, softness)})
+
+    def test_environment_blend_legacy_weights(self):
+        # Without F_USE_NEW_BLENDING: GetBlendWeights over the heights (minus their zero points), with the painted
+        # weight (TEXCOORD_4.x) as is and softness w + g_flBlendSoftness2 (TEXCOORD_4_2.y is w). A black and a
+        # white layer render as layer 2's weight.
+        black_white = [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)]
+        cases = ((0.6, 0.4, 0.5, {}, 0.1), (0.3, 0.7, 0.4, {'g_flHeightMapScale2': 2.0}, 0.0),
+                 (0.5, 0.5, 0.8, {'g_flHeightMapZeroPoint1': 0.2, 'g_flBlendSoftness2': 0.3}, 0.2),
+                 (0.5, 0.5, 0.0, {}, 0.0), (0.5, 0.5, 1.0, {}, 0.0))
+        for height1, height2, paint, floats, stream_softness in cases:
+            softness = min(max(stream_softness + floats.get('g_flBlendSoftness2', 0.01), 0.001), 1.0)
+            zero1 = floats.get('g_flHeightMapZeroPoint1', 0.5)
+            weights = self.vrf_blend_weights(height1 - zero1, height2 - 0.5, 1.0, floats.get('g_flHeightMapScale2', 1.0),
+                                             zero1, 0.5, paint, softness)
+            rendered = self.blend_layers(floats=floats, colors=black_white, paint=(paint, 0.0), softness=stream_softness,
+                                         heights=[(height1, 1, 1, 0), (height2, 1, 1, 0)])
+            self.assert_rendered(rendered, weights[1], f'{height1} {height2} {paint} {floats}')
+
+    def test_environment_blend_height_band(self):
+        # F_USE_NEW_BLENDING: BlendLayer over layer 1's scaled height, the paint remapped by 1.1x - 0.05; layer 3
+        # measured against what layer 2 carries up. Layers black, red and blue render as (w2 (1 - w3), 0, w3).
+        colors = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)]
+        cases = ((0.6, 0.5, 0.4, 0.5, 0.0, {}), (0.3, 0.7, 0.5, 0.6, 0.0, {'g_flMaskWithHeight2': 0.8}),
+                 (0.5, 0.4, 0.6, 0.9, 0.7, {'g_flUnderlyingHeightMapInfluence3': 0.5, 'g_flHeightMapScale3': 2.0}),
+                 (0.5, 0.5, 0.5, 0.0, 0.5, {}), (0.6, 0.5, 0.5, 0.55, 0.45, {'g_flBlendSoftness3': 0.2}))
+        saturate = lambda v: min(max(v, 0.0), 1.0)
+        for height1, height2, height3, paint2, paint3, floats in cases:
+            floats = {'g_flBlendSoftness2': 0.3, **floats}
+            softness3 = floats.get('g_flBlendSoftness3', 0.01)
+            softness = floats['g_flBlendSoftness2'] if paint2 >= 0.001 else softness3
+            softness = saturate(softness + (softness3 - softness) * paint3)
+            seed = {'signed_raw': 0.0, 'signed_carry': 0.0, 'under': (height1 - 0.5) * 1.0}
+            carry2 = self.vrf_blend_layer(seed, saturate(paint2 * 1.1 - 0.05), height2, 0.5, 1.0, softness,
+                                          mask_with_height=floats.get('g_flMaskWithHeight2', 0.0))
+            carry3 = self.vrf_blend_layer(carry2, saturate(paint3 * 1.1 - 0.05), height3, 0.5,
+                                          floats.get('g_flHeightMapScale3', 1.0), softness,
+                                          floats.get('g_flUnderlyingHeightMapInfluence3', 1.0))
+            w2, w3 = carry2['weight'], carry3['weight']
+            rendered = self.blend_layers(3, ints={'F_USE_NEW_BLENDING': 1, 'F_ENABLE_LAYER_3': 1}, floats=floats,
+                                         colors=colors, paint=(paint2, paint3),
+                                         heights=[(h, 1, 1, 0) for h in (height1, height2, height3)])
+            self.assert_rendered(rendered, (w2 * (1 - w3), 0.0, w3),
+                                 f'{height1} {height2} {height3} {paint2} {paint3} {floats}')
+        # Two layers: layer 3's textures aren't loaded.
+        material = self.environment('csgo_environment_blend.vfx', 2, textures=('g_tColor3', 'g_tHeight3'))
+        self.assertFalse(texture_nodes(material) & {'g_tColor3', 'g_tHeight3'})
+
+    @staticmethod
+    def vrf_colorize(albedo, tint, amount):
+        luma_weights = np.array((0.2125, 0.7154, 0.0721))
+        direction = np.maximum(tint, 0.001) / np.linalg.norm(np.maximum(tint, 0.001))
+        luma = np.dot(albedo, luma_weights)
+        tinted = min(luma / np.dot(direction, luma_weights), 3.0 * luma * max(tint))
+        return np.clip(albedo + (direction * tinted - albedo) * amount, 0, 1)
+
+    def test_environment_blend_border(self):
+        # F_BLEND_EFFECTS_2 with the height-band blend: VRF's ApplyBlendBorder recolors both layers (and sets their
+        # roughness) in a band around the seam, before they are combined by layer 2's weight.
+        def smoothstep(edge0, edge1, x):
+            t = np.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+            return t * t * (3 - 2 * t)
+
+        lower, upper = np.array((0.5, 0.25, 0.75)), np.array((0.2, 0.6, 0.4))
+        height1, height2, paint, softness = 0.55, 0.5, 0.5, 0.3
+        tint_srgb, spread, border_softness, offset, layer_amount = 0.6, 0.3, 0.1, 0.05, (1.0, 0.5)
+        tint = np.array((tint_srgb, 0.4, 0.2))
+        tint_linear = np.where(tint <= 0.04045, tint / 12.92, ((tint + 0.055) / 1.055) ** 2.4)
+        tint_masks = (0.8, 0.4)
+        factor = np.clip(paint * 1.1 - 0.05, 0, 1)
+        carry = self.vrf_blend_layer({'signed_raw': 0.0, 'signed_carry': 0.0, 'under': height1 - 0.5}, factor,
+                                     height2, 0.5, 1.0, softness)
+        weight = carry['weight']
+        paint_mask = np.clip(factor * 5, 0, 1) * np.clip((1 - factor) * 5, 0, 1)
+        band_spread = spread * (0.5 + 0.5 * 1.0) * paint_mask
+        band_softness = softness + border_softness
+        band = ((1 - smoothstep(band_spread - band_softness, band_spread + band_softness,
+                                abs(carry['difference'] + offset))) * (1 - np.clip(band_softness / spread * 0.01, 0, 1)))
+        sides = np.clip(np.array(layer_amount) * 0.5 * 2, 0, 1)
+        amount = (band * np.clip(paint_mask * (4 + (1 - 4) * np.clip(band_softness * 0.5, 0, 1)), 0, 1)
+                  * (sides[0] + (sides[1] - sides[0]) * weight))
+        mask = tint_masks[0] + (tint_masks[1] - tint_masks[0]) * weight
+        for mode in range(4):
+            def recolor(color):
+                if mode == 3:
+                    return color + (self.vrf_colorize(color, tint_linear, mask) - color) * amount
+                if mode == 1:
+                    return color + (tint_linear - color) * amount * mask
+                return color * (1 + ((tint_linear * (2 if mode == 2 else 1)) - 1) * amount * mask)
+
+            expected = recolor(lower) + (recolor(upper) - recolor(lower)) * weight
+            ints = {'F_USE_NEW_BLENDING': 1, 'F_BLEND_EFFECTS_2': 1, 'F_BORDER_BLEND_MODE_2': mode,
+                    'g_bBorderTintMask2': 1, 'F_BORDER_ROUGHNESS_2': 1}
+            floats = {'g_flBlendSoftness2': softness, 'g_flBorderSpread2': spread, 'g_flBorderOffset2': offset,
+                      'g_flBorderSoftness2': border_softness, 'g_fBorderRoughness2': 0.9}
+            vectors = {'g_vBorderTint2': (*tint, 0.0), 'g_vBorderLayerAmount2': (*layer_amount, 0.0, 0.0)}
+            heights = [(height1, tint_masks[0], 1, 0), (height2, tint_masks[1], 1, 0)]
+            rendered = self.blend_layers(ints=ints, floats=floats, vectors=vectors, colors=[lower, upper],
+                                         heights=heights, paint=(paint, 0.0))
+            self.assert_rendered(rendered, expected, f'mode {mode}')
+            self.assertGreater(amount, 0.2)
+        # Roughness 0.5 on both layers, pulled to 0.9 by the border.
+        rendered = self.blend_layers(ints=ints, floats=floats, vectors=vectors, colors=[lower, upper],
+                                     heights=heights, paint=(paint, 0.0), socket='Roughness')
+        self.assert_rendered(rendered, 0.5 + 0.4 * amount * mask)
+        # The legacy blend has no seam to decorate.
+        ints['F_USE_NEW_BLENDING'] = 0
+        material = self.environment('csgo_environment_blend.vfx', 2, ints=ints)
+        self.assertFalse(any(node.bl_idname == 'ShaderNodeGroup' and 'Border' in node.node_tree.name
+                             for node in material.node_tree.nodes))
+
+    def test_environment_blend_selective(self):
+        # g_flColorOverlay2 multiplies by lerp(1, 2·sRGB(upper), w·overlay) before replacing by w·replace;
+        # roughness lerp(lower·(1 + (upper - lower)·2·w·combine), upper, w·replace); normals fold by w·combine.
+        lower, upper = np.array((0.5, 0.25, 0.75)), np.array((0.2, 0.6, 0.002))
+        weight = self.vrf_blend_weights(0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.01)[1]
+        floats = {'g_flColorOverlay2': 0.7, 'g_flColorReplace2': 0.4, 'g_flRoughnessCombine2': 0.8,
+                  'g_flRoughnessReplace2': 0.3, 'g_flNormalCombine2': 0.6, 'g_flNormalReplace2': 0.2}
+        overlaid = lower * (1 + (2 * self.srgb(upper) - 1) * weight * 0.7)
+        rendered = self.blend_layers(floats=floats, colors=[lower, upper], paint=(0.5, 0.0),
+                                     normals=[(0.5, 0.5, 1.0, 0.3), (0.5, 0.5, 1.0, 0.7)])
+        self.assert_rendered(rendered, overlaid + (upper - overlaid) * weight * 0.4)
+        combined = 0.3 * (1 + (0.7 - 0.3) * 2 * weight * 0.8)
+        rendered = self.blend_layers(floats=floats, colors=[lower, upper], paint=(0.5, 0.0), socket='Roughness',
+                                     normals=[(0.5, 0.5, 1.0, 0.3), (0.5, 0.5, 1.0, 0.7)])
+        self.assert_rendered(rendered, combined + (0.7 - combined) * weight * 0.3)
+        self.assertGreater(weight, 0.2)
+        self.assertLess(weight, 0.8)
+
+    def test_environment_blend_shared_color_overlay(self):
+        # F_SHARED_COLOR_OVERLAY: o = 2·overlay - 1 scales the color by max(0, 1 + (1 - (1 - max(0, o))^B)·B +
+        # ((1 + min(0, o))^D - 1)·D), by Σ lerp(1, mask or 1 - mask, |mask strength|)·layer strength·share.
+        lower, upper, overlay = np.array((0.5, 0.25, 0.75)), np.array((0.2, 0.6, 0.4)), np.array((0.8, 0.3, 0.5))
+        bright, dark, tint_masks = 1.5, 0.75, (0.6, 0.3)
+        weight = self.vrf_blend_weights(0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.01)[1]
+        o = overlay * 2 - 1
+        factor = np.maximum(0, 1 + (1 - (1 - np.maximum(0, o)) ** bright) * bright
+                            + ((1 + np.minimum(0, o)) ** dark - 1) * dark)
+        amount = ((1 + (tint_masks[0] - 1) * 0.5) * 0.8 * (1 - weight)
+                  + (1 + ((1 - tint_masks[1]) - 1) * 1.0) * 1.0 * weight)
+        material = self.environment('csgo_environment_blend.vfx', 2, textures=('g_tSharedColorOverlay',),
+                                    ints={'F_SHARED_COLOR_OVERLAY': 1},
+                                    floats={'g_flOverlayBrightnessContrast': bright,
+                                            'g_flOverlayDarknessContrast': dark},
+                                    vectors={'g_vColorOverlayLayerStrengths': (0.8, 1.0, 1.0, 0.0),
+                                             'g_vColorOverlayTintMaskStrengths': (0.5, -1.0, 0.0, 0.0)},
+                                    colors=[lower, upper], heights=[(0.5, tint_masks[0], 1, 0),
+                                                                    (0.5, tint_masks[1], 1, 0)])
+        self.assertFalse(material.node_tree.nodes['g_tSharedColorOverlay'].image.colorspace_settings.is_data)
+        self.set_color(material, 'g_tSharedColorOverlay', (*overlay, 1.0))
+        rendered = self.render_link(material, self.bsdf(material, 'csgo_environment_blend.vfx').inputs['Base Color'],
+                                    uv_layers={'TEXCOORD_4': (0.5, 0.0), 'TEXCOORD_4_2': (0.0, 0.0)})
+        blended = lower + (upper - lower) * weight
+        self.assert_rendered(rendered, blended * (1 + (factor - 1) * amount))
+
+    def test_environment_blend_vertex_color(self):
+        # g_nVertexColorMode<n>: 0 masked by the tint mask, 1 unmasked, 2 disabled, weighed by each layer's share:
+        # color · lerp(1, paint, saturate(Σ masked + Σ unmasked) · Σ enabled).
+        lower, upper, paint = np.array((0.5, 0.25, 0.75)), np.array((0.2, 0.6, 0.4)), np.array((0.2, 0.4, 0.8, 0.5))
+        tint_masks = (0.6, 0.3)
+        weight = self.vrf_blend_weights(0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.01)[1]
+        shares = (1 - weight, weight)
+        vertex = 1 + (paint[:3] - 1) * paint[3]
+        for modes in ((0, 0), (1, 0), (0, 2), (2, 1)):
+            masked = sum(mask * share for mask, share in zip(tint_masks, shares))
+            unmasked = sum(float(mode != 0) * share for mode, share in zip(modes, shares))
+            enabled = sum(float(mode != 2) * share for mode, share in zip(modes, shares))
+            vertex_mask = np.clip(unmasked + masked, 0, 1) * enabled
+            rendered = self.blend_layers(ints={f'g_nVertexColorMode{n}': mode for n, mode in zip((1, 2), modes)},
+                                         colors=[lower, upper], paint=(0.5, 0.0), vertex_color=paint,
+                                         heights=[(0.5, tint_masks[0], 1, 0), (0.5, tint_masks[1], 1, 0)])
+            blended = lower + (upper - lower) * weight
+            self.assert_rendered(rendered, blended * (1 + (vertex - 1) * vertex_mask), f'{modes}')
+
+    def test_environment_blend_facing_direction(self):
+        # F_BLEND_BY_FACING_DIRECTION_2 scales the paint by smoothstep(max(0, 1 - spread - softness),
+        # min(1, 1 - spread + 0.001 + softness), dot(direction, normal)·0.5 + 0.5); the test quad faces +Z.
+        def smoothstep(edge0, edge1, x):
+            t = np.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+            return t * t * (3 - 2 * t)
+
+        black_white = [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)]
+        for direction, spread, softness in (((1.0, 0.0, 1.0), 0.2, 0.15), ((0.0, 0.0, -1.0), 0.5, 0.1),
+                                            ((0.0, 1.0, 0.0), 0.5, 0.3)):
+            unit = np.array(direction) / np.linalg.norm(direction)
+            facing = smoothstep(max(0, 1 - spread - softness), min(1, 1 - spread + 0.001 + softness),
+                                unit[2] * 0.5 + 0.5)
+            weight = self.vrf_blend_weights(0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.8 * facing, 0.01)[1]
+            rendered = self.blend_layers(ints={'F_BLEND_BY_FACING_DIRECTION_2': 1}, colors=black_white,
+                                         floats={'g_flFacingDirectionMaskSpread2': spread,
+                                                 'g_vFacingDirectionMaskSoftness2': softness},
+                                         vectors={'g_vFacingDirection2': (*direction, 0.0)}, paint=(0.8, 0.0))
+            self.assert_rendered(rendered, weight, f'{direction}')
+
+    def test_environment_alpha_test(self):
+        material = self.environment('csgo_environment.vfx', ints={'F_ALPHA_TEST': 1},
+                                    floats={'g_flAlphaTestReference': 0.3})
+        self.assertEqual(material.surface_render_method, 'DITHERED')
+        clip = linked_node(self.bsdf(material, 'csgo_environment.vfx').inputs['Alpha'])
+        self.assertEqual(clip.label, ALPHA_CLIP_LABEL)
+        self.assertAlmostEqual(clip.inputs[1].default_value, 0.3, places=6)
+
 
 if __name__ == '__main__':
     unittest.main()

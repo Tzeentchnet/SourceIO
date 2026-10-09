@@ -3,7 +3,7 @@
 Usage:
     blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- \
         --game "<steam>/common/Team Fortress 2/tf" [--model models/player/heavy.mdl ...] [--map ctf_2fort ...] \
-        [--include-animations] [--load-placeholders] [--json FILE]
+        [--include-animations] [--load-placeholders] [--json FILE] [--save FILE.blend]
     blender -b --factory-startup --python tests/blender_tests/run_game_imports.py -- \
         --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--model models/chicken/chicken.vmdl_c ...] \
         [--map de_dust2 ...] [--include-animations] [--clips "idle*,run_n_*"]
@@ -16,7 +16,7 @@ folder (.bsp, or a Source 2 map .vpk). --include-animations imports the animatio
 models, or turns on *Import animations* for Source 2 models. --load-placeholders then runs *Load Entity* on
 every prop placeholder a map import leaves (Source 2 maps place all their geometry that way). --clips also
 imports the animation graph clips of Source 2 models that match the patterns (implies --include-animations;
-"*" takes every clip, about 2000 for a CS2 character). Results use
+"*" takes every clip, about 2000 for a CS2 character). --save keeps the scene the last import left. Results use
 the same PASS/WARN/FAIL rules as run_sample_imports.py; exit code is 1 if anything failed.
 """
 import argparse
@@ -191,6 +191,7 @@ def main() -> int:
     parser.add_argument("--load-placeholders", action="store_true",
                         help="after importing a map, load every prop placeholder (the Load Entity button)")
     parser.add_argument("--json", type=Path)
+    parser.add_argument("--save", type=Path, help="save the scene the last import left as this .blend")
     args = parser.parse_args(argv)
     source2 = is_source2(args.game)
     if not source2 and not (args.game / "gameinfo.txt").is_file():
@@ -238,6 +239,8 @@ def main() -> int:
     print(f"GAME SUMMARY {summary}")
     if args.json:
         args.json.write_text(json.dumps({"summary": summary, "results": results}, indent=2))
+    if args.save:
+        bpy.ops.wm.save_as_mainfile(filepath=str(args.save.resolve()))
     return 1 if summary["FAIL"] else 0
 
 

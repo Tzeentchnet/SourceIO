@@ -58,8 +58,10 @@ def main():
     pattern = re.compile(args.filter, re.IGNORECASE)
 
     for combo in program["m_staticComboArray"]:
-        if pattern.search(combo["m_szName"]) or pattern.search(combo["m_szAliasName"]):
-            print(f"COMBO {combo['m_szName']:40} {combo['m_nMin']}..{combo['m_nMax']}  {combo['m_szAliasName']}")
+        alias = combo.get("m_szAliasName", "")
+        if pattern.search(combo["m_szName"]) or pattern.search(alias):
+            values = " ".join(f"{index}={name}" for index, name in enumerate(combo.get("m_stringArray", [])))
+            print(f"COMBO {combo['m_szName']:40} {combo['m_nMin']}..{combo['m_nMax']}  {alias}  {values}".rstrip())
 
     variables = program["m_variableDescriptionArray"]
     processors = program["m_textureChannelProcessorArray"]

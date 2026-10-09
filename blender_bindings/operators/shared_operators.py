@@ -23,7 +23,7 @@ from ..shared.skins import prop_skin, set_skin, set_model_skin
 from ..source2.vmdl_loader import load_model, ImportContext
 from ..source2.vmdl_loader import put_into_collections as s2_put_into_collections
 from ..utils.bpy_utils import (get_or_create_collection, get_new_unique_collection, find_layer_collection,
-                                                       pause_view_layer_update)
+                                                       make_shadow_only, pause_view_layer_update)
 from ..utils.resource_utils import deserialize_mounted_content, serialize_mounted_content
 from ...library.shared.content_manager import ContentManager
 from ...library.source2 import CompiledModelResource
@@ -407,6 +407,8 @@ class SourceIO_OT_LoadEntity(Operator):
             model_resource = CompiledModelResource.from_buffer(vmld_file, prop_path)
             container = load_model(content_manager, model_resource, import_context)
             set_model_skin(container, skin)
+            if custom_prop_data.get("shadow_only", False):
+                make_shadow_only(container.objects)
             if replace_entity:
                 imported_collection = get_or_create_collection(f"IMPORTED_{parent.name}", parent)
                 s2_put_into_collections(container, model_resource.name, imported_collection)

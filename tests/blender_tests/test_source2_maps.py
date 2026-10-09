@@ -3,7 +3,7 @@
 CS2 ships a map's 3D skybox as a map of its own, named by the map's ``skybox_reference``, built at
 1/``scale`` of its ``sky_camera``. Also covers the per-map entity collections the skybox needs,
 *Load Entity* on an aggregate whose draw calls repeat (it placed only the first fragment), the names
-of the models the map compiler generates, and the hidden light blockers.
+of the models the map compiler generates, and the light blockers (hidden, casting shadows only).
 """
 import math
 import unittest
@@ -192,7 +192,7 @@ class LightBlockerTests(unittest.TestCase):
     def setUp(self):
         bpy.ops.wm.read_homefile(use_empty=True)
 
-    def test_light_blockers_are_hidden(self):
+    def test_light_blockers_are_hidden_shadow_casters(self):
         map_collection = bpy.data.collections.new("de_dust2")
         bpy.context.scene.collection.children.link(map_collection)
         node = FakeNode(["maps/de_dust2/worldnodes/n0_lr0_c1_s_cb_bl_mesh_blocklight1_shadow.vmdl",
@@ -206,10 +206,38 @@ class LightBlockerTests(unittest.TestCase):
         shadow = map_collection.children["shadow_casters"]
         self.assertEqual(sorted(obj.name for obj in shadow.objects), ["blocklight0_noshadow", "blocklight1_shadow"])
         self.assertEqual([obj.name for obj in map_collection.children["static_props_n0"].objects], ["steam_001"])
-        self.assertTrue(shadow.hide_render)
+        # Hidden in the viewport only: once loaded they cast shadows in renders.
         layer = bpy.context.view_layer.layer_collection.children["de_dust2"].children["shadow_casters"]
         self.assertTrue(layer.hide_viewport)
-        self.assertFalse(map_collection.children["static_props_n0"].hide_render)
+        self.assertFalse(shadow.hide_render)
+        self.assertTrue(all(obj["entity_data"]["shadow_only"] for obj in shadow.objects))
+        self.assertNotIn("shadow_only", bpy.data.objects["steam_001"]["entity_data"])
+
+    def test_loaded_light_blockers_cast_shadows_only(self):
+        def load_model(cm, resource, import_context):
+            mesh = bpy.data.meshes.new("blocker")
+            mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+            return ModelContainer([bpy.data.objects.new("blocker", mesh)], {"group": []})
+
+        bpy.context.scene.import_materials = False
+        bpy.context.scene.import_physics = False
+        for use_instances in (True, False):
+            bpy.context.scene.use_instances = use_instances
+            bpy.context.scene.replace_entity = True
+            placeholder = bpy.data.objects.new("blocklight1_shadow", None)
+            bpy.context.scene.collection.objects.link(placeholder)
+            placeholder["entity_data"] = {"prop_path": f"maps/x/worldnodes/blocklight_{use_instances}.vmdl_c",
+                                          "type": "static_prop", "scale": SCALE, "entity": {}, "skin": "default",
+                                          "shadow_only": True}
+            operator = SimpleNamespace(report=lambda *args: None, replace_placeholder=lambda *args: None)
+            with mock.patch.object(shared_operators, "load_model", load_model),                     mock.patch.object(shared_operators.CompiledModelResource, "from_buffer",
+                                      return_value=FakeModelResource()):
+                shared_operators.SourceIO_OT_LoadEntity.load_vmdl(operator, SimpleNamespace(find_file=lambda p: b"vmdl"),
+                                                                  bpy.context, placeholder)
+            mesh = [obj for obj in bpy.data.objects if obj.type == 'MESH'][-1]
+            self.assertFalse(mesh.visible_camera or mesh.visible_diffuse or mesh.visible_glossy
+                             or mesh.visible_transmission or mesh.visible_volume_scatter, use_instances)
+            self.assertTrue(mesh.visible_shadow, use_instances)
 
 
 class FakeModelResource:

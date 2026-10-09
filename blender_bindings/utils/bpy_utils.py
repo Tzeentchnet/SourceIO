@@ -1,6 +1,7 @@
 import contextlib
 import random
 import re
+from typing import Iterable
 
 import bpy
 
@@ -211,6 +212,17 @@ def get_new_unique_collection(model_name, parent_collection):
     name = f"{model_name}_{i}"
     _name_next_idx[model_name] = i + 1
     return get_or_create_collection(name, parent_collection)
+
+
+def make_shadow_only(objects: Iterable[bpy.types.Object]):
+    """Hide objects from every ray but shadow rays, as the game renders light blockers into shadow maps only."""
+    for obj in objects:
+        obj.visible_camera = False
+        obj.visible_diffuse = False
+        obj.visible_glossy = False
+        obj.visible_transmission = False
+        obj.visible_volume_scatter = False
+        obj.visible_shadow = True
 
 
 def append_blend(filepath, type_name, link=False):

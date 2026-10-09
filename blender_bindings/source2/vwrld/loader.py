@@ -37,7 +37,7 @@ logger = log_manager.get_logger("VWRLD")
 SKYBOX_SKIPPED_CLASSES = frozenset({"light_environment", "env_sky", "sky_camera", "skybox_reference"})
 
 # Meshes compiled from toolsblocklight/toolssolidblocklight brushes (n0_lr0_c1_s_cb_bl_mesh_blocklight1_shadow):
-# the game only renders them into shadow maps.
+# the game only renders them into shadow maps. Their materials aren't shipped.
 LIGHT_BLOCKER = re.compile(r"_blocklight\d+_(?:no)?shadow$")
 SHADOW_CASTERS_COLLECTION = "shadow_casters"
 
@@ -135,10 +135,12 @@ def load_world_nodes(world_resource: CompiledWorldResource, map_resource: Compil
                 matrix = Matrix(transform).to_4x4()
             else:
                 matrix = Matrix.Identity(4)
-            target = collection
             if proper_path and LIGHT_BLOCKER.search(TinyPath(proper_path).stem):
-                target = get_or_create_child_collection(SHADOW_CASTERS_COLLECTION, master_collection)
-            create_static_prop_placeholder(scene_object, proper_path, matrix, target, scale, uv_scale)
+                shadow_casters = get_or_create_child_collection(SHADOW_CASTERS_COLLECTION, master_collection)
+                create_static_prop_placeholder(scene_object, proper_path, matrix, shadow_casters, scale, uv_scale,
+                                               shadow_only=True)
+            else:
+                create_static_prop_placeholder(scene_object, proper_path, matrix, collection, scale, uv_scale)
         for scene_object in node_resource.get_aggregate_scene_objects():
             renderable_model = scene_object["m_renderableModel"]
             proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
@@ -169,18 +171,19 @@ def load_world_nodes(world_resource: CompiledWorldResource, map_resource: Compil
 
 
 def hide_shadow_casters(master_collection: bpy.types.Collection):
-    """Light blockers are hidden in the viewport and in renders; the collection's eye shows them."""
+    """Light blockers are hidden in the viewport (the collection's eye shows them); once loaded they cast shadows
+    in renders and are otherwise invisible, see ``make_shadow_only``."""
     for child in master_collection.children:
         if child.name.split(".")[0] != SHADOW_CASTERS_COLLECTION:
             continue
-        child.hide_render = True
         layer_collection = find_layer_collection(bpy.context.view_layer.layer_collection, child.name)
         if layer_collection is not None:
             layer_collection.hide_viewport = True
 
 
 def create_static_prop_placeholder(scene_object: Object, proper_path: TinyPath | None, matrix: Matrix | None,
-                                   collection: bpy.types.Collection, scale: float, uv_scale: list[float]):
+                                   collection: bpy.types.Collection, scale: float, uv_scale: list[float],
+                                   shadow_only: bool = False):
     if not proper_path:
         return
 
@@ -191,6 +194,8 @@ def create_static_prop_placeholder(scene_object: Object, proper_path: TinyPath |
                    'entity': {k: str(v) for (k, v) in scene_object.to_dict().items()},
                    'tint_color': scene_object.get('m_vTintColor', [1.0, 1.0, 1.0, 1.0]),
                    'skin': scene_object.get('skin', 'default') or 'default'}
+    if shadow_only:
+        custom_data['shadow_only'] = True
     empty = create_empty(world_node_model_name(proper_path), scale, custom_data=custom_data)
     if matrix is not None:
         transform_mat = matrix.to_4x4()

@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 
 import bpy
@@ -431,6 +433,116 @@ class Source2MaterialTests(unittest.TestCase):
         mask = linked_node(emission_tint.inputs[MIX_B])
         self.assertEqual(source(mask.inputs[MIX_A]), ('g_tSelfIllumMask', 'Color'))
         self.assertEqual(linked_node(mask.inputs[MIX_B]), tint)
+
+    @staticmethod
+    def render_over_background(material, background, size=4):
+        """Render a quad filling the camera with this material in front of a uniform world color; the mean
+        pixel. The file doesn't hold the radiance as rendered, so compare with ``render_constant``."""
+        mesh = bpy.data.meshes.new('unlit_quad')
+        mesh.from_pydata([(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)], [], [(0, 1, 2, 3)])
+        mesh.uv_layers.new(name='TEXCOORD')
+        mesh.materials.append(material)
+        obj = bpy.data.objects.new('unlit_quad', mesh)
+        camera = bpy.data.objects.new('camera', bpy.data.cameras.new('camera'))
+        camera.data.type = 'ORTHO'
+        camera.data.ortho_scale = 1.0
+        camera.location = (0, 0, 2)
+        scene = bpy.context.scene
+        hidden = [other for other in scene.objects if not other.hide_render]  # the factory scene's cube
+        for other in hidden:
+            other.hide_render = True
+        for new in (obj, camera):
+            scene.collection.objects.link(new)
+        scene.camera = camera
+        world = bpy.data.worlds.new('background')
+        world.node_tree.nodes['Background'].inputs['Color'].default_value = (*background, 1.0)
+        scene.world = world
+        scene.render.engine = 'CYCLES'
+        scene.cycles.samples = 64
+        scene.cycles.use_denoising = False
+        scene.cycles.device = 'CPU'
+        scene.view_settings.view_transform = 'Standard'
+        scene.render.resolution_x = scene.render.resolution_y = size
+        scene.render.image_settings.file_format = 'OPEN_EXR'
+        with tempfile.TemporaryDirectory() as directory:
+            scene.render.filepath = os.path.join(directory, 'render.exr')
+            bpy.ops.render.render(write_still=True)
+            image = bpy.data.images.load(scene.render.filepath)
+            pixels = np.array(image.pixels[:], dtype=np.float32).reshape(-1, 4)
+            bpy.data.images.remove(image)
+        for removed in (obj, camera):
+            bpy.data.objects.remove(removed)
+        for other in hidden:
+            other.hide_render = False
+        bpy.data.meshes.remove(mesh)
+        bpy.data.worlds.remove(world)
+        return pixels[:, :3].mean(0)
+
+    @classmethod
+    def render_constant(cls, value, background):
+        """What render_over_background gives for a surface that emits value."""
+        material = bpy.data.materials.new('constant')
+        nodes = material.node_tree.nodes
+        nodes.clear()
+        emission = nodes.new('ShaderNodeEmission')
+        emission.inputs['Color'].default_value = (*value, 1.0)
+        material.node_tree.links.new(emission.outputs[0], nodes.new('ShaderNodeOutputMaterial').inputs['Surface'])
+        return cls.render_over_background(material, background)
+
+    def assert_renders_as(self, material, background, value, message=''):
+        np.testing.assert_allclose(self.render_over_background(material, background),
+                                   self.render_constant(value, background), atol=2e-3, err_msg=message)
+
+    @staticmethod
+    def set_color(material, slot, rgba):
+        image = bpy.data.images.new(f'{material.name}_{slot}', 1, 1, alpha=True, float_buffer=True)
+        image.pixels = rgba
+        image.alpha_mode = 'CHANNEL_PACKED'  # as imported textures are
+        old_image = material.node_tree.nodes[slot].image  # the alpha clip's taps share it
+        for node in material.node_tree.nodes:
+            if node.bl_idname == 'ShaderNodeTexImage' and node.image == old_image:
+                node.image = image
+
+    def test_unlitgeneric_blend_modes(self):
+        # Over a background B, a color C with alpha A and tint T: Opaque C·T, Translucent lerp(B, C·T, A),
+        # Alpha Test C·T where A > reference, else B, Additive B + C·T·A, Multiply B·C·T, Mod2x 2·B·C·T.
+        background, color, alpha, tint = np.array((0.2, 0.4, 0.1)), np.array((0.5, 0.25, 1.0)), 0.6, 0.8
+        drawn = color * tint
+        expected = {0: drawn, 1: background * (1 - alpha) + drawn * alpha, 2: drawn, 4: background + drawn * alpha,
+                    5: background * drawn, 3: 2 * background * drawn}
+        for blend_mode, value in expected.items():
+            material = build('csgo_unlitgeneric.vfx', ('g_tColor',), ints={'F_BLEND_MODE': blend_mode},
+                             floats={'g_flAlphaTestReference': 0.7 if blend_mode == 2 else 0.5},
+                             vectors={'g_vColorTint': (tint, tint, tint, 0.0)})
+            self.set_color(material, 'g_tColor', (*color, alpha))
+            if blend_mode == 2:
+                value = background  # alpha 0.6 is under the 0.7 reference
+            self.assert_renders_as(material, background, value, f'F_BLEND_MODE {blend_mode}')
+        material = build('csgo_unlitgeneric.vfx', ('g_tColor',), ints={'F_BLEND_MODE': 2},
+                         floats={'g_flAlphaTestReference': 0.5})
+        self.set_color(material, 'g_tColor', (*color, alpha))
+        self.assert_renders_as(material, background, color)
+
+    def test_unlitgeneric_two_textures(self):
+        # nuke_clouds_002: two white textures with the clouds in alpha, drawn additively.
+        background = np.array((0.2, 0.4, 0.1))
+        material = build('csgo_unlitgeneric.vfx', ('g_tColor', 'g_tColor2'),
+                         ints={'F_BLEND_MODE': 4, 'F_TWOTEXTURE': 1},
+                         vectors={'g_vTex2CoordScale': (1.5, 1.5, 0.0, 0.0), 'g_vTex2CoordOffset': (0.25, 0.0, 0.0, 0.0)})
+        self.set_color(material, 'g_tColor', (1.0, 0.5, 1.0, 0.5))
+        self.set_color(material, 'g_tColor2', (0.5, 1.0, 1.0, 0.4))
+        self.assert_renders_as(material, background, background + np.array((0.5, 0.5, 1.0)) * 0.2)
+        # The second texture's transform scales about its center, the first's about the origin.
+        nodes = material.node_tree.nodes
+        first = linked_node(nodes['g_tColor'].inputs['Vector'])
+        second = linked_node(nodes['g_tColor2'].inputs['Vector'])
+        self.assertFalse(first.inputs['Scale About Center'].default_value)
+        self.assertTrue(second.inputs['Scale About Center'].default_value)
+        self.assertEqual(tuple(second.inputs['g_vTexCoordScale'].default_value), (1.5, 1.5, 0.0))
+        self.assertEqual(tuple(second.inputs['g_vTexCoordOffset'].default_value), (0.25, 0.0, 0.0))
+        # Without F_TWOTEXTURE the second texture isn't loaded.
+        material = build('csgo_unlitgeneric.vfx', ('g_tColor', 'g_tColor2'))
+        self.assertEqual(texture_nodes(material), {'g_tColor'})
 
 
 if __name__ == '__main__':

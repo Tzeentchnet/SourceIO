@@ -4,8 +4,8 @@ Usage:  python tools/build_extension.py --blender "path/to/blender" [--output-di
 
 ``blender --command extension build --split-platforms`` only splits Python wheels, so every package
 would otherwise ship the Windows, Linux and macOS builds of ``library/utils/pylib``. This stages the
-git-tracked files once per platform, drops the other platforms' libraries, narrows ``platforms`` in
-the manifest and runs Blender's own builder on the result.
+current non-ignored worktree once per platform, drops the other platforms' libraries, narrows
+``platforms`` in the manifest and runs Blender's own builder on the result.
 """
 import argparse
 import os
@@ -28,9 +28,17 @@ PLATFORM_LIBRARIES = {
 }
 
 
-def tracked_files() -> list[str]:
-    output = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT, check=True, capture_output=True).stdout
-    return [name for name in output.decode().split("\0") if name]
+def source_files() -> list[str]:
+    output = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    return [
+        name for name in output.decode().split("\0")
+        if name and (REPO_ROOT / name).is_file()
+    ]
 
 
 def stage(platform: str, files: list[str], destination: Path):
@@ -59,7 +67,7 @@ def main() -> int:
                         help="platform to build, may be repeated (default: all)")
     args = parser.parse_args()
 
-    files = tracked_files()
+    files = source_files()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for platform in args.platform or sorted(PLATFORM_LIBRARIES):
         with tempfile.TemporaryDirectory() as temp_dir:

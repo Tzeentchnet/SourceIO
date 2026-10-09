@@ -9,26 +9,29 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: when an item is done, record the result in that round's section below, remove it here, and add anything found along the way.
 
-State (2026-10-08): rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2), round 8 as [5.7.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.1-blender5.2), and round 9 (AnimGraph 2 clips) as [5.7.2-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.2-blender5.2); and rounds 10 (relative imports), 11 (clip events, small fixes), 12 (upstream #477 adaptations) and 13 (flex sliders, rim light, custom normals) as [5.8.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.8.0-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). Rounds 14 (CS2 materials, KNOWN sample status), 15 (CS2 texture gaps), 16 (generic.vfx, UV transforms), 17 (3D skyboxes, aggregate fragments) and 18 (full-resolution alpha clips, light blockers, world-node names) are released as [5.9.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.9.0-blender5.2) (the Windows package was installed in a clean profile and imported the HL2 dog and de_dust2 with its skybox). Rounds 19 (CS2 unlit materials, shadow-only light blockers), 20 (CS2 sky, sun direction and light units), 21 (end-to-end tests first), 22 (CS2 light shapes), 23 (CS2 overlay blend modes, detail modes, painted layer blends) and 24 (CS2 environment shaders) are on `master`, unreleased. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
+State (2026-10-09): rounds 3–7 are released as [5.7.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.0-blender5.2), round 8 as [5.7.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.1-blender5.2), and round 9 (AnimGraph 2 clips) as [5.7.2-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.7.2-blender5.2); and rounds 10 (relative imports), 11 (clip events, small fixes), 12 (upstream #477 adaptations) and 13 (flex sliders, rim light, custom normals) as [5.8.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.8.0-blender5.2) (release notes and README follow the 5.6.0 layout; packages from `tools/build_extension.py`). Rounds 14 (CS2 materials, KNOWN sample status), 15 (CS2 texture gaps), 16 (generic.vfx, UV transforms), 17 (3D skyboxes, aggregate fragments) and 18 (full-resolution alpha clips, light blockers, world-node names) are released as [5.9.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.9.0-blender5.2) (the Windows package was installed in a clean profile and imported the HL2 dog and de_dust2 with its skybox). Rounds 19 (CS2 unlit materials, shadow-only light blockers), 20 (CS2 sky, sun direction and light units), 21 (end-to-end tests first), 22 (CS2 light shapes), 23 (CS2 overlay blend modes, detail modes, painted layer blends), 24 (CS2 environment shaders) and 25 (VRF-aligned Source 2 resource pipeline) are on `master`, unreleased. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
 
 Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
 
 ```
-blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 443/443 modules, register/unregister/register OK
+blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 489/489 modules, register/unregister/register OK
 blender -b --factory-startup --python tests/e2e/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders with the 3D skybox, 2 hidden collections (140–155 s)
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 263 pass (tests/archive left out)
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 478 pass, 2 skip (tests/archive left out)
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_flex_controllers', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_skins', argv=['x'], exit=False)"   # 7 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_material_paths', argv=['x'], exit=False)"   # 7 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_custom_normals', argv=['x'], exit=False)"   # 3 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 49 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 10 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 50 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 11 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 9 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 6 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_sounds', argv=['x'], exit=False)"   # 2 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import unittest; unittest.main(module='SourceIO.tests.blender_tests.test_source2_exports', argv=['x'], exit=False)"   # 3 pass
 ```
 
 ### Actionable
@@ -466,3 +469,27 @@ From the Next list, item 1 (`csgo_environment_blend`, a rough approximation). It
 `blender_bindings/material_loader/shaders/node_math.py` (new): `NodeMath` wraps sockets and constants so formulas read as Python (`m.saturate(0.5 + difference / (2.0 * softness))`), folds constant operations and identities (×1, +0, lerp at 0 or 1), and `node_group` builds a cached node group from such a formula.
 
 `tests/blender_tests/test_source2_materials.py` (49 tests, was 35), against Python ports of VRF's GLSL, rendered as Emissions: `color_matrix` against round 23's formula; the layer color with and without `g_nColorCorrectionMode1`, metalness and roughness; the model tint (an object color, decoded; fails without the decode) and `g_bModelTint1` 0; the plain shader's vertex color; normal rotation, contrast and detail, and the rotation against the Bump; the legacy and height-band weights (three layers colored black, red and blue); all four border modes and the border roughness; selective blending; the shared overlay; the blend's vertex color modes; the facing direction; the alpha test's wiring. 13 of the 14 fail on the round 23 code (the alpha-test wiring passes on both). Unit tests: 263 pass. Blender tests: armatures 10, flex 10, skins 7, material paths 7, custom normals 3, Source 2 materials 49, Source 2 maps 10, Source 2 lights 9. Smoke test: 443/443 modules (one new), clean. CS2: 12 PASS / 0 WARN / 0 FAIL. de_dust2 with every placeholder: PASS, 698/698, 4679 objects, 143.0 s (138.0 s; the CS2 run went alongside); unused textures 2 → 1. de_dust2 has a single `csgo_environment` material and no blend materials. Scene saved as `E:/Tests/de_dust2_round24.blend`. Samples and TF2 not rerun (no Source 1 code changed).
+
+## Round 25 (2026-10-09, VRF-aligned Source 2 resource pipeline)
+
+Reviewed ValveResourceFormat's current resource handling and integrated the compatible pieces as independent,
+tested layers rather than copying its excluded test corpus. Compiled resources now have strict header, block and
+version validation, typed diagnostics and registry-based dispatch. Content lookup has deterministic mount
+precedence, nested VPK streaming, traversal checks and a lazy asset index. Generated fixtures and normalized
+snapshots provide local conformance coverage; a configured and optionally SHA-256-pinned VRF CLI is only an
+explicit differential oracle.
+
+VTEX imports now select mips and special subresources with settings-aware caches, preserve HDR precision and expose
+VCS packed-channel metadata without guessing ambiguous mappings. Direct VANIM/VAGRP import retains morph, user and
+data channels while keeping AnimGraphs non-executable. VSND versions 1–4 extract MP3 bit-exactly or reconstruct
+PCM/ADPCM WAV, including phoneme and CTRL companions. Cycle-safe provenance feeds static ModelDoc/DMX and Hammer
+VMAP reconstruction with atomic staging and machine-readable loss reports. Particle upgrades stop at verified
+`vpcf2`, cloth requires a real backend, and compiled-resource serialization remains whitelist- and
+provenance-gated.
+
+The Blender integration shares texture settings across standalone, model, map, skybox and *Load Entity* paths;
+registers animation, sound and static reconstruction operators; and exposes matching CLI commands. Validation:
+478 unit tests pass with 2 explicit skips; 118 unique Blender tests pass; renamed-package smoke imports 489/489
+modules and cycles registration; samples are 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL; CS2 is 12 PASS / 0 WARN /
+0 FAIL. The Windows extension package installs in an isolated profile and its CLI imports both the HL2 dog and the
+Source 2 axolotl model.

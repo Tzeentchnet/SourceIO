@@ -1,18 +1,14 @@
 [![Blender](https://img.shields.io/badge/Blender->=_5.2-orange?logo=blender&logoColor=white)](https://www.blender.org/download)
-[![Discord](https://img.shields.io/discord/554001378532655104?label=Chat&logo=discord&logoColor=white)](https://discord.gg/SF82W6aZ67)
+[![Upstream Discord](https://img.shields.io/discord/554001378532655104?label=Upstream%20Discord&logo=discord&logoColor=white)](https://discord.gg/SF82W6aZ67)
 
 # SourceIO for Blender 5.2
 
 > **This is a fork of [REDxEYE/SourceIO](https://github.com/REDxEYE/SourceIO), updated to target Blender 5.2 only.**
 > Blender 4.x support has been removed in exchange for 5.2-native code paths, faster imports and packaging as a Blender extension.
 > For Blender 4.x use the [upstream add-on](https://github.com/REDxEYE/SourceIO). Credit for SourceIO itself goes to its upstream authors (see [Credits](#credits)).
+> The [Discord server](https://discord.gg/SF82W6aZ67) is maintained by the upstream project, not by this fork.
 
 SourceIO is a Blender add-on for importing GoldSrc, Source and Source 2 engine textures, models and maps.
-Upstream Discord server: https://discord.gg/SF82W6aZ67
-
-Current TODO list -> [TODO.md](TODO.md)
-
-Small WIKI -> [WIKI](https://github.com/REDxEYE/SourceIO/wiki)
 
 ## Installation (Blender 5.2+)
 SourceIO installs as a Blender extension. Download the zip for your platform from the [releases page](https://github.com/Tzeentchnet/SourceIO/releases), or build it from a checkout of this repository:
@@ -26,15 +22,37 @@ Installing the repository folder as a legacy add-on also still works.
 ### Command line
 With the extension enabled, files can be imported without opening the UI. The importer is chosen from the file extension, and for `.bsp` from the file header (GoldSrc or Source):
 ```
-blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--output out.blend] FILE [FILE ...]
+blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--mip-level N] [--no-packed-channels] [--output out.blend] FILE [FILE ...]
+blender -c sourceio extract-sound [--output DIR] [--overwrite] FILE.vsnd_c [FILE.vsnd_c ...]
+blender -c sourceio export-modeldoc [--overwrite] OUTPUT.vmdl
+blender -c sourceio export-hammer [--overwrite] OUTPUT.vmap
 ```
 `--clips` imports a Source 2 model's animation graph clips that match the patterns (see below).
+The export commands operate on the selected meshes or active collection in the current `.blend`.
 
 # Usage
 In order to find the import tools you simply need to go to File>Import>Source Engine Assets
 ![](https://cdn.discordapp.com/attachments/786989240529059900/1143975506589515886/image.png)
 
-Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files and `.dmx` cameras. Source 2 animation clips (`.vnmclip_c`) can be dropped onto a selected armature.
+Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files, `.vsnd_c` sounds and `.dmx` cameras. Source 2 animation resources (`.vnmclip_c`, `.vanim_c` and `.vagrp_c`) can be dropped onto a selected armature.
+
+## CS2 map import sizes
+
+A complete CS2 map import can make a much larger `.blend` than the map VPK suggests. The map archive references
+textures in CS2's shared VPKs; SourceIO decodes their GPU-compressed DXT/BC data and, unless a texture cache is
+configured, embeds the resulting PNG/EXR images in the `.blend`. These already-compressed images account for about
+90% of the saved file and gain little from Blender's file compression.
+
+Measured with every map placeholder loaded and Blender file compression enabled:
+
+| Map | Map VPK | Self-contained `.blend` | `.blend` without embedded images |
+|-----|--------:|-------------------------:|---------------------------------:|
+| `de_dust2` | 250 MiB | 1.6 GiB | about 167 MiB |
+| `de_inferno` | 432 MiB | 3.0 GiB | about 340 MiB |
+
+To keep the textures external, set *Scene Properties > SourceIO configuration > TextureCachePath* before importing.
+The cache still uses disk space and must remain available with the `.blend`, but it can be reused by later imports.
+Using *File > External Data > Pack Resources* embeds those files again and restores the larger file size.
 
 # Changes in this fork
 
@@ -53,7 +71,8 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   * included models;
   * older NTRO-format files.
 
-  All of VRF's segment decoders are ported. Position, rotation and scale channels are imported, with delta animations, looping flags and root motion. Results match VRF's own glTF export within float precision on every frame of 192 animations across 9 test models. Not yet supported: flex/morph channels, bone masks and pose-parameter blending.
+  All of VRF's segment decoders are ported. Position, rotation and scale channels are imported, with delta animations, looping flags and root motion. Morph/flex, user and data channels are retained, and NM float curves and rich event payloads are decoded. Results match VRF's own glTF export within float precision on every frame of 192 animations across 9 test models. Bone-mask and pose-parameter blending are not executed.
+* **Direct Source 2 animation import.** *File > Import > Source Engine Assets > Source2 animation* applies `.vanim_c` and `.vagrp_c` files to compatible selected armatures. A standalone VANIM needs its owning VAGRP decode key. AnimGraph documents are retained for inspection, but SourceIO never executes an AnimGraph.
 * **Source 2 animation graph clips** (`.vnmclip_c`, AnimGraph 2). CS2 characters animate through these rather than through the model: a CS2 agent has 2 animations of its own and reaches about 2000 clips through its animation graphs. Each clip is authored on its own skeleton and is matched to the model by bone name, the same way VRF does it. Two ways to import them:
   * *Graph clips* in the VMDL import dialog (with *Import animations*) takes the model's clips whose path or name matches the patterns, for example `idle*, run_n_*`, or `*` for all of them (about a minute for a CS2 agent).
   * *File > Import > Source Engine Assets > Source2 animation clip* puts clip files onto the selected armature. Weapons need this route, because their animation comes from the second track set of viewmodel and menu clips, which the weapon's own model doesn't list.
@@ -61,6 +80,10 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   Additive clips and root motion are supported, and each action records the clip's path. The clip's events (sounds, particles, gameplay IDs) become pose markers on the action at their start frame. On 138 clips (the chicken, a CT agent and an AK-47), the result matches VRF's glTF export within 1e-4 units and 0.002°.
 * **GoldSrc animations.** All sequences embedded in a GoldSrc model are imported as actions when *Load animations* is enabled. Previously only a sequence named `walk1` was imported, and its values were wrong.
 * **More Source 2 texture formats.** ETC2, ETC2_EAC, R11_EAC and RG11_EAC.
+* **Source 2 texture subresources and metadata.** VTEX decoding supports explicit mip selection, arrays, volume slices, cube arrays, embedded images, sprite sheets and cubemap-radiance metadata while retaining HDR precision. Texture, material, model, map and *Load Entity* paths share the selected mip and packed-channel settings. Cache keys include every decode setting, so different variants cannot silently reuse the wrong image. VCS combo/channel metadata is used only when its packed-channel meaning is unambiguous; otherwise SourceIO records a diagnostic instead of guessing.
+* **Source 2 sounds.** VSND versions 1-4 can be imported or extracted. MP3 payloads are copied bit-for-bit; PCM and ADPCM become RIFF/WAV. Phoneme/emphasis tracks and CTRL metadata are written as compiler-compatible companion files when present. Blender integration creates speakers or VSE strips, but SourceIO is not a real-time Source 2 audio engine.
+* **Layered content resolution.** Loose files, mounted VPKs and nested archives resolve through deterministic mount precedence with streaming access, traversal checks and an optional lazy asset index.
+* **Static Source 2 reconstruction exports.** Selected Blender meshes can be exported as ModelDoc plus static DMX, and the active imported map collection as Hammer VMAP. Model export applies object transforms, converts Blender coordinates back with the configurable Source-unit scale, and retains canonical VMAT resource paths. Every export includes a machine-readable provenance sidecar and loss report and stages all authored outputs atomically. These are deliberately limited static vertical slices: dynamic rigs, complete animation authoring, original Hammer brush topology and other information absent from compiled resources are not fabricated.
 * **Command-line import.** `blender -c sourceio import ...` (see above).
 * **Source 1 overlays.** `info_overlay` decals (signs, posters, road markings) are imported into an `overlays` collection, clipped to the faces and displacements they cover. They were previously not imported at all. Controlled by *Load overlays* (on by default).
 * **Bone collections and colours** for Source 1 models (MDL v44–v52). Bones are sorted by what the engine uses them for: *Deform*, *Procedural*, *Bone merge*, *Attachments* and *Other*. Deform bones are coloured by side (left blue, right red, centre yellow), and the others by role.
@@ -124,6 +147,15 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
   * a broken DMX session importer, now unregistered;
   * a module that failed to import (`csgo_weapon.py`).
 
+## Experimental Source 2 boundaries
+
+Particle KV3 is kept immutable alongside a separate upgraded copy. Only the verified `vpcf2` upgrade path is
+applied, with per-component capability diagnostics; there is no particle renderer. Cloth reconstruction is
+default-off and requires an explicit backend capability report—SourceIO does not create a fake fallback cloth.
+Compiled-resource writing is also experimental and refusal-first: only whitelisted resource/block combinations
+with valid provenance pass serialization preflight, and writes are atomic. These core APIs are intentionally not
+presented as general Blender import/export support.
+
 ## Testing
 `tests/fetch_samples.py` downloads 104 hash-verified sample assets (about 17 MB) from public repositories into the git-ignored `samples/` folder.
 `tests/e2e/run_sample_imports.py` imports each one headlessly through the real operators. For every texture, it also checks that the imported pixels match SourceIO's own decode:
@@ -141,50 +173,69 @@ It also takes a Source 2 game. With Counter-Strike 2 (9 models: agents, arms, we
 ```
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders] [--clips PATTERNS]
 ```
-See [plan.md](plan.md) for details.
+
+Generated, redistributable Source 2 fixtures and strict normalized snapshots live under `tests/fixtures` and
+`tests/conformance`. The optional VRF differential oracle never downloads or discovers an executable from `PATH`.
+Set `SOURCEIO_VRF_CLI` to an explicit VRF `Decompiler` path, optionally pin it with
+`SOURCEIO_VRF_CLI_SHA256`, and set `SOURCEIO_VRF_TIMEOUT` to a positive timeout in seconds. Without
+`SOURCEIO_VRF_CLI`, the differential test is an explicit skip; an invalid configured path or hash is an error.
+Run the harness with, for example:
+```
+python tools/source2_conformance.py snapshot
+python tools/source2_conformance.py differential FILE.vtex_c
+```
+VRF's excluded test-file corpus is not copied or redistributed.
+
+# Supported formats
+
+The tables list user-facing operators registered by the extension. Source 2 authoring formats without the compiled
+`_c` suffix cannot be imported. SourceIO can reconstruct the documented static `.vmdl`/DMX and `.vmap` slices, but
+does not claim a lossless compiled-to-authored round trip.
+
+## GoldSrc, Source 1 and related formats
+
+| Extension | Contents | Import | Export | Notes |
+|-----------|----------|:------:|:------:|-------|
+| `.mdl` | GoldSrc or Source model | Yes | No | The version is detected from the file. |
+| `.md3` | Quake III model | Yes | No | Uses the model importer. |
+| `.bsp` | Compiled GoldSrc or Source map | Yes | No | GoldSrc and Source use separate map importers. |
+| `.vtf` | Source texture | Yes | Yes | VTF is currently the only exported asset format. |
+| `.vmt` | Source material or skybox | Yes | No | Skybox import reads its six VMT faces. |
+
+## Source 2 and DMX
+
+| Extension | Contents | Import | Export | Notes |
+|-----------|----------|:------:|:------:|-------|
+| `.vmdl_c` | Compiled model | Yes | Static reconstruction | Optional animations and AnimGraph clip discovery. |
+| `.vmap_c` | Compiled map | Yes | Static reconstruction | Imports the world and entity placeholders. |
+| `.vpk` | Packed Source 2 map | Yes | No | Map VPKs only; this is not a general VPK browser. |
+| `.vtex_c` | Compiled texture | Yes | No | Mip and packed-channel controls are shared across importers. |
+| `.vmat_c` | Compiled material | Yes | No | |
+| `.vphys_c` | Compiled physics | Yes | No | |
+| `.vnmclip_c` | AnimGraph 2 animation clip | Yes | No | Applied to a selected armature. |
+| `.vanim_c` / `.vagrp_c` | Compiled animation/group | Yes | No | Applied to compatible selected armatures; AnimGraphs are not executed. |
+| `.vsnd_c` | Compiled sound | Yes | Extract | VSND v1-v4 audio plus available compiler companions. |
+| `.vmdl` / `.dmx` | Editable static model bundle | No | Yes | Reconstructed from selected meshes with provenance and a loss report. |
+| `.vmap` | Editable static Hammer map | No | Yes | Reconstructed from the active imported collection with a loss report. |
+| `.dmx` | Valve camera | Yes | No | Camera DMX only; session import is not registered. |
+
+## Game coverage
+
+No game is claimed as fully supported: containers often share an engine format, while shaders and map entities are
+game-specific. Automated end-to-end coverage currently imports models and maps from **Team Fortress 2** and
+**Counter-Strike 2**.
+
+Dedicated Source 1 map-entity handling also exists for Half-Life 2 and its episodes, Counter-Strike: Source,
+Garry's Mod, Source Filmmaker, Black Mesa, Counter-Strike: Global Offensive, Left 4 Dead 2, Portal, Portal 2 and
+several Portal 2 mods, Vampire: The Masquerade - Bloodlines, Vindictus, Titanfall and supported Quake III-derived
+formats. Source 2 has dedicated handlers for Counter-Strike 2, Half-Life: Alyx, S&box and Deadlock. Unrecognized
+games use generic entity handling and should be treated as partial support.
 
 # Credits
+
 * [datamodel.py](https://github.com/Artfunkel/BlenderSourceTools/blob/master/io_scene_valvesource/datamodel.py) by [Artfunkel](https://github.com/Artfunkel)
-* [ValveResourceFormat](https://github.com/SteamDatabase/ValveResourceFormat) For initial research on Source2 file formats
-* [BlenderVertexLitGeneric](https://github.com/syborg64/BlenderVertexLitGeneric) Shader nodegroup by [syborg64](https://github.com/syborg64)
-* [equilib](https://github.com/haruishi43/equilib) Cubemap to equirectangular converter by [haruishi43](https://github.com/haruishi43/equilib)
-* [HFSExtract](https://github.com/yretenai/HFSExtract) HFS extractor that was used to write native decryptor by [yretenai](https://github.com/yretenai)
-* Idea for better HWM expression handling by [hisanimations](https://youtube.com/c/hisanimations)
-# Supported formats:
-
-## Source 1
-| File Type | Contents                          | Import             | Export            |
-| ------    | ------                            | ------             | ------            |
-| .MDL      | Model                             | :heavy_check_mark: | :x:               |
-| .BSP      | Map Files (Compiled)              | :heavy_check_mark: | Not Planned       |
-| .VMF      | Map Files (Hammer Format)         | Not Planned        | Not Planned       |
-| .VTF      | Textures                          | :heavy_check_mark: | :x:|
-| .VMT      | Materials                         | :heavy_check_mark: | :x:               |
-
-## Source 2
-| File Type | Contents                          | Import              | Export       |
-|-----------| ------                            |---------------------|--------------|
-| .VMDL     | Model                             | :heavy_check_mark:  | Not Planned  |
-| .VMAP     | Map Files (Compiled)              | :heavy_check_mark:  | Not Planned  |
-| .VMAP     | Map Files (Hammer Format)         | Not Planned         | Not Planned  |
-| .VTEX     | Textures                          | :heavy_check_mark:  | :x:          |
-| .VMAT     | Materials                         | :heavy_check_mark:  | :x:          |
-| .VNMCLIP  | Animation clips (AnimGraph 2)     | :heavy_check_mark:  | :x:          |
-
-## Supported games
-| Game      | Status                                                                                          |
-|-----------| ------------------------------------------------------------------------------------------------|
-| CSGO              | Partial support: models, maps(not all entities), textures, materials                    | 
-| TF2               | Full support                                                                            |
-| Source FilmMaker  | Full support                                                                            |
-| Garry's Mod       | Full support                                                                            |
-| HL2 and episodes  | Full support                                                                            |
-| Portal 1/2        | Full support                                                                            |
-| L4D2              | Full support(expect infected materials)                                                 | 
-| Vindictus         | Partial support: (models, maps(not all entities), textures, materials(not all shaders)  | 
-| BlackMesa         | Full support                                                                            |
-| Titanfall 1       | Partial support: maps(not all entities), models, textures, materials                    |
-| Counter Strike 2  | Partial support: (models, maps(not all entities), textures, materials(not all shaders))  |
-| Half-Life: Alyx   | Partial support: (models, maps(not all entities), textures, materials(not all shaders)  |
-| S&BOX             | Partial support: Waiting for full release                                               |
-| Aperture Desk Job | Partial support: (models, maps(not all entities), textures, materials(not all shaders)  |
+* [ValveResourceFormat](https://github.com/ValveResourceFormat/ValveResourceFormat), whose MIT-licensed implementation is used for Source 2 format research and attributed ports such as animation decoding. Its separately excluded test assets are not redistributed.
+* [BlenderVertexLitGeneric](https://github.com/syborg64/BlenderVertexLitGeneric) shader node group by [syborg64](https://github.com/syborg64)
+* [equilib](https://github.com/haruishi43/equilib) cubemap-to-equirectangular converter by [haruishi43](https://github.com/haruishi43/equilib)
+* [HFSExtract](https://github.com/yretenai/HFSExtract), used to write the native HFS decryptor, by [yretenai](https://github.com/yretenai)
+* Better HWM expression-handling idea by [hisanimations](https://youtube.com/c/hisanimations)

@@ -4,10 +4,10 @@
 Usage:
     blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py -- [--work DIR]
 
-The files git tracks, minus what the extension build leaves out, are copied into DIR (default: a
-temporary folder) as ``bl_ext_test_sourceio``. An import hook rejects ``SourceIO``. Every module is
-imported, then the add-on is registered, unregistered and registered again. Exit code is 1 if any
-of that fails.
+The current non-ignored worktree, minus what the extension build leaves out, is copied into DIR
+(default: a temporary folder) as ``bl_ext_test_sourceio``. An import hook rejects ``SourceIO``.
+Every module is imported, then the add-on is registered, unregistered and registered again. Exit
+code is 1 if any of that fails.
 """
 import argparse
 import importlib
@@ -33,8 +33,13 @@ class BlockSourceIO(importlib.abc.MetaPathFinder):
 
 
 def copy_shipped(work: Path) -> None:
-    files = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True,
-                           check=True).stdout.splitlines()
+    output = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    ).stdout
+    files = [rel for rel in output.decode().split("\0") if rel]
     for rel in files:
         if rel.startswith(NOT_SHIPPED) or not (REPO_ROOT / rel).is_file():  # not shipped, or deleted
             continue

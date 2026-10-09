@@ -431,7 +431,7 @@ def create_flex_drivers(obj, mdl):
             make_custom_property(left_sort, left_controller.min, left_controller.max)
             make_custom_property(right_sort, right_controller.min, right_controller.max)
 
-            # Stereo controllers default to the additive slider, which splits by the L/R balance.
+            # Stereo controllers default to one slider for both sides, split by the L/R balance.
             slider = add_slider(flex_controller_ui.name, flex_controller_ui.name,
                                 right_controller.min, right_controller.max)
             slider.split = True

@@ -12,7 +12,6 @@ import bpy
 
 from SourceIO.blender_bindings import bindings
 from SourceIO.blender_bindings.models.common import create_flex_drivers
-from SourceIO.blender_bindings.operators.flex_operators import handle_slider
 from SourceIO.library.models.mdl.flex_expressions import FetchController, Mul
 
 _registered_here = False
@@ -94,21 +93,58 @@ class FlexControllerTests(unittest.TestCase):
         self.evaluate()
         self.assertAlmostEqual(self.obj.data.shape_keys.key_blocks['a_b'].value, 0.75, places=5)
 
-    def test_stereo_additive_slider_follows_balance(self):
+    def test_stereo_slider_sets_both_sides_by_balance(self):
         data, scene = self.obj.data, bpy.context.scene
         stereo = self.obj.flex_controllers['cs']
-        stereo['value'] = 0.25  # bypass the update callback, which starts the modal drag handler
 
         scene.sourceio_flex_lr_balance = 0.0
-        handle_slider(bpy.context, self.obj, stereo)
+        stereo.value = 0.25
         self.assertAlmostEqual(data[stereo.L], 0.25)
         self.assertAlmostEqual(data[stereo.R], 0.25)
+        self.assertAlmostEqual(stereo.value, 0.25)
 
-        data[stereo.L] = data[stereo.R] = 0.0
-        scene.sourceio_flex_lr_balance = -1.0  # left only
-        handle_slider(bpy.context, self.obj, stereo)
-        self.assertAlmostEqual(data[stereo.L], 0.25)
-        self.assertAlmostEqual(data[stereo.R], 0.0)
+        scene.sourceio_flex_lr_balance = -1.0  # left only: the right side is left alone
+        stereo.value = 0.75
+        self.assertAlmostEqual(data[stereo.L], 0.75)
+        self.assertAlmostEqual(data[stereo.R], 0.25)
+        self.assertAlmostEqual(stereo.value, 0.75)  # reads the side the balance gives in full
+
+        scene.sourceio_flex_lr_balance = -0.5  # left in full, right at half
+        stereo.value = 0.5
+        self.assertAlmostEqual(data[stereo.L], 0.5)
+        self.assertAlmostEqual(data[stereo.R], 0.25)
+        self.assertAlmostEqual(stereo.value, 0.5)
+
+        scene.sourceio_flex_lr_balance = 0.0
+        data[stereo.L], data[stereo.R] = 0.25, 0.6
+        self.assertAlmostEqual(stereo.value, 0.6)  # both in full: the larger side
+
+    def test_stereo_slider_is_absolute_and_keys(self):
+        # The value stays where it is set (the old additive slider reset to 0 on release and lost the change).
+        data, scene = self.obj.data, bpy.context.scene
+        stereo = self.obj.flex_controllers['cs']
+        scene.sourceio_flex_lr_balance = 0.0
+        scene.tool_settings.use_keyframe_insert_auto = True
+        try:
+            stereo.value = 0.4
+        finally:
+            scene.tool_settings.use_keyframe_insert_auto = False
+        self.evaluate()
+        self.assertAlmostEqual(stereo.value, 0.4)
+        self.assertAlmostEqual(data[stereo.L], 0.4)
+        curves = data.animation_data.action.layers[0].strips[0].channelbags[0].fcurves
+        self.assertEqual({curve.data_path for curve in curves}, {f'["{stereo.L}"]', f'["{stereo.R}"]'})
+
+    def test_signed_stereo_slider_and_clamp(self):
+        data, scene = self.obj.data, bpy.context.scene
+        stereo = self.obj.flex_controllers['cs']
+        scene.sourceio_flex_lr_balance = 0.0
+        stereo.minimum, stereo.maximum = -1.0, 0.5
+        stereo.value_signed = -0.5
+        self.assertAlmostEqual(data[stereo.L], -0.5)
+        self.assertAlmostEqual(stereo.value_signed, -0.5)
+        stereo.value_signed = 1.0  # clamped to the controller's maximum
+        self.assertAlmostEqual(data[stereo.R], 0.5)
 
     def test_key_toggle_and_key_all(self):
         data = self.obj.data

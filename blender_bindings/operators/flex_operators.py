@@ -8,9 +8,8 @@ from .shared_operators import UITools
 
 # Adapted from REDxEYE/SourceIO#477 (hisprofile). Each entry of Object.flex_controllers drives one or two
 # custom properties on the mesh data (made by create_flex_drivers); the shape key drivers read those properties.
-
-_dragging = False
-_updating_values = False
+# A mono controller's slider is that property itself. A stereo controller's slider is computed: it reads and
+# writes the left and right properties together, split by the scene's L/R balance.
 
 
 def get_frame(context):
@@ -38,32 +37,60 @@ def map_range(x, a, b, c, d):
     return min(max(y, c), d)
 
 
-def slider_update(self, context):
-    global _dragging
-    if _updating_values:  # the handler resets the additive sliders to 0
-        return
-    if not _dragging:
-        _dragging = True
-        bpy.ops.sourceio.flex_slider_handler('INVOKE_DEFAULT')
+def balance_multipliers(scene):
+    """(left, right) shares of a stereo slider: both 1 at balance 0, left only at -1, right only at 1."""
+    balance = scene.sourceio_flex_lr_balance
+    return map_range(balance, 1.0, 0.0, 0.0, 1.0), map_range(balance, -1.0, 0.0, 0.0, 1.0)
+
+
+def get_stereo_value(slider):
+    """The value of the side the balance gives in full (the larger one when both are), as a fraction of the
+    controller's range."""
+    data = slider.id_data.data
+    magnitude = max(abs(slider.maximum), abs(slider.minimum)) or 1.0
+    l_mult, r_mult = balance_multipliers(bpy.context.scene)
+    values = [data.get(prop, 0.0) for prop, mult in ((slider.L, l_mult), (slider.R, r_mult)) if mult == 1.0]
+    return max(values, key=abs) / magnitude
+
+
+def set_stereo_value(slider, value):
+    """Sets the full side to `value` and the other to its balance share (left alone at a share of 0), and keys
+    what changed when auto keying is on."""
+    obj = slider.id_data
+    data = obj.data
+    scene = bpy.context.scene
+    magnitude = max(abs(slider.maximum), abs(slider.minimum)) or 1.0
+    written = []
+    for prop, mult in zip((slider.L, slider.R), balance_multipliers(scene)):
+        if mult > 0.0:
+            data[prop] = min(max(value * magnitude * mult, slider.minimum), slider.maximum)
+            written.append(prop)
+    if scene.tool_settings.use_keyframe_insert_auto:
+        frame = scene.frame_float if scene.show_subframe else scene.frame_current
+        for prop in written:
+            data.keyframe_insert(data_path=f'["{prop}"]', frame=frame)
+    data.update()
 
 
 # noinspection PyPep8Naming
 class SourceIO_PG_FlexController(bpy.types.PropertyGroup):
     # name: the mesh custom property (mono) or the UI controller name (stereo, which uses L and R)
     display_name: StringProperty(name='Display Name', default='')
-    value: FloatProperty(name='Additive Value', default=0.0, update=slider_update, min=-1, max=1, options=set(),
-                         description='Adds to the current value; resets to 0 on release')
     split: BoolProperty(name='Stereo', default=False, options=set())
 
     minimum: FloatProperty(options=set())
     maximum: FloatProperty(options=set())
 
-    original_value: FloatProperty(options=set())
-    original_value_r: FloatProperty(options=set())
-    original_value_l: FloatProperty(options=set())
+    # Stereo slider, as a fraction of the controller's range: 0..1, or -1..1 for a controller that goes negative.
+    # Not animatable: the left and right properties are what gets keyed.
+    value: FloatProperty(name='Value', min=0.0, max=1.0, options=set(), get=get_stereo_value, set=set_stereo_value,
+                         description='Sets left and right together, split by the L/R balance')
+    value_signed: FloatProperty(name='Value', min=-1.0, max=1.0, options=set(), get=get_stereo_value,
+                                set=set_stereo_value,
+                                description='Sets left and right together, split by the L/R balance')
 
-    realvalue: BoolProperty(name='Show values', default=True, options=set(),
-                            description='Show the property values instead of the additive slider')
+    realvalue: BoolProperty(name='Show left and right', default=False, options=set(),
+                            description='Show the left and right values separately instead of one slider')
 
     R: StringProperty()
     L: StringProperty()
@@ -71,90 +98,6 @@ class SourceIO_PG_FlexController(bpy.types.PropertyGroup):
     def prop_names(self):
         """The mesh custom properties this controller sets."""
         return (self.R, self.L) if self.split else (self.name,)
-
-
-def handle_slider(context, obj, slider: SourceIO_PG_FlexController):
-    data = obj.data
-    magnitude = max(abs(slider.maximum), abs(slider.minimum))
-
-    def clamp(value):
-        return min(max(value, slider.minimum), slider.maximum)
-
-    if not slider.split:
-        data[slider.name] = clamp(slider.original_value + slider.value * magnitude)
-    else:
-        balance = context.scene.sourceio_flex_lr_balance
-        r_mult = map_range(balance, -1.0, 0.0, 0.0, 1.0)
-        l_mult = map_range(balance, 1.0, 0.0, 0.0, 1.0)
-        data[slider.R] = clamp(slider.original_value_r + slider.value * r_mult * magnitude)
-        data[slider.L] = clamp(slider.original_value_l + slider.value * l_mult * magnitude)
-
-
-class SOURCEIO_OT_FlexSliderHandler(Operator):
-    """Applies the additive sliders while they are dragged. On release it keys them (with auto keying on)
-    or, if a drag was cancelled, restores the values from before the drag; then it resets the sliders to 0."""
-    bl_idname = 'sourceio.flex_slider_handler'
-    bl_label = 'Flex Slider Handler'
-    bl_options = {'INTERNAL'}
-
-    def invoke(self, context, event):
-        self.active_sliders = None
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
-
-    def modal(self, context, event):
-        global _dragging, _updating_values
-        obj = context.object
-        if obj is None:
-            _dragging = False
-            return {'CANCELLED'}
-        data = obj.data
-
-        if self.active_sliders is None:
-            # The first slider update has already happened; the mesh properties still hold the old values.
-            self.active_sliders = []
-            for slider in obj.flex_controllers:
-                if slider.split:
-                    slider.original_value_r = data[slider.R]
-                    slider.original_value_l = data[slider.L]
-                else:
-                    slider.original_value = data[slider.name]
-                if slider.value != 0.0:
-                    self.active_sliders.append(slider)
-            return {'PASS_THROUGH'}
-
-        if event.type == 'MOUSEMOVE':
-            for slider in self.active_sliders:
-                handle_slider(context, obj, slider)
-            data.update()
-            return {'PASS_THROUGH'}
-
-        if event.value != 'RELEASE':
-            return {'PASS_THROUGH'}
-
-        _dragging = False
-        _updating_values = True
-        try:
-            for slider in self.active_sliders:
-                handle_slider(context, obj, slider)
-            if any(slider.value == 0.0 for slider in self.active_sliders):  # cancelled
-                for slider in self.active_sliders:
-                    if slider.split:
-                        data[slider.R] = slider.original_value_r
-                        data[slider.L] = slider.original_value_l
-                    else:
-                        data[slider.name] = slider.original_value
-            elif context.scene.tool_settings.use_keyframe_insert_auto:
-                frame = get_frame(context)
-                for slider in self.active_sliders:
-                    for prop_name in slider.prop_names():
-                        data.keyframe_insert(data_path=f'["{prop_name}"]', frame=frame)
-            for slider in self.active_sliders:
-                slider.value = 0.0
-            data.update()
-        finally:
-            _updating_values = False
-        return {'FINISHED'}
 
 
 class SOURCEIO_OT_FlexAdjustBalance(Operator):
@@ -293,21 +236,23 @@ class SOURCEIO_UL_FlexControllerList(bpy.types.UIList):
             keyed = has_key(context, obj, item.name)
 
         row = layout.row(align=True)
-        if not item.realvalue:
-            row.alert = keyed
-            row.prop(item, 'value', slider=True, text=item.display_name)
-            row.alert = False
-        elif item.split:
-            row.prop(obj.data, f'["{item.L}"]', text=f'{item.display_name} L')
-            row.prop(obj.data, f'["{item.R}"]', text='R')
+        if not item.split:
+            row.prop(obj.data, f'["{item.name}"]', slider=True, text=item.display_name)
+        elif item.realvalue:
+            row.prop(obj.data, f'["{item.L}"]', slider=True, text=f'{item.display_name} L')
+            row.prop(obj.data, f'["{item.R}"]', slider=True, text='R')
         else:
-            row.prop(obj.data, f'["{item.name}"]', text=item.display_name)
+            # The computed slider isn't an animated property itself, so show the keyed state through alert.
+            row.alert = keyed
+            row.prop(item, 'value_signed' if item.minimum < 0 else 'value', slider=True, text=item.display_name)
+            row.alert = False
 
         op = row.operator(SOURCEIO_OT_KeyFlexController.bl_idname, text='', emboss=False, depress=keyed,
                           icon='DECORATE_KEYFRAME' if keyed else 'DECORATE_ANIMATE')
         op.flex_controller = item.name
-        row.prop(item, 'realvalue', text='', emboss=False,
-                 icon='RESTRICT_VIEW_OFF' if item.realvalue else 'RESTRICT_VIEW_ON')
+        if item.split:
+            row.prop(item, 'realvalue', text='', emboss=False,
+                     icon='RESTRICT_VIEW_OFF' if item.realvalue else 'RESTRICT_VIEW_ON')
 
 
 classes = (
@@ -315,7 +260,6 @@ classes = (
     SOURCEIO_UL_FlexControllerList,
     SOURCEIO_PT_FlexControlPanel,
     SOURCEIO_OT_FlexAdjustBalance,
-    SOURCEIO_OT_FlexSliderHandler,
     SOURCEIO_OT_KeyFlexController,
     SOURCEIO_OT_ResetFlexControllers,
     SOURCEIO_OT_KeyAllFlexControllers,

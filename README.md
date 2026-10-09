@@ -41,9 +41,7 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 ## Blender 5.2 modernization
 * **Blender 4 code removed.** All version checks and legacy branches are gone (`use_auto_smooth`, `shadow_method`, `ShaderNodeMixRGB`, the pre-slotted-actions animation API, deprecated material properties).
 * **Transparency works again on 5.x.** Alpha-tested materials get a real alpha-clip node, decals and additive materials use *Blended* rendering, and skyboxes and decals no longer cast shadows. Previously these settings were silently skipped on Blender 4.3+.
-* **Faster mesh import.**
-  * Custom normals use Blender 5's custom-normal attribute: about 400× faster (0.4 s → 0.001 s on a 717k-triangle mesh) and more accurate.
-  * Vertex weights are assigned in batches: about 6× faster.
+* **Faster mesh import.** Vertex weights are assigned in batches: about 6× faster.
 * **Animation importer.** Curves are computed with NumPy, actions use the slotted-action API, and an optional *Delta animations to NLA* setting puts additive animations on muted NLA tracks set to *Combine*.
 * **UI.** The MDL import dialog has collapsible sections and now exposes *World scale* and the BVLG option. Drag-and-drop handlers were added for `.vmdl_c`, `.vphys_c` and `.dmx` cameras.
 * **Packaging.** A `blender_manifest.toml` makes SourceIO a Blender 5.2 extension (Windows x64, Linux x64, macOS x64/arm64). `tools/build_extension.py` builds a separate package per platform (the Windows package is 3.4 MB instead of 7.1 MB).
@@ -66,11 +64,13 @@ Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf
 * **Command-line import.** `blender -c sourceio import ...` (see above).
 * **Source 1 overlays.** `info_overlay` decals (signs, posters, road markings) are imported into an `overlays` collection, clipped to the faces and displacements they cover. They were previously not imported at all. Controlled by *Load overlays* (on by default).
 * **Bone collections and colours** for Source 1 models (MDL v44–v52). Bones are sorted by what the engine uses them for: *Deform*, *Procedural*, *Bone merge*, *Attachments* and *Other*. Deform bones are coloured by side (left blue, right red, centre yellow), and the others by role.
-* **Flex controller panel** for Source 1 models with flexes (*SourceIO utils > Flex controllers* in the 3D view sidebar): a slider per face controller, with a left/right balance for stereo controllers, keying and reset buttons. Adapted from [REDxEYE/SourceIO#477](https://github.com/REDxEYE/SourceIO/pull/477) by hisprofile.
+* **Flex controller panel** for Source 1 models with flexes (*SourceIO utils > Flex controllers* in the 3D view sidebar, with the face mesh active): a slider per face controller, keying and reset buttons. A stereo controller has one slider for both sides, split by a left/right balance (the eye icon shows left and right separately). With auto keying on, moving a slider keys it. Adapted from [REDxEYE/SourceIO#477](https://github.com/REDxEYE/SourceIO/pull/477) by hisprofile.
 * **One compact action per include model.** With *Include animations* and *Compact animations*, a character's animations are split into one action per source model (`heavy.mdl`, `heavy_animations.mdl`, `heavy_workshop_animations.mdl`), so animations that share a name across them keep it. Also from #477.
 * **`custom/*` search paths.** Every folder and VPK in a game's `custom` folder is mounted ahead of the game, as the engine does, so community content and workshop items resolve.
 
 ## Bug fixes
+* Custom normals didn't follow deformation, so characters were lit and reflected from the wrong directions and looked metallic. Model meshes are turned upright by their armature, and the normals stayed behind; they also ignored poses and shape keys. This came from an earlier speed-up in this fork, now reverted (imports are about 5% slower).
+* Source 1 rim lighting (`$rimlight`) covered the whole surface in a white haze, which washed out TF2 characters. It now shows only at the silhouette, as in Source.
 * Combo flexes were clamped before being scaled back by *Flex Scale*, so they were too weak at a Flex Scale other than 1 (from #477).
 * Map props with a multi-frame `defaultanim` failed to pose, and GoldSrc animation import was broken (both regressions from the recent animation overhaul).
 * GoldSrc animations of 128 or more frames were decoded incorrectly. This broke models whose textures live in a separate `*T.mdl` file.

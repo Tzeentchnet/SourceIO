@@ -12,7 +12,6 @@ code is 1 if any of that fails.
 import argparse
 import importlib
 import importlib.abc
-import pkgutil
 import shutil
 import subprocess
 import sys
@@ -47,6 +46,15 @@ def copy_shipped(work: Path) -> None:
         shutil.copy2(REPO_ROOT / rel, work / NAME / rel)
 
 
+def discover_module_names(package_root: Path, package_name: str) -> list[str]:
+    module_names = set()
+    for path in package_root.rglob("*.py"):
+        relative = path.relative_to(package_root).with_suffix("")
+        parts = relative.parts[:-1] if relative.name == "__init__" else relative.parts
+        module_names.add(".".join((package_name, *parts)))
+    return sorted(module_names)
+
+
 def main() -> int:
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
@@ -61,7 +69,7 @@ def main() -> int:
     package = importlib.import_module(NAME)
 
     failed = {}
-    modules = [info.name for info in pkgutil.walk_packages(package.__path__, NAME + ".")]
+    modules = discover_module_names(work / NAME, NAME)
     for name in modules:
         try:
             importlib.import_module(name)

@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import os
-from valvefgd import Fgd, FgdEntity, FgdParse
+from typing import TYPE_CHECKING
 
 from ...utils.tiny_path import TinyPath
 from ...shared.content_manager.manager import ContentManager
+
+if TYPE_CHECKING:
+    from valvefgd import Fgd, FgdEntity
 
 os.environ['NO_BPY'] = '1'
 
@@ -25,6 +30,16 @@ def collect_parents(parent: FgdEntity):
 
 
 def main():
+    try:
+        from valvefgd import FgdParse
+    except ModuleNotFoundError as error:
+        if error.name != 'valvefgd':
+            raise
+        raise ModuleNotFoundError(
+            "This generator requires the optional 'valvefgd' package. "
+            "Install it in the Python environment running the generator and try again."
+        ) from error
+
     # fgd_path = r"F:\SteamLibrary\steamapps\common\Black Mesa\bin\bms.fgd"
     # fgd_path = r"H:\SteamLibrary\SteamApps\common\Team Fortress 2\bin\base.fgd"
     # fgd_path = r"H:\SteamLibrary\SteamApps\common\Team Fortress 2\bin\tf.fgd"

@@ -10,14 +10,12 @@ from ...utils.bpy_utils import (find_layer_collection, get_or_create_child_colle
                                 pause_view_layer_update)
 from ....library.shared.app_id import SteamAppId
 from ....library.shared.content_manager import ContentManager
-from ....library.shared.content_manager.providers.vpk_provider import VPKContentProvider
 from ....library.source2 import CompiledWorldResource, CompiledResource
 from ....library.source2.blocks.texture_data import TextureImportSettings
 from ....library.source2.keyvalues3.types import Object, NullObject
 from ....library.source2.resource_types import CompiledManifestResource
 from ....library.source2.resource_types.compiled_world_resource import CompiledEntityLumpResource, \
     CompiledMapResource
-from ....library.utils import FileBuffer
 from ....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from ....library.utils.tiny_path import TinyPath
 from ....logger import SourceLogMan
@@ -344,20 +342,8 @@ def load_skyboxes(world_resource: CompiledWorldResource, collection: bpy.types.C
 
 
 def open_skybox_map(target: TinyPath, cm: ContentManager) -> CompiledMapResource | None:
-    """Mount the skybox's ``.vpk``, a loose file next to the map ones, and open its compiled map."""
-    stem = target.with_suffix("").as_posix()
-    map_path = TinyPath(stem + ".vmap_c")
-    if not cm.check(map_path):
-        vpk_buffer = cm.find_file(TinyPath(stem + ".vpk"), do_not_cache=True)
-        if vpk_buffer is None:
-            return None
-        if not isinstance(vpk_buffer, FileBuffer):
-            # A VPK packed in another archive; VPKContentProvider reads from disk.
-            logger.warn(f"{stem}.vpk is inside an archive, which can't be mounted")
-            return None
-        vpk_path = TinyPath(vpk_buffer.name)
-        vpk_buffer.close()
-        cm.add_child(VPKContentProvider(vpk_path))
+    """Open a compiled skybox map through ContentManager's automatic nested-VPK resolution."""
+    map_path = target.with_suffix(".vmap_c")
     buffer = cm.find_file(map_path)
     if buffer is None:
         return None

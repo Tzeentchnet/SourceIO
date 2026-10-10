@@ -10,7 +10,7 @@ except ImportError:
 bl_info = {
     "name": "SourceIO",
     "author": "RED_EYE, ShadelessFox, Syborg64",
-    "version": (5, 9, 0),
+    "version": (5, 10, 0),
     "blender": (5, 2, 0),
     "location": "File > Import > SourceEngine assets",
     "description": "GoldSrc/Source1/Source2 Engine assets(.mdl, .bsp, .vmt, .vtf, .vmdl_c, .vwrld_c, .vtex_c)"

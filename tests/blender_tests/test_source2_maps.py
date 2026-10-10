@@ -6,7 +6,9 @@ CS2 ships a map's 3D skybox as a map of its own, named by the map's ``skybox_ref
 of the models the map compiler generates, and the light blockers (hidden, casting shadows only).
 """
 import math
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -18,6 +20,11 @@ from SourceIO.blender_bindings.shared.model_container import ModelContainer
 from SourceIO.blender_bindings.source2.vwrld import loader
 from SourceIO.blender_bindings.source2.vwrld.entities import abstract_entity_handlers
 from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_child_collection
+from SourceIO.library.shared.content_manager import ContentManager
+from SourceIO.library.shared.content_manager.providers.loose_files import LooseFilesContentProvider
+from SourceIO.library.shared.content_manager.providers.vpk_provider import VPKContentProvider
+from SourceIO.library.utils import TinyPath
+from SourceIO.tests.vpk_tests.helpers import build_vpk, write_vpk
 
 SCALE = 0.0254
 CAMERA = (-8.0, -308.0, 202.0)  # de_dust2_skybox's sky_camera
@@ -123,6 +130,63 @@ class EntityIconTests(unittest.TestCase):
         self.assertIs(obj.data, cached)
         import_texture.assert_called_once()
         self.assertIs(import_texture.call_args.kwargs["settings"], handler.texture_settings)
+
+
+class IsolatedContentManager(ContentManager):
+    pass
+
+
+class SkyboxMapOpeningTests(unittest.TestCase):
+    TARGET = TinyPath("maps/fy_pool_day_3d_skybox.vmap")
+    COMPILED_PATH = TinyPath("maps/fy_pool_day_3d_skybox.vmap_c")
+    COMPILED_DATA = b"compiled-skybox-map"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.manager = IsolatedContentManager()
+        self.manager.clean()
+
+    def tearDown(self):
+        self.manager.clean()
+        self.temp.cleanup()
+
+    def assert_skybox_opens(self):
+        parsed_map = object()
+
+        def parse_map(buffer, path):
+            self.assertEqual(path, self.COMPILED_PATH)
+            self.assertEqual(buffer.read(), self.COMPILED_DATA)
+            return parsed_map
+
+        with mock.patch.object(loader.CompiledMapResource, "from_buffer", side_effect=parse_map) as from_buffer:
+            result = loader.open_skybox_map(self.TARGET, self.manager)
+
+        self.assertIs(result, parsed_map)
+        from_buffer.assert_called_once()
+
+    def test_opens_map_from_loose_skybox_vpk(self):
+        write_vpk(self.root / "maps" / "fy_pool_day_3d_skybox.vpk",
+                  {self.COMPILED_PATH.as_posix(): self.COMPILED_DATA})
+        self.manager.add_child(LooseFilesContentProvider(TinyPath(self.root)))
+
+        self.assert_skybox_opens()
+
+    def test_opens_map_from_vpk_stored_inside_another_archive(self):
+        skybox_vpk, _ = build_vpk({self.COMPILED_PATH.as_posix(): self.COMPILED_DATA})
+        outer_vpk = write_vpk(
+            self.root / "pak01_dir.vpk",
+            {"maps/fy_pool_day_3d_skybox.vpk": skybox_vpk},
+        )
+        self.manager.add_child(VPKContentProvider(TinyPath(outer_vpk)))
+
+        self.assert_skybox_opens()
+
+    def test_missing_compiled_map_returns_none(self):
+        manager = SimpleNamespace(find_file=mock.Mock(return_value=None))
+
+        self.assertIsNone(loader.open_skybox_map(self.TARGET, manager))
+        manager.find_file.assert_called_once_with(self.COMPILED_PATH)
 
 
 class SkyboxImportTests(unittest.TestCase):

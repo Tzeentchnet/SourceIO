@@ -1,13 +1,18 @@
 # SourceIO Source Export Capability Plan
 
-**Status: future work, not started.** Current work is tracked in [plan.md](plan.md).
+**Status: future authoring and compiler work.** The static Source 2 reconstruction,
+provenance, diagnostics, and atomic-staging foundation is implemented; the complete
+editable-asset and official-compiler workflow below is not. Current priorities are
+tracked in [plan.md](plan.md).
 
 ## Problem and proposed approach
 
 SourceIO is primarily an importer. It has a working single-image Source 1 VTF
-exporter and an experimental Source 1 export-node tree, but it does not provide a
-coherent workflow that turns Blender scenes into editable Source 1 or Source 2
-assets, validates those assets, and optionally invokes the official compilers.
+exporter, an experimental Source 1 export-node tree, and deliberately limited
+static Source 2 ModelDoc/DMX and Hammer reconstruction. It still does not provide
+a coherent workflow that authors complete editable Source 1 or Source 2 assets
+from Blender scenes, validates those assets against a target profile, and
+optionally invokes the official compilers.
 
 The proposed solution is a shared, engine-neutral export pipeline with:
 
@@ -19,8 +24,10 @@ The proposed solution is a shared, engine-neutral export pipeline with:
 - optional official compiler integration, never an implicit or silent fallback;
 - end-to-end round-trip validation through SourceIO's existing importers.
 
-The first complete vertical slice will target CS2 Workshop Tools. Source SDK 2013
-and common Source 1 conventions will follow on the same foundation.
+The first complete authoring vertical slice will target CS2 Workshop Tools. Source
+SDK 2013 and common Source 1 conventions will follow on the same foundation.
+Existing static reconstruction is an input/provenance-preserving foundation, not
+that authoring vertical slice.
 
 ## Agreed scope and product decisions
 
@@ -75,7 +82,8 @@ and common Source 1 conventions will follow on the same foundation.
 
 - Skeletal models, animation, flex/morph data, physics/collision, LODs, bodygroups,
   skins, and attachments.
-- Maps/worlds (VMF/VMAP), prefabs, entities, and lighting.
+- General authored maps/worlds (VMF/VMAP), prefabs, entities, and lighting. The
+  existing static Hammer reconstruction remains a separate, explicitly lossy path.
 - Automatic baking of arbitrary Blender shader graphs.
 - Direct writing of compiled MDL/VMDL/VTF/VTEX binaries as the primary workflow.
 - GoldSrc export.
@@ -87,17 +95,26 @@ and common Source 1 conventions will follow on the same foundation.
   provide a mature direct VTF path.
 - `library/utils/kv1.py` has an ordered, duplicate-preserving KV1 writer suitable
   for generated VMT data and related text formats.
+- `library/source2/export` now provides Source 2 model/map domain objects, geometry
+  reconstruction, loss diagnostics, ModelDoc/DMX and Hammer serializers, export
+  bundles, and atomic text staging. It is a static reconstruction slice, not the
+  engine-neutral authoring request/profile/compiler service described below.
+- `library/source2/provenance` and the Blender import adapters retain JSON-safe,
+  cycle-safe Source 2 resource provenance. Imported materials retain canonical
+  `full_path` identities, and static exports include provenance and loss sidecars.
 - `library/utils/s2_keyvalues.py` and
-  `library/source2/utils/kv3_generator.py` provide a starting point for text KV3
-  and ModelDoc generation, but the ModelDoc schema/version needs to be brought up
-  to the CS2 fixture used for validation.
+  `library/source2/utils/kv3_generator.py` support text KV3 and the current static
+  ModelDoc reconstruction. Official CS2 authoring fixtures must still define the
+  broader serializer contract.
 - `library/shared/content_manager` already discovers Source 1 and Source 2 game
   layouts and can be extended with export-target profiles.
-- `blender_bindings/cli.py` provides the existing `blender -c sourceio` command
-  surface and should host an `export` subcommand rather than duplicating logic.
-- Imported materials retain a `full_path`; Source 1 also retains parsed VMT
-  parameters. Source 2 needs equivalent JSON-safe export provenance added during
-  import.
+- `blender_bindings/exporting/source2`, the registered export operators, and
+  `blender_bindings/cli.py` expose static `export-modeldoc` and `export-hammer`
+  paths. The future authoring UI and CLI should reuse their tested transform,
+  provenance, diagnostic, and staging primitives without presenting them as a
+  complete compiler workflow.
+- Source 1 imported materials retain parsed VMT parameters in addition to their
+  canonical resource paths.
 - `blender_bindings/ui/export_nodes` is an experimental QC/VTF prototype, not a
   complete or safe export pipeline. The new service should not depend on it.
   After the service is stable, the node tree can either emit the shared export
@@ -124,7 +141,10 @@ MIT primitives and validated against files emitted by official tools.
 
 ### 1. Engine-neutral export domain
 
-Add a Blender-free export package under `library/` containing typed models such as:
+Generalize the stable diagnostics, geometry, provenance, bundle, and staging
+primitives in `library/source2/export` into a Blender-free authoring service under
+`library/`. Keep the static reconstruction API intact while adding typed models
+such as:
 
 - `ExportRequest`: engine, profile, scope/grouping intent, output root, overwrite
   policy, and compile policy.
@@ -140,7 +160,7 @@ Add a Blender-free export package under `library/` containing typed models such 
 - `CompileResult`: exact command, working directory, output streams, exit status,
   expected outputs, and verified outputs.
 
-The core owns:
+The shared authoring core owns:
 
 - lower-case engine-safe path normalization;
 - root containment and traversal rejection;
@@ -148,13 +168,15 @@ The core owns:
 - collision detection across all generated and compiler-derived paths;
 - deterministic ordering and manifests;
 - changed/unchanged/existing-file classification;
-- temporary staging followed by per-file atomic replacement;
+- temporary staging followed by per-file atomic replacement, reusing the existing
+  tested Source 2 staging behavior;
 - structured diagnostics and explicit failure states.
 
 ### 2. Blender extraction adapter
 
-Add a Blender-facing package under `blender_bindings/` that converts the chosen
-scope into the engine-neutral `AssetGraph`.
+Extend the existing non-destructive Source 2 reconstruction adapters under
+`blender_bindings/` with a general adapter that converts the chosen scope into the
+engine-neutral `AssetGraph`.
 
 - Resolve selected, active-collection, and scene scopes deterministically.
 - Support combined and batch-per-object grouping.
@@ -171,7 +193,8 @@ scope into the engine-neutral `AssetGraph`.
 Material extraction will have explicit adapters for:
 
 - SourceIO-imported Source 1 materials;
-- SourceIO-imported Source 2 materials after provenance retention is added;
+- SourceIO-imported Source 2 materials using their retained provenance and
+  canonical resource identities;
 - simple active Principled BSDF graphs;
 - per-material export overrides for shader preset, texture slots, alpha mode,
   physics surface, and normal-map orientation.
@@ -218,7 +241,7 @@ The shared runner:
 
 ### 4. Source 2 / CS2 backend
 
-The first complete backend will emit:
+The first complete authoring backend will emit:
 
 - one FBX per combined model asset, or one per object in batch mode;
 - a current ModelDoc VMDL for a `static_prop_model`;
@@ -230,8 +253,9 @@ Implementation details:
 
 - Capture a minimal VMDL and VMAT saved by the current CS2 Workshop Tools as golden
   fixtures before locking the serializer contract.
-- Modernize the existing KV3/ModelDoc generator rather than maintaining a raw
-  string template.
+- Reuse and extend the existing typed ModelDoc generator rather than maintaining
+  a raw string template; validate every authoring-only field against official
+  Workshop Tools output.
 - Wrap Blender's FBX exporter with a context snapshot/restore guard and a temporary
   export selection. Check that the FBX operator exists and report its absence.
 - Support the common static PBR subset: color/tint, normal, roughness, metalness,
@@ -271,7 +295,7 @@ When compilation is requested:
 
 ### 6. UI and CLI
 
-Add a SourceIO export menu with:
+Extend the existing static reconstruction entries with an authoring menu:
 
 - `Source 2 / CS2 Static Assets`;
 - `Source 1 Static Assets`;
@@ -282,10 +306,12 @@ modifier/transform policy, material preset/overrides, overwrite policy, and
 `Compile after export`. It shows a preflight summary before execution and directs
 the user to full diagnostics when blocked.
 
-Extend `blender -c sourceio` with an `export` subcommand that calls the same service,
-including flags for engine/profile, scope, grouping, output asset path, overwrite,
-compile, and a machine-readable report path. UI and CLI runs over the same fixture
-must produce equivalent manifests and authored files.
+Extend `blender -c sourceio` with a general `export` subcommand that calls the same
+service while retaining the existing `export-modeldoc` and `export-hammer` static
+reconstruction commands. The authoring command includes flags for engine/profile,
+scope, grouping, output asset path, overwrite, compile, and a machine-readable
+report path. UI and CLI runs over the same fixture must produce equivalent
+manifests and authored files.
 
 ## Implementation todos
 
@@ -296,27 +322,29 @@ must produce equivalent manifests and authored files.
      tool binaries or game content into the repository.
 
 2. **Building the shared export core**
-   - Add typed requests, profiles, asset graphs, diagnostics, artifact planning,
-     manifests, safe path handling, collision detection, staging, and compiler
-     result types.
+   - Generalize the existing Source 2 domain, diagnostics, safe staging, and export
+     bundles with typed requests, profiles, asset graphs, artifact planning,
+     manifests, collision detection, and compiler result types.
    - Add deterministic unit tests for every safety boundary.
 
 3. **Building the non-destructive Blender adapter**
    - Implement scope/grouping, evaluated mesh extraction, transform conversion,
-     material translation, texture staging, provenance retention, and complete
-     context restoration.
+     material translation, texture staging, retained-provenance consumption, and
+     complete context restoration.
    - Add headless Blender fixtures for success and injected-failure paths.
 
 4. **Adding shared UI and CLI entry points**
-   - Register export menus/operators and properties using current extension-safe
-     relative imports.
-   - Add the CLI export parser and machine-readable reports.
+   - Register authoring menus/operators and properties alongside the existing
+     static reconstruction entries using extension-safe relative imports.
+   - Add the general CLI export parser and machine-readable reports without
+     duplicating the existing static commands.
    - Keep operators thin; all behavior belongs to the shared service.
 
 5. **Implementing the CS2 authoring backend**
    - Add FBX, current VMDL, CS2 VMAT, texture, material-remap, and content-layout
      generation.
-   - Add Source 2 import provenance needed for faithful round trips.
+   - Consume the retained Source 2 import provenance and existing typed ModelDoc
+     primitives for faithful round trips.
 
 6. **Integrating and validating Resource Compiler**
    - Add CS2 target discovery, compiler invocation, output verification, logs,
@@ -399,8 +427,9 @@ After both static vertical slices are stable:
 2. Add animation clips, flex/morph targets, and engine-specific action selection.
 3. Add physics/collision, LODs, bodygroups, skins, attachments, and richer material
    presets.
-4. Add Source 1 VMF and Source 2 VMAP/world export as separate projects with their
-   own intermediate scene representation and validation.
+4. Add Source 1 VMF and full Source 2 VMAP/world authoring as separate projects
+   with their own intermediate scene representation and validation; keep the
+   existing static Hammer reconstruction explicitly separate.
 5. Migrate the experimental export node tree onto the shared `AssetGraph`, or
    deprecate it if the property-driven workflow proves clearer.
 6. Add additional game profiles and tested Wine-based compiler execution without

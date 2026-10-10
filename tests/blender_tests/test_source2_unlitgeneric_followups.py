@@ -91,14 +91,19 @@ class CSGOUnlitGenericFollowupTests(unittest.TestCase):
         )
         self.set_color(material, 'g_tColor', (*color, texture_alpha))
 
-        vertex_linear = _materials.Source2MaterialTests.linear(vertex_color)
-        alpha = texture_alpha * vertex_linear[3] * opacity
-        expected = background * (1.0 - alpha) + color * vertex_linear[:3] * alpha
+        alpha = texture_alpha * vertex_color[3] * opacity
+        expected = background * (1.0 - alpha) + color * vertex_color[:3] * alpha
         self.assert_renders_as(
             material, background, expected, vertex_color=vertex_color)
-        raw_alpha = texture_alpha * vertex_color[3] * opacity
-        raw = background * (1.0 - raw_alpha) + color * vertex_color[:3] * raw_alpha
-        self.assertFalse(np.allclose(expected, raw, atol=2e-3))
+        once = _materials.Source2MaterialTests.linear(vertex_color)
+        twice = _materials.Source2MaterialTests.linear(once)
+        for decoded in (once, twice):
+            decoded_alpha = texture_alpha * decoded[3] * opacity
+            decoded_result = (
+                background * (1.0 - decoded_alpha)
+                + color * decoded[:3] * decoded_alpha
+            )
+            self.assertFalse(np.allclose(expected, decoded_result, atol=2e-3))
         vertex = material.node_tree.nodes['COLOR']
         self.assertEqual(vertex.bl_idname, 'ShaderNodeVertexColor')
         self.assertEqual(vertex.layer_name, 'COLOR')
@@ -109,6 +114,29 @@ class CSGOUnlitGenericFollowupTests(unittest.TestCase):
         expected = background * (1.0 - texture_alpha) + color * texture_alpha
         self.assert_renders_as(
             without_flag, background, expected, vertex_color=vertex_color)
+
+    def test_importer_byte_color_round_trip_preserves_linear_rgba(self):
+        value = np.array((0.5, 0.25, 0.75, 0.5), dtype=np.float32)
+        mesh = bpy.data.meshes.new('byte_color_round_trip')
+        try:
+            mesh.from_pydata(
+                [(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)],
+                [],
+                [(0, 1, 2, 3)],
+            )
+            colors = mesh.color_attributes.new('COLOR', 'BYTE_COLOR', 'CORNER')
+            colors.data.foreach_set('color', np.tile(value, len(colors.data)))
+            actual = np.empty(len(colors.data) * 4, dtype=np.float32)
+            colors.data.foreach_get('color', actual)
+            actual = actual.reshape(-1, 4)[0]
+        finally:
+            bpy.data.meshes.remove(mesh)
+
+        np.testing.assert_allclose(actual, value, atol=4e-3)
+        once = _materials.Source2MaterialTests.linear(value)
+        twice = _materials.Source2MaterialTests.linear(once)
+        self.assertFalse(np.allclose(actual, once, atol=4e-3))
+        self.assertFalse(np.allclose(actual, twice, atol=4e-3))
 
     def test_missing_color_is_zero_rgb_and_alpha(self):
         background = np.array((0.2, 0.4, 0.1))
@@ -142,7 +170,7 @@ class CSGOUnlitGenericFollowupTests(unittest.TestCase):
         self.assert_renders_as(
             material, background, background, vertex_color=(1.0, 1.0, 1.0, 0.5))
         self.assert_renders_as(
-            material, background, color, vertex_color=(1.0, 1.0, 1.0, 0.9))
+            material, background, color, vertex_color=(1.0, 1.0, 1.0, 0.7))
 
     def test_scroll_uses_seconds_after_the_primary_transform(self):
         scene = bpy.context.scene

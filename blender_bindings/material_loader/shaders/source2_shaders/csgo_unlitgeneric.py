@@ -188,14 +188,9 @@ class CSGOUnlitGeneric(Source2ShaderBase):
         color_output = self._gradient_modulated(color_output, primary_uv, m)
         if self._check_flag("F_VERTEX_COLOR"):
             vertex_color = self._vertex_color()
-            color_output = self._multiply(color_output, self._srgb_to_linear(vertex_color.outputs["Color"]))
-
-            alpha_vector = self.create_node(Nodes.ShaderNodeCombineXYZ, "Vertex Color Alpha")
-            self.connect_nodes(vertex_color.outputs["Alpha"], alpha_vector.inputs["X"])
-            alpha_linear = self._srgb_to_linear(alpha_vector.outputs["Vector"])
-            alpha_channel = self.create_node(Nodes.ShaderNodeSeparateXYZ, "Linear Vertex Color Alpha")
-            self.connect_nodes(alpha_linear, alpha_channel.inputs["Vector"])
-            vertex_alpha = m.scalar(alpha_output) * m.scalar(alpha_channel.outputs["X"])
+            # The shipped S_VERTEX_COLOR combo passes COLOR0 through unchanged.
+            color_output = self._multiply(color_output, vertex_color.outputs["Color"])
+            vertex_alpha = m.scalar(alpha_output) * m.scalar(vertex_color.outputs["Alpha"])
             vertex_alpha.socket.node.name = vertex_alpha.socket.node.label = "Vertex Color Alpha"
             alpha_output = vertex_alpha.socket
 

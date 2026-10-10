@@ -8,11 +8,13 @@ import numpy as np
 from ...shader_base import ExtraMaterialParameters, Nodes
 from ..node_math import NodeMath, Scalar, Vector, group_call, node_group
 from ..source2_shader_base import Source2ShaderBase
+from .....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 
 UP = (0.0, 0.0, 1.0)
 # GetLuma's weights, which ColorizeTint uses
 LUMA = (0.2125, 0.7154, 0.0721)
 _LUMINANCE = np.array((0.2126, 0.7152, 0.0722)) / np.linalg.norm((0.2126, 0.7152, 0.0722))
+_DEFAULT_BIPLANAR_SCALE = 1.0 / (64.0 * SOURCE2_HAMMER_UNIT_TO_METERS)
 
 
 def _axis_angle(axis, angle) -> np.ndarray:
@@ -93,6 +95,59 @@ def _layer_normal_group():
                       {'Normal': 'vector'}, build)
 
 
+def _biplanar_frame_group():
+    """The CS2 biplanar planes and angular weights from world-space position and the interpolated normal."""
+
+    def build(m: NodeMath, i):
+        position = i['Position'] * i['Scale'] * (-1.0, 1.0, -1.0)
+        normal = m.normalize(i['Normal'])
+        x, y, z = m.abs(normal.x), m.abs(normal.y), m.abs(normal.z)
+
+        # Exclude the least-facing plane. The strict comparisons match the shader away from exact ties.
+        minor_x = m.less(x, y) * m.less(x, z)
+        minor_y = (1.0 - minor_x) * m.less(y, z)
+        minor_z = 1.0 - minor_x - minor_y
+        raw_x = m.saturate((x - 0.5773) * 2.365744) * (1.0 - minor_x)
+        raw_y = m.saturate((y - 0.5773) * 2.365744) * (1.0 - minor_y)
+        raw_z = m.saturate((z - 0.5773) * 2.365744) * (1.0 - minor_z)
+        total = m.max(raw_x + raw_y + raw_z, 1e-6)
+        return {
+            'UV X': m.combine(position.y, position.z, 0.0),
+            'UV Y': m.combine(position.x, position.z, 0.0),
+            'UV Z': m.combine(position.x, position.y, 0.0),
+            'Weight X': raw_x / total,
+            'Weight Y': raw_y / total,
+            'Weight Z': raw_z / total,
+            'Normal': normal,
+        }
+
+    return node_group(
+        'SourceIO Environment Biplanar Frame',
+        {'Position': ('vector', (0.0, 0.0, 0.0)), 'Normal': ('vector', UP),
+         'Scale': ('float', _DEFAULT_BIPLANAR_SCALE)},
+        {'UV X': 'vector', 'UV Y': 'vector', 'UV Z': 'vector',
+         'Weight X': 'float', 'Weight Y': 'float', 'Weight Z': 'float', 'Normal': 'vector'},
+        build,
+    )
+
+
+@dataclass
+class TextureMapping:
+    uv: Optional[Any] = None
+    plane_uvs: Optional[tuple[Vector, Vector, Vector]] = None
+    weights: Optional[tuple[Scalar, Scalar, Scalar]] = None
+    normal: Optional[Vector] = None
+    tangent: Optional[Vector] = None
+    bitangent: Optional[Vector] = None
+
+
+@dataclass
+class TextureSample:
+    color: Vector
+    alpha: Scalar
+    plane_colors: Optional[tuple[Vector, Vector, Vector]] = None
+
+
 @dataclass
 class Layer:
     color: Vector  # linear, color corrected, model tinted and clamped
@@ -102,6 +157,7 @@ class Layer:
     tint_mask: Scalar  # through g_fTintMaskContrast and g_fTintMaskBrightness
     metalness: Scalar
     roughness: Scalar
+    ambient_occlusion: Scalar
     normal: Vector  # unit, tangent space
 
 
@@ -109,8 +165,11 @@ class CSGOEnvironment(Source2ShaderBase):
     """csgo_environment and, in CSGOEnvironmentBlend, csgo_environment_blend, after VRF's csgo_environment.frag.
     Each layer n packs color (and AO) in g_tColor<n>, height, tint mask and metalness in g_tHeight<n> (red, green,
     alpha) and the normal and roughness in g_tNormal<n> (SourceIO decodes it to a tangent-space normal with
-    roughness in alpha). Ambient occlusion is left to the renderer, as for the other CS2 shaders. Not handled:
-    biplanar mapping (g_nUVSet 0, read as UV set 1), texture scale by model scale, wetness."""
+    roughness in alpha). AO is curved per layer, then folded into Base Color because Blender's Principled BSDF has
+    no texture-AO input. UV set 0 uses CS2's two-plane world projection at 64 Source units per repeat; the scale is
+    derived from the Source 2 import scale. Positive model-scale magnitudes can scale UV1/UV2 before the layer
+    transform; the sign of mirrored model axes is unavailable to the material node graph. Not handled: F_WETNESS,
+    whose result also requires the scene's live rain, coverage, drying, ripple and dynamic-AO state."""
     SHADER: str = 'csgo_environment.vfx'
 
     def _float(self, name: str, default: float) -> float:
@@ -122,23 +181,119 @@ class CSGOEnvironment(Source2ShaderBase):
     def _vector(self, name: str, default: tuple) -> tuple:
         return tuple(self._material_resource.get_vector_property(name, default))
 
-    def _uv_set(self, uv_set: int):
-        """UV set 2 is the secondary set (or the primary one where a mesh has none); 1, and 0 (biplanar, not
-        handled), the primary one."""
-        if uv_set == 2:
-            return self._secondary_uv_or_primary()
-        uv_node = self.create_node(Nodes.ShaderNodeUVMap)
-        uv_node.uv_map = "TEXCOORD"
-        return uv_node.outputs[0]
+    def _model_scale_axis(self, m: NodeMath, axis: int) -> Scalar:
+        """The positive magnitude of one object-to-world model axis; 0 means no scaling."""
+        if axis == 0:
+            return m.scalar(1.0)
+        if axis not in (1, 2, 3):
+            raise ValueError(f"Invalid model-scale axis {axis}")
+        cache = getattr(self, "_environment_model_scale_axes", None)
+        if cache is None:
+            cache = self._environment_model_scale_axes = {}
+        if axis not in cache:
+            transform = self.create_node(Nodes.ShaderNodeVectorTransform)
+            transform.vector_type = 'VECTOR'
+            transform.convert_from = 'OBJECT'
+            transform.convert_to = 'WORLD'
+            transform.inputs['Vector'].default_value = tuple(float(index == axis - 1) for index in range(3))
+            cache[axis] = m.vmath('LENGTH', transform.outputs['Vector'])
+        return cache[axis]
 
-    def _transformed_uv(self, prefix: str, suffix: str, uv_set: int):
+    def _uv_set(self, m: NodeMath, uv_set: int) -> Vector:
+        """UV set 2 is the secondary set (or primary where absent); UV1 and UV2 can follow model-scale axes."""
+        if uv_set == 2:
+            uv = self._secondary_uv_or_primary()
+            affix = "2"
+        elif uv_set == 1:
+            uv_node = self.create_node(Nodes.ShaderNodeUVMap)
+            uv_node.uv_map = "TEXCOORD"
+            uv = uv_node.outputs[0]
+            affix = ""
+        else:
+            raise ValueError(f"UV set {uv_set} is not a mesh UV set")
+        value = m.vector(uv)
+        u_axis = self._int(f"g_nScaleTexCoord{affix}UByModelScaleAxis", 0)
+        v_axis = self._int(f"g_nScaleTexCoord{affix}VByModelScaleAxis", 0)
+        if not u_axis and not v_axis:
+            return value
+        return m.combine(value.x * self._model_scale_axis(m, u_axis),
+                         value.y * self._model_scale_axis(m, v_axis), value.z)
+
+    def _transformed_uv(self, m: NodeMath, prefix: str, suffix: str, uv_set: int):
         """The UV set through g_v<prefix>TexCoordScale/Offset/Center<suffix> and g_fl<prefix>TexCoordRotation<suffix>,
         scaled about the origin (the g_v*TexCoordXform expressions of both environment shaders)."""
-        return self.create_transform(self._uv_set(uv_set),
+        return self.create_transform(self._uv_set(m, uv_set).socket,
                                      self._vector(f"g_v{prefix}TexCoordScale{suffix}", (1.0, 1.0, 0.0)),
                                      self._vector(f"g_v{prefix}TexCoordOffset{suffix}", (0.0, 0.0, 0.0)),
                                      self._vector(f"g_v{prefix}TexCoordCenter{suffix}", (0.5, 0.5, 0.0)),
                                      self._float(f"g_fl{prefix}TexCoordRotation{suffix}", 0.0)).outputs[0]
+
+    def _biplanar_frame(self, m: NodeMath) -> dict[str, Vector | Scalar]:
+        cached = getattr(self, "_environment_biplanar_frame", None)
+        if cached is not None:
+            return cached
+        geometry = self.create_node(Nodes.ShaderNodeNewGeometry)
+        frame = group_call(m, _biplanar_frame_group(), {
+            'Position': geometry.outputs['Position'], 'Normal': geometry.outputs['Normal'],
+            'Scale': self._environment_biplanar_scale})
+        tangent_node = self.create_node(Nodes.ShaderNodeTangent)
+        tangent_node.direction_type = 'UV_MAP'
+        tangent_node.uv_map = 'TEXCOORD'
+        frame['Tangent'] = m.normalize(tangent_node.outputs['Tangent'])
+        frame['Bitangent'] = m.normalize(m.vmath('CROSS_PRODUCT', frame['Normal'], frame['Tangent']))
+        self._environment_biplanar_frame = frame
+        return frame
+
+    def _configure_import_scale(self, extra_parameters: dict[ExtraMaterialParameters, Any]):
+        import_scale = extra_parameters.get(
+            ExtraMaterialParameters.SOURCE2_IMPORT_SCALE, SOURCE2_HAMMER_UNIT_TO_METERS)
+        try:
+            import_scale = float(import_scale)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid Source 2 import scale {import_scale!r}") from exc
+        if not math.isfinite(import_scale) or import_scale <= 0:
+            raise ValueError(
+                f"Source 2 import scale must be finite and greater than zero, got {import_scale!r}")
+        self._environment_biplanar_scale = 1.0 / (64.0 * import_scale)
+
+    def _texture_mapping(self, m: NodeMath, prefix: str, suffix: str, uv_set: int) -> TextureMapping:
+        if uv_set != 0:
+            return TextureMapping(uv=self._transformed_uv(m, prefix, suffix, uv_set))
+        frame = self._biplanar_frame(m)
+        scale = self._vector(f"g_v{prefix}TexCoordScale{suffix}", (1.0, 1.0, 0.0))
+        scale_vector = (scale[0], scale[1], 1.0)
+        return TextureMapping(
+            plane_uvs=tuple(frame[f'UV {axis}'] * scale_vector for axis in "XYZ"),
+            weights=tuple(frame[f'Weight {axis}'] for axis in "XYZ"),
+            normal=frame['Normal'], tangent=frame['Tangent'], bitangent=frame['Bitangent'],
+        )
+
+    def _sample_texture(self, m: NodeMath, slot: str, default: tuple[float, float, float, float],
+                        is_data: bool, mapping: TextureMapping) -> TextureSample:
+        texture = self._get_texture(slot, default, is_data)
+        if mapping.uv is not None:
+            self.connect_nodes(mapping.uv, texture.inputs[0])
+            return TextureSample(m.vector(texture.outputs[0]), m.scalar(texture.outputs['Alpha']))
+        if mapping.plane_uvs is None or mapping.weights is None:
+            raise ValueError(f"Missing biplanar mapping for {slot}")
+
+        texture.label = "Biplanar X"
+        textures = [texture]
+        for axis in "YZ":
+            projected = self.create_node(Nodes.ShaderNodeTexImage, f"{slot} Biplanar {axis}")
+            projected.image = texture.image
+            projected.interpolation = texture.interpolation
+            projected.extension = texture.extension
+            projected.label = f"Biplanar {axis}"
+            projected.hide = True
+            textures.append(projected)
+        for projected, uv in zip(textures, mapping.plane_uvs):
+            m.set(projected.inputs['Vector'], uv)
+        planes = tuple(m.vector(projected.outputs[0]) for projected in textures)
+        alpha_planes = tuple(m.scalar(projected.outputs['Alpha']) for projected in textures)
+        color = sum((plane * weight for plane, weight in zip(planes, mapping.weights)), m.vector((0.0, 0.0, 0.0)))
+        alpha = sum((plane * weight for plane, weight in zip(alpha_planes, mapping.weights)), m.scalar(0.0))
+        return TextureSample(color, alpha, planes)
 
     @staticmethod
     def _contrast_brightness(m: NodeMath, value, contrast: float, brightness: float) -> Scalar:
@@ -179,47 +334,79 @@ class CSGOEnvironment(Source2ShaderBase):
             amount = tint_amount * (1.0 - m.min3(model_tint)) * tint_mask
         return group_call(m, _colorize_tint_group(), {'Color': color, 'Tint': model_tint, 'Amount': amount})['Color']
 
-    def _layer_normal(self, m: NodeMath, n: int, normal_texture, uv_set: int) -> Vector:
+    @staticmethod
+    def _projected_normal(m: NodeMath, sample: TextureSample, mapping: TextureMapping,
+                          contrast: float) -> Vector:
+        if (sample.plane_colors is None or mapping.weights is None or mapping.normal is None
+                or mapping.tangent is None or mapping.bitangent is None):
+            raise ValueError("Incomplete biplanar normal sample")
+        decoded = tuple(plane * 2.0 - 1.0 for plane in sample.plane_colors)
+        offsets = (
+            m.combine(0.0, decoded[0].x, -decoded[0].y),
+            m.combine(-decoded[1].x, 0.0, -decoded[1].y),
+            m.combine(-decoded[2].x, decoded[2].y, 0.0),
+        )
+        offset = sum((value * weight for value, weight in zip(offsets, mapping.weights)),
+                     m.vector((0.0, 0.0, 0.0)))
+        world = m.normalize(mapping.normal + offset)
+        tangent = m.combine(m.dot(world, mapping.tangent), m.dot(world, mapping.bitangent),
+                            m.dot(world, mapping.normal))
+        return m.normalize(m.lerp(UP, tangent, contrast))
+
+    def _sampled_normal(self, m: NodeMath, sample: TextureSample, mapping: TextureMapping,
+                        rotation: float, contrast: float) -> Vector:
+        if sample.plane_colors is not None:
+            return self._projected_normal(m, sample, mapping, contrast)
+        return group_call(m, _layer_normal_group(), {
+            'Normal': sample.color, 'Rotation': rotation, 'Contrast': contrast})['Normal']
+
+    def _layer_normal(self, m: NodeMath, n: int, normal_texture: TextureSample,
+                      mapping: TextureMapping, uv_set: int) -> Vector:
         """g_tNormal<n> through its contrast and the layer's rotation; with F_DETAIL_NORMAL, g_tNormalDetail<n>
         (on its own transform and UV set, -1 inheriting the layer's) folded in: normalize(n + detail - up)."""
-        normal = group_call(m, _layer_normal_group(), {
-            'Normal': normal_texture.outputs[0], 'Rotation': self._float(f"g_flTexCoordRotation{n}", 0.0),
-            'Contrast': self._float(f"g_fTextureNormalContrast{n}", 1.0)})['Normal']
+        normal = self._sampled_normal(m, normal_texture, mapping, self._float(f"g_flTexCoordRotation{n}", 0.0),
+                                      self._float(f"g_fTextureNormalContrast{n}", 1.0))
         slot = f"g_tNormalDetail{n}"
         if not self._int("F_DETAIL_NORMAL", 0) or not self._have_texture(slot):
             self._skip_texture(slot)
             return normal
         detail_set = self._int(f"g_nDetailUVSet{n}", -1)
-        detail_texture = self._get_texture(slot, (0.5, 0.5, 1.0, 1.0), True)
-        self.connect_nodes(self._transformed_uv("Detail", str(n), uv_set if detail_set == -1 else detail_set),
-                           detail_texture.inputs[0])
-        detail = group_call(m, _layer_normal_group(), {
-            'Normal': detail_texture.outputs[0], 'Rotation': self._float(f"g_flDetailTexCoordRotation{n}", 0.0),
-            'Contrast': self._float(f"g_fDetailTextureNormalContrast{n}", 1.0)})['Normal']
+        detail_mapping = self._texture_mapping(m, "Detail", str(n), uv_set if detail_set == -1 else detail_set)
+        detail_texture = self._sample_texture(m, slot, (0.5, 0.5, 1.0, 1.0), True, detail_mapping)
+        detail = self._sampled_normal(
+            m, detail_texture, detail_mapping, self._float(f"g_flDetailTexCoordRotation{n}", 0.0),
+            self._float(f"g_fDetailTextureNormalContrast{n}", 1.0))
         return m.normalize(normal + detail - UP)
+
+    def _ambient_occlusion(self, m: NodeMath, n: int, sample: Scalar) -> Scalar:
+        """The authored AO-level vector through its compiled expression, then the shipped per-layer curve."""
+        authored = self._vector(f"g_vAmbientOcclusionLevels{n}", (0.0, 0.5, 1.0, 0.0))
+        low = -authored[0]
+        power = -1.4427 * math.log(max(0.0001, 1.0 - authored[1]))
+        high = 2.0 - authored[2]
+        return m.saturate(m.lerp(low, high, m.pow(sample, power)))
 
     def _layer(self, m: NodeMath, n: int) -> Layer:
         uv_set = self._int(f"g_nUVSet{n}", 1)
-        uv = self._transformed_uv("", str(n), uv_set)
-        color_texture = self._get_texture(f"g_tColor{n}", (1.0, 1.0, 1.0, 1.0))
-        height_texture = self._get_texture(f"g_tHeight{n}", (0.5, 1.0, 1.0, 0.0), True)
-        normal_texture = self._get_texture(f"g_tNormal{n}", (0.5, 0.5, 1.0, 0.5), True)
-        for texture in (color_texture, height_texture, normal_texture):
-            self.connect_nodes(uv, texture.inputs[0])
-        height = self.create_node(Nodes.ShaderNodeSeparateColor)
-        self.connect_nodes(height_texture.outputs[0], height.inputs[0])
+        mapping = self._texture_mapping(m, "", str(n), uv_set)
+        color_texture = self._sample_texture(m, f"g_tColor{n}", (1.0, 1.0, 1.0, 1.0), False, mapping)
+        height_texture = self._sample_texture(m, f"g_tHeight{n}", (0.5, 1.0, 1.0, 0.0), True, mapping)
+        normal_texture = self._sample_texture(m, f"g_tNormal{n}", (0.5, 0.5, 1.0, 0.5), True, mapping)
 
-        tint_mask_raw = m.scalar(height.outputs["Green"])
+        tint_mask_raw = height_texture.color.y
         tint_mask = self._contrast_brightness(m, tint_mask_raw, self._float(f"g_fTintMaskContrast{n}", 1.0),
                                               self._float(f"g_fTintMaskBrightness{n}", 1.0))
-        roughness = self._contrast_brightness(m, normal_texture.outputs["Alpha"],
+        roughness = self._contrast_brightness(m, normal_texture.alpha,
                                               self._float(f"g_fTextureRoughnessContrast{n}", 1.0),
                                               self._float(f"g_fTextureRoughnessBrightness{n}", 1.0))
-        metalness = m.scalar(height_texture.outputs["Alpha"] if self._int(f"g_bMetalness{n}", 1) else 0.0)
-        alpha = m.scalar(color_texture.outputs["Alpha"]) if n == 1 and self._int("F_ALPHA_TEST", 0) else None
-        return Layer(self._layer_color(m, n, color_texture.outputs[0], tint_mask), alpha,
-                     m.scalar(height.outputs["Red"]), tint_mask_raw, tint_mask, metalness, roughness,
-                     self._layer_normal(m, n, normal_texture, uv_set))
+        metalness = height_texture.alpha if self._int(f"g_bMetalness{n}", 1) else m.scalar(0.0)
+        alpha_test = n == 1 and self._int("F_ALPHA_TEST", 0)
+        alpha = color_texture.alpha if alpha_test else None
+        ambient_occlusion = self._ambient_occlusion(
+            m, n, height_texture.color.z if alpha_test else color_texture.alpha)
+        return Layer(self._layer_color(m, n, color_texture.color, tint_mask), alpha,
+                     height_texture.color.x, tint_mask_raw, tint_mask, metalness, roughness, ambient_occlusion,
+                     self._layer_normal(m, n, normal_texture, mapping, uv_set))
 
     def _vertex_paint(self, m: NodeMath) -> Vector:
         """g_vColorTint (sRGB) times the painted COLOR faded by its alpha."""
@@ -228,12 +415,13 @@ class CSGOEnvironment(Source2ShaderBase):
         tint = srgb_to_linear(self._vector("g_vColorTint", (1.0, 1.0, 1.0, 0.0))[:3])
         return paint if tint == (1.0, 1.0, 1.0) else paint * tint
 
-    def _surface(self, m: NodeMath, color, metalness, roughness, normal, alpha: Optional[Scalar]):
-        """A Principled BSDF (reflectance 0.04, Blender's default) with an alpha clip under F_ALPHA_TEST."""
+    def _surface(self, m: NodeMath, color, metalness, roughness, ambient_occlusion, normal,
+                 alpha: Optional[Scalar]):
+        """A Principled BSDF with texture AO folded into color and an alpha clip under F_ALPHA_TEST."""
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         bsdf = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
         self.connect_nodes(bsdf.outputs['BSDF'], material_output.inputs['Surface'])
-        m.set(bsdf.inputs['Base Color'], color)
+        m.set(bsdf.inputs['Base Color'], color * ambient_occlusion)
         m.set(bsdf.inputs['Metallic'], metalness)
         m.set(bsdf.inputs['Roughness'], roughness)
         normal_map = self.create_node(Nodes.ShaderNodeNormalMap)
@@ -246,8 +434,9 @@ class CSGOEnvironment(Source2ShaderBase):
         return bsdf
 
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
+        self._configure_import_scale(extra_parameters)
         m = NodeMath(material.node_tree, self.create_node)
         layer = self._layer(m, 1)
         # The painted vertex color, masked by the raw tint mask (g_nVertexColorMode1 is ignored here).
         color = layer.color * m.lerp((1.0, 1.0, 1.0), self._vertex_paint(m), layer.tint_mask_raw)
-        self._surface(m, color, layer.metalness, layer.roughness, layer.normal, layer.alpha)
+        self._surface(m, color, layer.metalness, layer.roughness, layer.ambient_occlusion, layer.normal, layer.alpha)

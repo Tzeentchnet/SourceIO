@@ -213,6 +213,7 @@ logger = log_manager.get_logger('MaterialLoader')
 
 class ExtraMaterialParameters(str, Enum):
     USE_OBJECT_TINT = "UseObjectTint"
+    SOURCE2_IMPORT_SCALE = "Source2ImportScale"
 
 
 class ShaderBase:

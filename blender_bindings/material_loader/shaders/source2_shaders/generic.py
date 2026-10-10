@@ -3,9 +3,8 @@ from typing import Any
 import bpy
 import numpy as np
 
-from ...shader_base import (Nodes, ExtraMaterialParameters, MIX_FACTOR,
-                                                                   MIX_A, MIX_B, MIX_RESULT)
-from ..source2_shader_base import Source2ShaderBase
+from ...shader_base import ExtraMaterialParameters, MIX_A, MIX_B, MIX_FACTOR, MIX_RESULT, Nodes
+from ..source2_shader_base import ADDITIVE, ALPHA_TEST, OPAQUE, TRANSLUCENT, Source2ShaderBase
 
 # Principled BSDF's Specular IOR Level 0.5 is F0 0.04 and scales it linearly.
 F0_PER_SPECULAR_LEVEL = 0.08
@@ -29,6 +28,10 @@ class Generic(Source2ShaderBase):
     @property
     def translucent(self):
         return self._material_resource.get_int_property('F_TRANSLUCENT', 0)
+
+    @property
+    def additive(self):
+        return self._material_resource.get_int_property('F_ADDITIVE_BLEND', 0)
 
     def _range(self, name: str):
         value = self._material_resource.get_vector_property(name, (0, 1, 0, 0))
@@ -80,20 +83,56 @@ class Generic(Source2ShaderBase):
             shader.inputs['Specular IOR Level'].default_value = (
                     (reflectance_min + 0.1 * (reflectance_max - reflectance_min)) / F0_PER_SPECULAR_LEVEL)
 
+    def _add_self_illum(self, color_output):
+        if not self._check_flag('F_SELF_ILLUM'):
+            return color_output
+        if self._have_texture('g_tSelfIllumMask'):
+            mask_output = self._get_texture('g_tSelfIllumMask', (1, 1, 1, 1), True).outputs[0]
+        else:
+            mask_output = None
+        illumination = self.create_node(Nodes.ShaderNodeVectorMath)
+        illumination.operation = 'SCALE'
+        self._handle_self_illum(color_output, mask_output,
+                                self._material_resource.get_vector_property('g_vSelfIllumTint', None),
+                                1.0, self._material_resource.get_float_property('g_flSelfIllumScale', 1.0),
+                                illumination.inputs[0], illumination.inputs['Scale'])
+        combined = self.create_mix_color('ADD')
+        combined.inputs[MIX_FACTOR].default_value = 1.0
+        self.connect_nodes(color_output, combined.inputs[MIX_A])
+        self.connect_nodes(illumination.outputs[0], combined.inputs[MIX_B])
+        return combined.outputs[MIX_RESULT]
+
+    def _unlit_surface(self, color_output, alpha_output):
+        for slot_name in ('g_tNormal', 'g_tRoughness', 'g_tMetalnessReflectanceFresnel'):
+            self._skip_texture(slot_name)
+        color_output = self._add_self_illum(color_output)
+
+        if self.additive:
+            blend_mode = ADDITIVE
+            if self.translucent:
+                alpha_output = self._opacity_scaled(alpha_output)
+            elif not self.alpha_test:
+                opaque_alpha = self.create_node(Nodes.ShaderNodeValue)
+                opaque_alpha.outputs[0].default_value = 1.0
+                alpha_output = opaque_alpha.outputs[0]
+        elif self.translucent:
+            blend_mode = TRANSLUCENT
+            alpha_output = self._opacity_scaled(alpha_output)
+        elif self.alpha_test:
+            blend_mode = ALPHA_TEST
+        else:
+            blend_mode = OPAQUE
+
+        return self._blended_surface(
+            color_output,
+            alpha_output,
+            blend_mode,
+            alpha_test_reference=self._material_resource.get_float_property('g_flAlphaTestReference', 0.5),
+        )
+
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
 
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
-        shader = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
-        self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
-        if self._check_flag('F_SPECULAR'):
-            self._connect_specular(shader)
-        else:
-            # Without F_SPECULAR the shader is diffuse only, and doesn't sample these.
-            self._skip_texture('g_tRoughness')
-            self._skip_texture('g_tMetalnessReflectanceFresnel')
-            shader.inputs['Roughness'].default_value = 1.0
-            shader.inputs['Specular IOR Level'].default_value = 0.0
-
         albedo_node = self._get_texture('g_tColor', (0.3, 0.3, 0.3, 1.0))
         color_output_socket = albedo_node.outputs['Color']
         if any(channel != 1.0 for channel in self.color[:3]):
@@ -107,6 +146,23 @@ class Generic(Source2ShaderBase):
             color_output_socket = color_mix.outputs[MIX_RESULT]
         if extra_parameters.get(ExtraMaterialParameters.USE_OBJECT_TINT, False):
             color_output_socket = self.insert_object_tint(color_output_socket)
+
+        if self._check_flag('F_UNLIT'):
+            self.connect_nodes(self._unlit_surface(color_output_socket, albedo_node.outputs['Alpha']),
+                               material_output.inputs['Surface'])
+            return
+
+        shader = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
+        self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
+        if self._check_flag('F_SPECULAR'):
+            self._connect_specular(shader)
+        else:
+            # Without F_SPECULAR the shader is diffuse only, and doesn't sample these.
+            self._skip_texture('g_tRoughness')
+            self._skip_texture('g_tMetalnessReflectanceFresnel')
+            shader.inputs['Roughness'].default_value = 1.0
+            shader.inputs['Specular IOR Level'].default_value = 0.0
+
         self.connect_nodes(color_output_socket, shader.inputs['Base Color'])
 
         if self.translucent or self.alpha_test:

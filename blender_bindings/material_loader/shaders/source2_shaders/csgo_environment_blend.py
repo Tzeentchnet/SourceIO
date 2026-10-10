@@ -127,8 +127,10 @@ def _border_group():
 
 class CSGOEnvironmentBlend(CSGOEnvironment):
     """csgo_environment_blend: two or (F_ENABLE_LAYER_3) three csgo_environment layers blended by the painted
-    weights in TEXCOORD_4 (VRF's csgo_environment.frag). Not handled besides what CSGOEnvironment lists: the bevel
-    (a screen-space slope), wetness, and the blend softness's growth with distance (it depends on the mip level)."""
+    weights in TEXCOORD_4 (VRF's csgo_environment.frag). Intentionally unsupported rather than approximated: the
+    bevel needs screen-space derivatives of its seam ramp, blend-softness growth needs texture LOD and fwidth of
+    sampled heights, and wetness needs live scene weather state. g_flBevelStrength2/3,
+    g_flBlendSoftnessDistanceModifierStrength and TEXCOORD_4_2.x therefore have no proxy effect."""
     SHADER: str = 'csgo_environment_blend.vfx'
 
     def _blend_params(self, m: NodeMath):
@@ -169,6 +171,18 @@ class CSGOEnvironmentBlend(CSGOEnvironment):
             lower = lower * (1.0 + (upper - lower) * 2.0 * weight * combine)
         return m.lerp(lower, upper, weight * replace)
 
+    @staticmethod
+    def _combine_occlusion(m: NodeMath, lower, upper, weight, combine: float, replace: float) -> Scalar:
+        if combine:
+            lower = lower * m.lerp(1.0, upper, weight * combine)
+        return m.lerp(lower, upper, weight * replace)
+
+    @staticmethod
+    def _combine_metalness(m: NodeMath, lower, upper, weight, combine: float, replace: float) -> Scalar:
+        if combine:
+            lower = lower * m.lerp(1.0, 2.0 * upper, weight * combine)
+        return m.lerp(lower, upper, weight * replace)
+
     def _border(self, m: NodeMath, n: int, lower: Layer, upper: Layer, lower_roughness, carry: dict, factor,
                 height_scale, softness, weight, tint_mask):
         """Recolor both sides of layer n's seam (see _border_group); returns the new lower and upper colors and
@@ -206,9 +220,10 @@ class CSGOEnvironmentBlend(CSGOEnvironment):
             amount = amount + m.lerp(1.0, mask, abs(mask_strength)) * (layer_strength * share)
         uv_set = self._int("g_nColorOverlayUVSet", 2)
         # sRGB: the textures store a neutral linear 0.5 (median about 0.75, reflectivity about 0.5).
-        overlay_texture = self._get_texture("g_tSharedColorOverlay", (0.5, 0.5, 0.5, 1.0))
-        self.connect_nodes(self._transformed_uv("Overlay", "", uv_set), overlay_texture.inputs[0])
-        overlay = m.vector(overlay_texture.outputs[0]) * 2.0 - 1.0
+        overlay_texture = self._sample_texture(
+            m, "g_tSharedColorOverlay", (0.5, 0.5, 0.5, 1.0), False,
+            self._texture_mapping(m, "Overlay", "", uv_set))
+        overlay = overlay_texture.color * 2.0 - 1.0
         bright = self._float("g_flOverlayBrightnessContrast", 1.0)
         dark = self._float("g_flOverlayDarknessContrast", 1.0)
         channels = []
@@ -219,6 +234,7 @@ class CSGOEnvironmentBlend(CSGOEnvironment):
         return color * m.lerp((1.0, 1.0, 1.0), m.combine(*channels), amount)
 
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
+        self._configure_import_scale(extra_parameters)
         m = NodeMath(material.node_tree, self.create_node)
         three = bool(self._int("F_ENABLE_LAYER_3", 0))
         layers = [self._layer(m, n) for n in ((1, 2, 3) if three else (1, 2))]
@@ -273,7 +289,12 @@ class CSGOEnvironmentBlend(CSGOEnvironment):
         roughness = self._combine_roughness(m, roughness, second.roughness, weight2,
                                             self._float("g_flRoughnessCombine2", 0.0),
                                             self._float("g_flRoughnessReplace2", 1.0))
-        metalness = first.metalness * base_weight2 + second.metalness * weight2
+        ambient_occlusion = self._combine_occlusion(
+            m, first.ambient_occlusion, second.ambient_occlusion, weight2,
+            self._float("g_flAOCombine2", 0.0), self._float("g_flAOReplace2", 1.0))
+        metalness = self._combine_metalness(
+            m, first.metalness, second.metalness, weight2,
+            self._float("g_flMetalnessCombine2", 0.0), self._float("g_flMetalnessReplace2", 1.0))
         base_height = base1 * base_weight2 + base2 * weight2
 
         weight3: Scalar | float = 0.0
@@ -295,7 +316,7 @@ class CSGOEnvironmentBlend(CSGOEnvironment):
                     'Zero Point 2': zero3, 'Factor': factor3, 'Softness': softness})['Weight 2']
             if new_blending and self._int("F_BLEND_EFFECTS_3", 0):
                 below = Layer(color, None, first.height, first.tint_mask_raw, tint_mask_below, metalness,
-                              roughness, normal)
+                              roughness, ambient_occlusion, normal)
                 color, third.color, roughness, third.roughness = self._border(
                     m, 3, below, third, roughness, carry3, factor3,
                     m.max(m.abs(m.lerp(scale1, scale2, weight2)), abs(scale3)), softness, weight3,
@@ -307,7 +328,12 @@ class CSGOEnvironmentBlend(CSGOEnvironment):
             roughness = self._combine_roughness(m, roughness, third.roughness, weight3,
                                                 self._float("g_flRoughnessCombine3", 0.0),
                                                 self._float("g_flRoughnessReplace3", 1.0))
-            metalness = metalness * (1.0 - weight3) + third.metalness * weight3
+            ambient_occlusion = self._combine_occlusion(
+                m, ambient_occlusion, third.ambient_occlusion, weight3,
+                self._float("g_flAOCombine3", 0.0), self._float("g_flAOReplace3", 1.0))
+            metalness = self._combine_metalness(
+                m, metalness, third.metalness, weight3,
+                self._float("g_flMetalnessCombine3", 0.0), self._float("g_flMetalnessReplace3", 1.0))
 
         share2 = weight2 * (1.0 - weight3)
         share1 = m.saturate(1.0 - share2 - weight3)
@@ -328,4 +354,4 @@ class CSGOEnvironmentBlend(CSGOEnvironment):
             vertex_mask = vertex_mask + float(modes[2] != 2) * weight3
         color = color * m.lerp((1.0, 1.0, 1.0), self._vertex_paint(m), m.saturate(vertex_mask))
 
-        self._surface(m, color, metalness, roughness, normal, first.alpha)
+        self._surface(m, color, metalness, roughness, ambient_occlusion, normal, first.alpha)

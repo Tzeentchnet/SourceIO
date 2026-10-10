@@ -66,6 +66,23 @@ class SkinTests(unittest.TestCase):
         set_skin(obj, 'original')
         self.assertEqual(obj.material_slots[0].material, a)
 
+    def test_source2_variant_paths_select_loaded_materials(self):
+        a_path = 'materials/one/same.vmat?sourceio-scale=0x1.a027525460aa6p-6'
+        b_path = 'materials/two/same.vmat?sourceio-scale=0x1.a027525460aa6p-6'
+        a = get_or_create_material('same', a_path)
+        b = get_or_create_material('same', b_path)
+        obj = self.mesh([a])
+        obj['model_type'] = 'S2'
+        obj['active_skin'] = 'original'
+        obj['skin_groups'] = {'original': a_path, 'alternate': b_path}
+        material_count = len(bpy.data.materials)
+
+        self.assertTrue(set_skin(obj, 'alternate'))
+        self.assertIs(obj.material_slots[0].material, b)
+        self.assertEqual(len(bpy.data.materials), material_count)
+        self.assertTrue(set_skin(obj, 'original'))
+        self.assertIs(obj.material_slots[0].material, a)
+
     def test_blender_skin_operator(self):
         obj = self.source1()
         bpy.context.scene.collection.objects.link(obj)

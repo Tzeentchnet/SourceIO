@@ -532,12 +532,18 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     else:
         material_name = "NullMaterial"
     tint = draw_call.get("m_vTintColor", None)
+    material = None
 
     if material_resource:
         if import_context.import_materials:
-            load_material(content_manager, material_resource, TinyPath(material_name),
-                          tint is not None and all(a != 1.0 for a in tint),
-                          texture_settings=import_context.texture_settings)
+            material = load_material(
+                content_manager,
+                material_resource,
+                TinyPath(material_name),
+                tint is not None and all(a != 1.0 for a in tint),
+                texture_settings=import_context.texture_settings,
+                import_scale=import_context.scale,
+            )
             morph_supported = material_resource.get_int_property('F_MORPH_SUPPORTED', 0) == 1
             overlay = material_resource.get_int_property('F_OVERLAY', 0) == 1
             if not overlay:
@@ -620,7 +626,8 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
 
     mesh.from_pydata(positions, np.empty(0), new_indices, shade_flat=normals is None)
 
-    material = get_or_create_material(material_stem, TinyPath(material_name).as_posix())
+    if material is None:
+        material = get_or_create_material(material_stem, TinyPath(material_name).as_posix())
     add_material(material, mesh_obj)
 
     if data_block.get('m_materialGroups', None):
@@ -633,15 +640,23 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
                 if mat_id >= len(skin_group['m_materials']):
                     continue
                 skin_material = skin_group['m_materials'][mat_id]
-                mat_groups[skin_group['m_name']] = skin_material
-                get_or_create_material(path_stem(skin_material), TinyPath(skin_material).as_posix())
-                if import_context.import_materials and skin_material != material_name:
+                skin_bpy_material = material if skin_material == material_name else None
+                if skin_bpy_material is None and import_context.import_materials:
                     skin_resource = model_resource.get_child_resource(skin_material, content_manager,
                                                                       CompiledMaterialResource)
                     if skin_resource is not None:
-                        load_material(content_manager, skin_resource, TinyPath(skin_material),
-                                      tint is not None and all(a != 1.0 for a in tint),
-                                      texture_settings=import_context.texture_settings)
+                        skin_bpy_material = load_material(
+                            content_manager,
+                            skin_resource,
+                            TinyPath(skin_material),
+                            tint is not None and all(a != 1.0 for a in tint),
+                            texture_settings=import_context.texture_settings,
+                            import_scale=import_context.scale,
+                        )
+                if skin_bpy_material is None:
+                    skin_bpy_material = get_or_create_material(
+                        path_stem(skin_material), TinyPath(skin_material).as_posix())
+                mat_groups[skin_group['m_name']] = skin_bpy_material["full_path"]
 
             mesh_obj['active_skin'] = default_skin['m_name']
             mesh_obj['skin_groups'] = mat_groups

@@ -1,12 +1,20 @@
 from pathlib import Path
 
-new_keys = set()
 
-for file in Path('./').glob('*.txt'):
-    with file.open('r') as f:
-        for line in f.readlines():
-            new_keys.add(line.strip('\n'))
+def condense(directory: Path = Path(".")) -> None:
+    output_path = directory / "condenced.txt"
+    new_keys = set()
+    for file in directory.glob("*.txt"):
+        if file == output_path:
+            continue
+        with file.open("r", encoding="utf-8-sig") as source:
+            for line in source:
+                new_keys.add(line.rstrip("\n"))
 
-with open('condenced.txt', 'w') as f:
-    for key in new_keys:
-        f.write(key + '\n')
+    with output_path.open("w", encoding="utf-8", newline="\n") as output:
+        for key in sorted(new_keys):
+            output.write(key + "\n")
+
+
+if __name__ == "__main__":
+    condense()

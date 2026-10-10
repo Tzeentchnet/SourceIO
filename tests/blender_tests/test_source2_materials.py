@@ -1,3 +1,4 @@
+import math
 import os
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from SourceIO.blender_bindings.source2.vmat_loader import load_material
 from SourceIO.library.source2.blocks.texture_data import TextureImportSettings
 from SourceIO.library.source2.resource_types import CompiledMaterialResource
 from SourceIO.library.utils import TinyPath
+from SourceIO.library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 
 
 class FakeMaterial(CompiledMaterialResource):
@@ -123,7 +125,58 @@ class Source2MaterialTests(unittest.TestCase):
 
         self.assertIsNot(material, default_material)
         self.assertEqual(material["sourceio_texture_settings"], settings.cache_identity())
+        self.assertIn(f"sourceio-scale={SOURCE2_HAMMER_UNIT_TO_METERS.hex()}", material["full_path"])
+        self.assertIn("sourceio-texture=", material["full_path"])
         self.assertEqual(resource.texture_import_settings, TextureImportSettings())
+
+    def test_vmat_import_scale_isolates_cache_and_biplanar_projection(self):
+        path = TinyPath("materials/test/biplanar_scale.vmat")
+        resource = FakeMaterial('csgo_environment.vfx', ints={'g_nUVSet1': 0})
+        default_material = load_material(None, resource, path, import_scale=SOURCE2_HAMMER_UNIT_TO_METERS)
+        reused_material = load_material(None, resource, path, import_scale=SOURCE2_HAMMER_UNIT_TO_METERS)
+        small_material = load_material(None, resource, path, import_scale=0.01)
+
+        self.assertIs(default_material, reused_material)
+        self.assertIsNot(default_material, small_material)
+        self.assertNotEqual(default_material["full_path"], small_material["full_path"])
+        frames = []
+        for material, import_scale in (
+                (default_material, SOURCE2_HAMMER_UNIT_TO_METERS), (small_material, 0.01)):
+            self.assertEqual(material["sourceio_import_scale"], import_scale)
+            self.assertIn(f"sourceio-scale={import_scale.hex()}", material["full_path"])
+            frame = next(node for node in material.node_tree.nodes if node.bl_idname == 'ShaderNodeGroup'
+                         and node.node_tree.name == 'SourceIO Environment Biplanar Frame')
+            frames.append(frame)
+            self.assertAlmostEqual(frame.inputs['Scale'].default_value, 1.0 / (64.0 * import_scale))
+            material.node_tree.links.remove(frame.inputs['Position'].links[0])
+            frame.inputs['Position'].default_value = (-64.0 * import_scale, 0.0, 0.0)
+            self.assert_link_is(
+                material, material.node_tree.nodes['g_tColor1 Biplanar Y'].inputs['Vector'], (1.0, 0.0, 0.0))
+        self.assertIs(frames[0].node_tree, frames[1].node_tree)
+
+        blend = load_material(
+            None,
+            FakeMaterial('csgo_environment_blend.vfx', ints={'g_nUVSet1': 0}),
+            TinyPath("materials/test/biplanar_blend_scale.vmat"),
+            import_scale=0.01,
+        )
+        blend_frame = next(node for node in blend.node_tree.nodes if node.bl_idname == 'ShaderNodeGroup'
+                           and node.node_tree.name == 'SourceIO Environment Biplanar Frame')
+        self.assertAlmostEqual(blend_frame.inputs['Scale'].default_value, 1.0 / (64.0 * 0.01))
+
+    def test_vmat_import_scale_rejects_invalid_values(self):
+        resource = FakeMaterial('csgo_environment.vfx')
+        for import_scale in (0.0, -0.01, float('nan'), float('inf'), float('-inf'), None, 'invalid'):
+            with self.subTest(import_scale=import_scale):
+                material_count = len(bpy.data.materials)
+                with self.assertRaisesRegex(ValueError, "Source 2 import scale"):
+                    load_material(
+                        None,
+                        resource,
+                        TinyPath("materials/test/invalid_scale.vmat"),
+                        import_scale=import_scale,
+                    )
+                self.assertEqual(len(bpy.data.materials), material_count)
 
     def test_complex_metalness_flag_without_texture_uses_color_alpha(self):
         material = build('csgo_complex.vfx', ('g_tColor', 'g_tNormal'), ints={'F_METALNESS_TEXTURE': 1})
@@ -538,16 +591,21 @@ class Source2MaterialTests(unittest.TestCase):
 
     @staticmethod
     def render_over_background(material, background, size=4, vertex_color=None, tint_color=None, uv_layers=None,
-                               object_color=None):
+                               object_color=None, object_scale=None, shading_normal=None):
         """Render a quad filling the camera with this material in front of a uniform world color; the mean
         pixel. The file doesn't hold the radiance as rendered, so compare with ``render_constant``. uv_layers
         adds UV maps with a constant value, {name: (u, v)}; the color arguments set the corresponding layer
         or the object's color."""
         mesh = bpy.data.meshes.new('unlit_quad')
         mesh.from_pydata([(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)], [], [(0, 1, 2, 3)])
+        if shading_normal is not None:
+            mesh.polygons[0].use_smooth = True
+            mesh.normals_split_custom_set_from_vertices(
+                np.tile(np.asarray(shading_normal, np.float32), (len(mesh.vertices), 1)))
         mesh.uv_layers.new(name='TEXCOORD')
         for name, uv in (uv_layers or {}).items():
-            mesh.uv_layers.new(name=name).data.foreach_set('uv', np.tile(np.asarray(uv, np.float32), 4))
+            layer = mesh.uv_layers.get(name) or mesh.uv_layers.new(name=name)
+            layer.data.foreach_set('uv', np.tile(np.asarray(uv, np.float32), 4))
         for name, color in (('COLOR', vertex_color), ('TINT', tint_color)):
             if color is not None:
                 colors = mesh.color_attributes.new(name, 'FLOAT_COLOR', 'CORNER')
@@ -556,6 +614,8 @@ class Source2MaterialTests(unittest.TestCase):
         obj = bpy.data.objects.new('unlit_quad', mesh)
         if object_color is not None:
             obj.color = object_color
+        if object_scale is not None:
+            obj.scale = object_scale
         camera = bpy.data.objects.new('camera', bpy.data.cameras.new('camera'))
         camera.data.type = 'ORTHO'
         camera.data.ortho_scale = 1.0
@@ -883,14 +943,15 @@ class Source2MaterialTests(unittest.TestCase):
     # csgo_environment and csgo_environment_blend, against Python ports of VRF's csgo_environment.frag.
 
     def render_link(self, material, input_socket, vertex_color=(0.0, 0.0, 0.0, 0.0), tint_color=None,
-                    uv_layers=None, object_color=None):
+                    uv_layers=None, object_color=None, object_scale=None, shading_normal=None):
         """What feeds an input socket, rendered as an Emission (a float as grey). Imported meshes always have a
         COLOR attribute (zeros where the model has none), so the quad gets one."""
         emission = material.node_tree.nodes.new('ShaderNodeEmission')
         material.node_tree.links.new(input_socket.links[0].from_socket, emission.inputs['Color'])
         material.node_tree.links.new(emission.outputs[0], output_node(material).inputs['Surface'])
         return self.render_over_background(material, (0.0, 0.0, 0.0), vertex_color=vertex_color,
-                                           tint_color=tint_color, uv_layers=uv_layers, object_color=object_color)
+                                           tint_color=tint_color, uv_layers=uv_layers, object_color=object_color,
+                                           object_scale=object_scale, shading_normal=shading_normal)
 
     def assert_rendered(self, rendered, value, message=''):
         """rendered (from render_link) is what a surface emitting value renders as."""
@@ -935,6 +996,133 @@ class Source2MaterialTests(unittest.TestCase):
                                    grey + saturation * (adjusted - grey), atol=1e-9)
         np.testing.assert_allclose(color_matrix(1, 1, 1, average, (0.3, 0.3, 0.3)), np.identity(4), atol=1e-9)
         np.testing.assert_allclose(color_matrix(1, 1, 1, average), np.identity(4), atol=1e-9)
+
+    def test_environment_texture_tint_matrix_endpoints(self):
+        # MatrixColorTint2 is not an RGB multiply: any grey tint is the identity, while a fully saturated red
+        # tint collapses every input color to red. Exercise the generated nodes, not only color_matrix above.
+        color = (0.2, 0.5, 0.8)
+        for tint, expected in (((0.3, 0.3, 0.3), color), ((1.0, 0.0, 0.0), (1.0, 0.0, 0.0))):
+            material = self.environment(
+                'csgo_environment.vfx', vectors={'g_vTextureColorTint1': (*tint, 0.0)},
+                colors=[color], heights=[(0.5, 1.0, 1.0, 0.0)])
+            self.assert_link_is(material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'], expected,
+                                f'tint {tint}')
+
+    def test_environment_biplanar_projection_and_normal(self):
+        # UV set 0 projects absolute world position (-X, +Y, -Z) / 64 Source units onto the two most-facing
+        # planes, with the shipped angular weights. Its normal-map planes are reoriented into one tangent normal.
+        material = self.environment(
+            'csgo_environment.vfx', ints={'g_nUVSet1': 0},
+            vectors={'g_vTexCoordScale1': (2.0, 0.5, 0.0, 0.0)})
+        nodes, links = material.node_tree.nodes, material.node_tree.links
+        frame = next(node for node in nodes if node.bl_idname == 'ShaderNodeGroup'
+                     and node.node_tree.name == 'SourceIO Environment Biplanar Frame')
+        self.assertEqual(frame.inputs['Normal'].links[0].from_socket.name, 'Normal')
+        links.remove(frame.inputs['Position'].links[0])
+        links.remove(frame.inputs['Normal'].links[0])
+        frame.inputs['Position'].default_value = (-0.4064, 0.8128, -1.2192)
+        frame.inputs['Normal'].default_value = (0.8, 0.6, 0.0)
+        expected_uvs = {
+            'g_tColor1': (1.0, 0.375, 0.0),
+            'g_tColor1 Biplanar Y': (0.5, 0.375, 0.0),
+            'g_tColor1 Biplanar Z': (0.5, 0.25, 0.0),
+        }
+        for name, expected in expected_uvs.items():
+            self.assert_link_is(material, nodes[name].inputs['Vector'], expected, name)
+
+        def projection_image(name, rgba):
+            image = bpy.data.images.new(name, 1, 1, alpha=True, float_buffer=True)
+            image.pixels = rgba
+            image.alpha_mode = 'CHANNEL_PACKED'
+            return image
+
+        nodes['g_tColor1'].image = projection_image('biplanar_x', (1.0, 0.0, 0.0, 1.0))
+        nodes['g_tColor1 Biplanar Y'].image = projection_image('biplanar_y', (0.0, 1.0, 0.0, 1.0))
+        nodes['g_tColor1 Biplanar Z'].image = projection_image('biplanar_z', (0.0, 0.0, 1.0, 1.0))
+        raw = np.maximum((np.array((0.8, 0.6)) - 0.5773) * 2.365744, 0.0)
+        weights = raw / raw.sum()
+        self.assert_link_is(material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
+                            (weights[0], weights[1], 0.0))
+
+        material = self.environment('csgo_environment.vfx', ints={'g_nUVSet1': 0})
+        nodes = material.node_tree.nodes
+        nodes['g_tColor1'].image = projection_image('smooth_biplanar_x', (1.0, 0.0, 0.0, 1.0))
+        nodes['g_tColor1 Biplanar Y'].image = projection_image('smooth_biplanar_y', (0.0, 1.0, 0.0, 1.0))
+        nodes['g_tColor1 Biplanar Z'].image = projection_image('smooth_biplanar_z', (0.0, 0.0, 1.0, 1.0))
+        shading_normal = np.array((0.8, 0.6, 0.1))
+        shading_normal /= np.linalg.norm(shading_normal)
+        raw = np.maximum((shading_normal[:2] - 0.5773) * 2.365744, 0.0)
+        weights = raw / raw.sum()
+        rendered = self.render_link(
+            material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
+            shading_normal=shading_normal)
+        self.assert_rendered(rendered, (weights[0], weights[1], 0.0))
+
+        slope = np.array((0.2, -0.4, np.sqrt(0.8)))
+        material = self.environment(
+            'csgo_environment.vfx', ints={'g_nUVSet1': 0},
+            floats={'g_flTexCoordRotation1': 90.0, 'g_fTextureNormalContrast1': 1.5},
+            normals=[(*(slope * 0.5 + 0.5), 0.5)])
+        projected = np.array((-slope[0], slope[1], 1.0))
+        projected /= np.linalg.norm(projected)
+        expected = np.array((0.0, 0.0, 1.0)) + (projected - (0.0, 0.0, 1.0)) * 1.5
+        expected /= np.linalg.norm(expected)
+        normal_map = linked_node(self.bsdf(material, 'csgo_environment.vfx').inputs['Normal'])
+        self.assert_link_is(material, normal_map.inputs['Color'], expected * 0.5 + 0.5)
+
+    def test_environment_detail_uv_inherits_biplanar(self):
+        material = self.environment(
+            'csgo_environment.vfx', textures=('g_tNormalDetail1',),
+            ints={'F_DETAIL_NORMAL': 1, 'g_nUVSet1': 0},
+            vectors={'g_vDetailTexCoordScale1': (2.0, 0.5, 0.0, 0.0)})
+        nodes, links = material.node_tree.nodes, material.node_tree.links
+        self.assertIn('g_tNormalDetail1 Biplanar Y', nodes)
+        self.assertIn('g_tNormalDetail1 Biplanar Z', nodes)
+        frame = next(node for node in nodes if node.bl_idname == 'ShaderNodeGroup'
+                     and node.node_tree.name == 'SourceIO Environment Biplanar Frame')
+        links.remove(frame.inputs['Position'].links[0])
+        links.remove(frame.inputs['Normal'].links[0])
+        frame.inputs['Position'].default_value = (-0.4064, 0.8128, -1.2192)
+        frame.inputs['Normal'].default_value = (0.0, 0.0, 1.0)
+        self.assert_link_is(material, nodes['g_tNormalDetail1 Biplanar Z'].inputs['Vector'], (0.5, 0.25, 0.0))
+
+        material = self.environment(
+            'csgo_environment.vfx', textures=('g_tNormalDetail1',),
+            ints={'F_DETAIL_NORMAL': 1, 'g_nUVSet1': 0, 'g_nDetailUVSet1': 1})
+        self.assertNotIn('g_tNormalDetail1 Biplanar Y', material.node_tree.nodes)
+
+    def test_environment_uv_scale_by_model_axis(self):
+        cases = (
+            ({'g_nScaleTexCoordUByModelScaleAxis': 2, 'g_nScaleTexCoordVByModelScaleAxis': 3,
+              'g_nUVSet1': 1}, {'TEXCOORD': (0.1, 0.1)}, (0.3, 0.4, 0.0)),
+            ({'g_nScaleTexCoord2UByModelScaleAxis': 1, 'g_nScaleTexCoord2VByModelScaleAxis': 2,
+              'g_nUVSet1': 2}, {'TEXCOORD': (0.9, 0.9), 'TEXCOORD_1': (0.2, 0.1)}, (0.4, 0.3, 0.0)),
+        )
+        for ints, uv_layers, expected in cases:
+            material = self.environment('csgo_environment.vfx', ints=ints)
+            self.assert_link_is(
+                material, material.node_tree.nodes['g_tColor1'].inputs['Vector'], expected, str(ints),
+                uv_layers=uv_layers, object_scale=(2.0, 3.0, 4.0))
+
+    def test_environment_ambient_occlusion_levels_and_packing(self):
+        # Normally AO is color alpha. With F_ALPHA_TEST, color alpha is opacity and AO moves to height blue.
+        color = np.array((0.8, 0.5, 0.25))
+        authored = (0.2, 0.25, 0.8)
+
+        def curve(value):
+            levels = (-authored[0], -1.4427 * np.log(max(0.0001, 1 - authored[1])), 2 - authored[2])
+            return np.clip(levels[0] + (levels[2] - levels[0]) * value ** levels[1], 0, 1)
+
+        material = self.environment(
+            'csgo_environment.vfx', vectors={'g_vAmbientOcclusionLevels1': (*authored, 0.0)},
+            colors=[(*color, 0.4)])
+        self.assert_link_is(material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
+                            color * curve(0.4))
+
+        material = self.environment(
+            'csgo_environment.vfx', ints={'F_ALPHA_TEST': 1},
+            colors=[(*color, 0.7)], heights=[(0.5, 1.0, 0.3, 0.0)])
+        self.assert_link_is(material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'], color * 0.3)
 
     def test_environment_layer(self):
         # The tint mask (height green through its contrast and brightness) blends in the color adjusted with the
@@ -1118,12 +1306,13 @@ class Source2MaterialTests(unittest.TestCase):
         return weights / weights.sum()
 
     def blend_layers(self, layers=2, ints=None, floats=None, colors=None, heights=None, paint=(0.0, 0.0),
-                     softness=0.0, socket='Base Color', vertex_color=(0.0, 0.0, 0.0, 0.0), **kwargs):
+                     softness=0.0, wetness=0.0, socket='Base Color',
+                     vertex_color=(0.0, 0.0, 0.0, 0.0), **kwargs):
         material = self.environment('csgo_environment_blend.vfx', layers, ints=ints, floats=floats, colors=colors,
                                     heights=heights, **kwargs)
         return self.render_link(material, self.bsdf(material, 'csgo_environment_blend.vfx').inputs[socket],
                                 vertex_color=vertex_color,
-                                uv_layers={'TEXCOORD_4': paint, 'TEXCOORD_4_2': (0.0, softness)})
+                                uv_layers={'TEXCOORD_4': paint, 'TEXCOORD_4_2': (wetness, softness)})
 
     def test_environment_blend_legacy_weights(self):
         # Without F_USE_NEW_BLENDING: GetBlendWeights over the heights (minus their zero points), with the painted
@@ -1251,6 +1440,102 @@ class Source2MaterialTests(unittest.TestCase):
         self.assert_rendered(rendered, combined + (0.7 - combined) * weight * 0.3)
         self.assertGreater(weight, 0.2)
         self.assertLess(weight, 0.8)
+
+    def test_environment_blend_ao_and_metalness_selective(self):
+        # AO is curved per layer before combine/replace. Metalness uses its shipped Mod2x combine, not a plain
+        # weighted blend; replace=combine=0 keeps the accumulated lower value.
+        weight = self.vrf_blend_weights(0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.01)[1]
+        raw_ao1, raw_ao2, metal1, metal2 = 0.2, 0.85, 0.25, 0.7
+        authored_levels1, authored_levels2 = (0.1, 0.4, 0.9), (0.4, 0.7, 0.9)
+        combine_ao, replace_ao = 0.6, 0.25
+        combine_metal, replace_metal = 0.75, 0.4
+        floats = {'g_flAOCombine2': combine_ao, 'g_flAOReplace2': replace_ao,
+                  'g_flMetalnessCombine2': combine_metal, 'g_flMetalnessReplace2': replace_metal}
+        vectors = {'g_vAmbientOcclusionLevels1': authored_levels1,
+                   'g_vAmbientOcclusionLevels2': authored_levels2}
+        colors = [(1.0, 1.0, 1.0, raw_ao1), (1.0, 1.0, 1.0, raw_ao2)]
+        heights = [(0.5, 1.0, 1.0, metal1), (0.5, 1.0, 1.0, metal2)]
+
+        def curve_ao(raw, authored):
+            low = -authored[0]
+            power = -1.4427 * math.log(max(0.0001, 1.0 - authored[1]))
+            high = 2.0 - authored[2]
+            return np.clip(low + (high - low) * raw ** power, 0.0, 1.0)
+
+        ao1 = curve_ao(raw_ao1, authored_levels1)
+        ao2 = curve_ao(raw_ao2, authored_levels2)
+        combined_ao = ao1 * (1 + (ao2 - 1) * weight * combine_ao)
+        expected_ao = combined_ao + (ao2 - combined_ao) * weight * replace_ao
+        rendered = self.blend_layers(
+            floats=floats, vectors=vectors, colors=colors, heights=heights, paint=(0.5, 0.0))
+        self.assert_rendered(rendered, expected_ao)
+
+        raw_combined = raw_ao1 * (1 + (raw_ao2 - 1) * weight * combine_ao)
+        raw_combined += (raw_ao2 - raw_combined) * weight * replace_ao
+        runtime_levels = [
+            (-authored[0], -1.4427 * math.log(max(0.0001, 1.0 - authored[1])), 2.0 - authored[2])
+            for authored in (authored_levels1, authored_levels2)
+        ]
+        blended_levels = np.asarray(runtime_levels[0]) + (
+            np.asarray(runtime_levels[1]) - runtime_levels[0]) * weight
+        curved_after_composition = np.clip(
+            blended_levels[0] + (blended_levels[2] - blended_levels[0])
+            * raw_combined ** blended_levels[1], 0.0, 1.0)
+        self.assertGreater(abs(expected_ao - curved_after_composition), 0.1)
+
+        combined_metal = metal1 * (1 + (2 * metal2 - 1) * weight * combine_metal)
+        expected_metal = combined_metal + (metal2 - combined_metal) * weight * replace_metal
+        rendered = self.blend_layers(
+            floats=floats, vectors=vectors, colors=colors, heights=heights, paint=(0.5, 0.0),
+            socket='Metallic')
+        self.assert_rendered(rendered, expected_metal)
+        self.assertGreater(abs(expected_metal - (metal1 + (metal2 - metal1) * weight)), 0.05)
+        rendered = self.blend_layers(
+            floats={'g_flMetalnessReplace2': 0.0}, colors=colors, heights=heights, paint=(0.5, 0.0),
+            socket='Metallic')
+        self.assert_rendered(rendered, metal1)
+
+        colors.append((1.0, 1.0, 1.0, 0.5))
+        heights.append((0.5, 1.0, 1.0, 0.9))
+        ints = {'F_ENABLE_LAYER_3': 1, 'F_USE_NEW_BLENDING': 1}
+        floats = {'g_flAOCombine3': 1.0, 'g_flAOReplace3': 0.0, 'g_flMetalnessReplace3': 0.0}
+        rendered = self.blend_layers(3, ints=ints, floats=floats, colors=colors, heights=heights,
+                                     paint=(0.0, 1.0))
+        self.assert_rendered(rendered, raw_ao1 * 0.5)
+        rendered = self.blend_layers(3, ints=ints, floats=floats, colors=colors, heights=heights,
+                                     paint=(0.0, 1.0), socket='Metallic')
+        self.assert_rendered(rendered, metal1)
+
+    def test_environment_unsupported_dynamic_effects_are_noops(self):
+        # Exact wetness needs live weather state, bevel needs screen-space seam derivatives, and range softness
+        # needs texture LOD/fwidth. Their authored controls intentionally do not drive risky node proxies.
+        color = (0.4, 0.6, 0.2)
+        material = self.environment('csgo_environment.vfx', ints={'F_WETNESS': 1}, colors=[color])
+        dry = self.render_link(
+            material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
+            uv_layers={'TEXCOORD_4_2': (0.0, 0.0)})
+        painted = self.render_link(
+            material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
+            uv_layers={'TEXCOORD_4_2': (1.0, 0.0)})
+        np.testing.assert_allclose(painted, dry, atol=1e-6)
+
+        black_white = [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)]
+        dry = self.blend_layers(ints={'F_WETNESS': 1}, colors=black_white, paint=(0.5, 0.0), wetness=0.0)
+        painted = self.blend_layers(ints={'F_WETNESS': 1}, colors=black_white, paint=(0.5, 0.0), wetness=1.0)
+        np.testing.assert_allclose(painted, dry, atol=1e-6)
+
+        ints = {'F_USE_NEW_BLENDING': 1, 'F_BLEND_EFFECTS_2': 1}
+        normal_a = self.blend_layers(ints=ints, floats={'g_flBevelStrength2': -1.0},
+                                     colors=black_white, paint=(0.5, 0.0), socket='Normal')
+        normal_b = self.blend_layers(ints=ints, floats={'g_flBevelStrength2': 1.0},
+                                     colors=black_white, paint=(0.5, 0.0), socket='Normal')
+        np.testing.assert_allclose(normal_b, normal_a, atol=1e-6)
+
+        near = self.blend_layers(
+            floats={'g_flBlendSoftnessDistanceModifierStrength': 0.0}, colors=black_white, paint=(0.5, 0.0))
+        far = self.blend_layers(
+            floats={'g_flBlendSoftnessDistanceModifierStrength': 10.0}, colors=black_white, paint=(0.5, 0.0))
+        np.testing.assert_allclose(far, near, atol=1e-6)
 
     def test_environment_blend_shared_color_overlay(self):
         # F_SHARED_COLOR_OVERLAY: o = 2·overlay - 1 scales the color by max(0, 1 + (1 - (1 - max(0, o))^B)·B +

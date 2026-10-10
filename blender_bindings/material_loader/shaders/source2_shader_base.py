@@ -352,13 +352,13 @@ class Source2ShaderBase(ShaderBase):
         return multiply.outputs[0]
 
     def _model_tint(self):
-        """The model tint's color: the mesh's TINT colors (draw-call tints) on tinted meshes, else the object color."""
+        """The linear model tint: the mesh's authored-sRGB TINT colors on tinted meshes, else the object color."""
         if self.tinted:
             model_tint = self.create_node(Nodes.ShaderNodeVertexColor)
             model_tint.layer_name = "TINT"
         else:
             model_tint = self.create_node(Nodes.ShaderNodeObjectInfo)
-        return model_tint.outputs["Color"]
+        return self._srgb_to_linear(model_tint.outputs["Color"])
 
     def _tinted(self, color_output):
         """The color times g_vColorTint and the model tint (by g_flModelTintAmount, default 1)."""

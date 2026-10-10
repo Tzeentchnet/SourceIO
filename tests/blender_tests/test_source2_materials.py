@@ -7,7 +7,7 @@ import numpy as np
 
 from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
 from SourceIO.blender_bindings.material_loader.shader_base import (MIX_A, MIX_B, MIX_FACTOR, ALPHA_CLIP_LABEL,
-                                                                  unfilter_alpha_clips)
+                                                                  ExtraMaterialParameters, unfilter_alpha_clips)
 from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
 from SourceIO.blender_bindings.source2.vmat_loader import load_material
 from SourceIO.library.source2.blocks.texture_data import TextureImportSettings
@@ -39,9 +39,10 @@ class FakeMaterial(CompiledMaterialResource):
         return None
 
 
-def build(shader, textures=(), **params):
+def build(shader, textures=(), tinted=False, **params):
     material = bpy.data.materials.new(shader)
-    ShaderRegistry.source2_create_nodes(None, material, FakeMaterial(shader, textures, **params), {})
+    extra_parameters = {ExtraMaterialParameters.USE_OBJECT_TINT: tinted}
+    ShaderRegistry.source2_create_nodes(None, material, FakeMaterial(shader, textures, **params), extra_parameters)
     return material
 
 
@@ -79,6 +80,24 @@ class Source2MaterialTests(unittest.TestCase):
         for image in list(bpy.data.images):
             bpy.data.images.remove(image)
 
+    def assert_model_tint_source(self, socket, tinted, amount=None):
+        tint = linked_node(socket)
+        if amount is not None:
+            self.assertEqual(tint.bl_idname, 'ShaderNodeMix')
+            self.assertEqual(tint.blend_type, 'MIX')
+            self.assertAlmostEqual(tint.inputs[MIX_FACTOR].default_value, amount, places=6)
+            self.assertEqual(tuple(tint.inputs[MIX_A].default_value), (1.0, 1.0, 1.0, 1.0))
+            tint = linked_node(tint.inputs[MIX_B])
+        self.assertEqual(tint.bl_idname, 'ShaderNodeGroup')
+        self.assertEqual(tint.node_tree.name, 'SourceIO sRGB To Linear')
+        source_node = linked_node(tint.inputs['Color'])
+        if tinted:
+            self.assertEqual(source_node.bl_idname, 'ShaderNodeVertexColor')
+            self.assertEqual(source_node.layer_name, 'TINT')
+        else:
+            self.assertEqual(source_node.bl_idname, 'ShaderNodeObjectInfo')
+        return tint
+
     def test_complex_metalness_texture_is_green_channel(self):
         material = build('csgo_complex.vfx', ('g_tColor', 'g_tNormal', 'g_tMetalness', 'g_tAmbientOcclusion'),
                          ints={'F_METALNESS_TEXTURE': 1})
@@ -115,6 +134,67 @@ class Source2MaterialTests(unittest.TestCase):
         material = build('csgo_complex.vfx', ('g_tColor',), vectors={'g_vColorTint': (0.5, 0.25, 1.0, 0.0)})
         tint = shader_node(material, 'csgo_complex.vfx').inputs['g_vColorTint'].default_value
         self.assertEqual(tuple(tint), (0.5, 0.25, 1.0, 1.0))
+
+    def test_model_tint_sources_and_amounts(self):
+        for shader_name in ('csgo_complex.vfx', 'csgo_vertexlitgeneric.vfx'):
+            for tinted in (False, True):
+                material = build(shader_name, ('g_tColor',), tinted=tinted)
+                shader = shader_node(material, shader_name)
+                self.assert_model_tint_source(shader.inputs['m_vColorTint'], tinted)
+                self.assertAlmostEqual(shader.inputs['g_flModelTintAmount'].default_value, 1.0, places=6)
+            material = build(shader_name, ('g_tColor',), floats={'g_flModelTintAmount': 0.35})
+            self.assertAlmostEqual(
+                shader_node(material, shader_name).inputs['g_flModelTintAmount'].default_value, 0.35, places=6)
+
+        for tinted in (False, True):
+            material = build('csgo_lightmappedgeneric.vfx', ('g_tColor',), tinted=tinted)
+            self.assert_model_tint_source(
+                shader_node(material, 'csgo_lightmappedgeneric.vfx').inputs['ModelTint'], tinted, 1.0)
+        material = build('csgo_lightmappedgeneric.vfx', ('g_tColor',),
+                         floats={'g_flModelTintAmount': 0.35})
+        self.assert_model_tint_source(
+            shader_node(material, 'csgo_lightmappedgeneric.vfx').inputs['ModelTint'], False, 0.35)
+
+        for tinted in (False, True):
+            material = build('csgo_static_overlay.vfx', ('g_tColor',), tinted=tinted, ints={'F_LIT': 1})
+            shader = shader_node(material, 'csgo_static_overlay.vfx')
+            self.assert_model_tint_source(shader.inputs['m_vColorTint'], tinted)
+            self.assertAlmostEqual(shader.inputs['g_flModelTintAmount'].default_value, 1.0, places=6)
+        material = build('csgo_static_overlay.vfx', ('g_tColor',), ints={'F_LIT': 1},
+                         floats={'g_flModelTintAmount': 0.35})
+        self.assertAlmostEqual(
+            shader_node(material, 'csgo_static_overlay.vfx').inputs['g_flModelTintAmount'].default_value,
+            0.35, places=6)
+
+    def test_model_tint_is_decoded_once(self):
+        object_tint = np.array((0.75, 0.5, 0.25))
+        draw_tint = np.array((0.2, 0.6, 0.9))
+        for shader_name, input_name in (('csgo_complex.vfx', 'm_vColorTint'),
+                                        ('csgo_vertexlitgeneric.vfx', 'm_vColorTint'),
+                                        ('csgo_lightmappedgeneric.vfx', 'ModelTint')):
+            for tinted in (False, True):
+                material = build(shader_name, ('g_tColor',), tinted=tinted)
+                socket = shader_node(material, shader_name).inputs[input_name]
+                expected = self.linear(draw_tint if tinted else object_tint)
+                self.assert_link_is(material, socket, expected, f'{shader_name} tinted={tinted}',
+                                    object_color=(*object_tint, 1.0), tint_color=(*draw_tint, 1.0))
+
+        material = build('csgo_lightmappedgeneric.vfx', ('g_tColor',), tinted=True,
+                         floats={'g_flModelTintAmount': 0.35})
+        expected = 1.0 + (self.linear(draw_tint) - 1.0) * 0.35
+        self.assert_link_is(material, shader_node(material, 'csgo_lightmappedgeneric.vfx').inputs['ModelTint'],
+                            expected, object_color=(*object_tint, 1.0), tint_color=(*draw_tint, 1.0))
+
+        global_tint = np.array((0.8, 0.6, 1.0))
+        for tinted in (False, True):
+            material = build('csgo_static_overlay.vfx', ('g_tColor',), tinted=tinted,
+                             floats={'g_flModelTintAmount': 0.35},
+                             vectors={'g_vColorTint': (*global_tint, 0.0)})
+            self.set_color(material, 'g_tColor', (1.0, 1.0, 1.0, 1.0))
+            selected = draw_tint if tinted else object_tint
+            expected = global_tint * (1.0 + (self.linear(selected) - 1.0) * 0.35)
+            self.assert_renders_as(material, (0.0, 0.0, 0.0), expected, f'overlay tinted={tinted}',
+                                   tint_color=(*draw_tint, 1.0), object_color=(*object_tint, 1.0))
 
     def test_translucent_flag(self):
         material = build('csgo_complex.vfx', ('g_tColor',), ints={'F_TRANSLUCENT': 1})
@@ -457,18 +537,21 @@ class Source2MaterialTests(unittest.TestCase):
         self.assertEqual(linked_node(mask.inputs[MIX_B]), tint)
 
     @staticmethod
-    def render_over_background(material, background, size=4, vertex_color=None, uv_layers=None, object_color=None):
+    def render_over_background(material, background, size=4, vertex_color=None, tint_color=None, uv_layers=None,
+                               object_color=None):
         """Render a quad filling the camera with this material in front of a uniform world color; the mean
         pixel. The file doesn't hold the radiance as rendered, so compare with ``render_constant``. uv_layers
-        adds UV maps with a constant value, {name: (u, v)}; object_color sets the quad's object color."""
+        adds UV maps with a constant value, {name: (u, v)}; the color arguments set the corresponding layer
+        or the object's color."""
         mesh = bpy.data.meshes.new('unlit_quad')
         mesh.from_pydata([(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)], [], [(0, 1, 2, 3)])
         mesh.uv_layers.new(name='TEXCOORD')
         for name, uv in (uv_layers or {}).items():
             mesh.uv_layers.new(name=name).data.foreach_set('uv', np.tile(np.asarray(uv, np.float32), 4))
-        if vertex_color is not None:
-            colors = mesh.color_attributes.new('COLOR', 'FLOAT_COLOR', 'CORNER')
-            colors.data.foreach_set('color', np.tile(np.asarray(vertex_color, np.float32), len(colors.data)))
+        for name, color in (('COLOR', vertex_color), ('TINT', tint_color)):
+            if color is not None:
+                colors = mesh.color_attributes.new(name, 'FLOAT_COLOR', 'CORNER')
+                colors.data.foreach_set('color', np.tile(np.asarray(color, np.float32), len(colors.data)))
         mesh.materials.append(material)
         obj = bpy.data.objects.new('unlit_quad', mesh)
         if object_color is not None:
@@ -519,8 +602,10 @@ class Source2MaterialTests(unittest.TestCase):
         material.node_tree.links.new(emission.outputs[0], nodes.new('ShaderNodeOutputMaterial').inputs['Surface'])
         return cls.render_over_background(material, background)
 
-    def assert_renders_as(self, material, background, value, message='', vertex_color=None):
-        np.testing.assert_allclose(self.render_over_background(material, background, vertex_color=vertex_color),
+    def assert_renders_as(self, material, background, value, message='', vertex_color=None, tint_color=None,
+                          object_color=None):
+        np.testing.assert_allclose(self.render_over_background(
+            material, background, vertex_color=vertex_color, tint_color=tint_color, object_color=object_color),
                                    self.render_constant(value, background), atol=2e-3, err_msg=message)
 
     @staticmethod
@@ -580,6 +665,11 @@ class Source2MaterialTests(unittest.TestCase):
     def srgb(linear):
         linear = np.asarray(linear, dtype=np.float64)
         return np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
+
+    @staticmethod
+    def linear(srgb):
+        srgb = np.asarray(srgb, dtype=np.float64)
+        return np.where(srgb <= 0.04045, srgb / 12.92, ((srgb + 0.055) / 1.055) ** 2.4)
 
     def test_static_overlay_blend_modes(self):
         # Unlit overlays (F_LIT 0), a color C with alpha A, opacity scale s over a background B: Opaque C,
@@ -792,15 +882,15 @@ class Source2MaterialTests(unittest.TestCase):
 
     # csgo_environment and csgo_environment_blend, against Python ports of VRF's csgo_environment.frag.
 
-    def render_link(self, material, input_socket, vertex_color=(0.0, 0.0, 0.0, 0.0), uv_layers=None,
-                    object_color=None):
+    def render_link(self, material, input_socket, vertex_color=(0.0, 0.0, 0.0, 0.0), tint_color=None,
+                    uv_layers=None, object_color=None):
         """What feeds an input socket, rendered as an Emission (a float as grey). Imported meshes always have a
         COLOR attribute (zeros where the model has none), so the quad gets one."""
         emission = material.node_tree.nodes.new('ShaderNodeEmission')
         material.node_tree.links.new(input_socket.links[0].from_socket, emission.inputs['Color'])
         material.node_tree.links.new(emission.outputs[0], output_node(material).inputs['Surface'])
         return self.render_over_background(material, (0.0, 0.0, 0.0), vertex_color=vertex_color,
-                                           uv_layers=uv_layers, object_color=object_color)
+                                           tint_color=tint_color, uv_layers=uv_layers, object_color=object_color)
 
     def assert_rendered(self, rendered, value, message=''):
         """rendered (from render_link) is what a surface emitting value renders as."""
@@ -813,13 +903,14 @@ class Source2MaterialTests(unittest.TestCase):
 
     @staticmethod
     def environment(shader, layers=1, textures=(), ints=None, floats=None, vectors=None, colors=None, heights=None,
-                    normals=None, average=(1.0, 1.0, 1.0)):
+                    normals=None, average=(1.0, 1.0, 1.0), tinted=False):
         """An environment material with g_tColor<n>, g_tHeight<n>, g_tNormal<n> per layer, set to colors[n - 1]
         (RGB), heights[n - 1] (height, tint mask, AO, metalness) and normals[n - 1] (normal, roughness)."""
         from unittest import mock
         slots = [f'{kind}{n}' for n in range(1, layers + 1) for kind in ('g_tColor', 'g_tHeight', 'g_tNormal')]
         with mock.patch.object(Source2ShaderBase, '_texture_average_color', return_value=average):
-            material = build(shader, tuple(slots) + tuple(textures), ints=ints, floats=floats, vectors=vectors)
+            material = build(shader, tuple(slots) + tuple(textures), tinted=tinted,
+                             ints=ints, floats=floats, vectors=vectors)
         for n in range(1, layers + 1):
             for slot, values, default in ((f'g_tColor{n}', colors, (1.0, 1.0, 1.0)),
                                           (f'g_tHeight{n}', heights, (0.5, 1.0, 1.0, 0.0)),
@@ -883,16 +974,30 @@ class Source2MaterialTests(unittest.TestCase):
                             color * (1 + (vertex - 1) * raw_mask), vertex_color=paint)
 
     def test_environment_model_tint(self):
-        # The model tint (the object color, stored sRGB) is colorized into the tint mask: VRF's ColorizeTint by
-        # g_flModelTintAmount × (1 - min(tint)) × tint mask; off with g_bModelTint1 0. The color ends clamped.
-        color, raw_mask, tint = np.array((0.5, 0.25, 0.75)), 0.7, np.array((0.9, 0.5, 0.3))
-        linear_tint = ((tint + 0.055) / 1.055) ** 2.4
-        for ints, amount in (({}, 0.8 * (1 - linear_tint.min()) * raw_mask), ({'g_bModelTint1': 0}, 0.0)):
-            material = self.environment('csgo_environment.vfx', ints=ints, floats={'g_flModelTintAmount': 0.8},
+        # The selected model tint (TINT on tinted draws, object color otherwise) is decoded from sRGB once, then
+        # colorized into the tint mask by g_flModelTintAmount × (1 - min(tint)) × tint mask.
+        color, raw_mask = np.array((0.5, 0.25, 0.75)), 0.7
+        tint, other_tint = np.array((0.9, 0.5, 0.3)), np.array((0.2, 0.8, 0.4))
+        linear_tint = self.linear(tint)
+        cases = ((False, {}, {}, 1.0), (True, {}, {'g_flModelTintAmount': 0.8}, 0.8),
+                 (False, {'g_bModelTint1': 0}, {'g_flModelTintAmount': 0.8}, 0.0))
+        for tinted, ints, floats, scale in cases:
+            amount = scale * (1 - linear_tint.min()) * raw_mask
+            material = self.environment('csgo_environment.vfx', ints=ints, floats=floats, tinted=tinted,
                                         colors=[color], heights=[(0.5, raw_mask, 1.0, 0.0)])
             self.assert_link_is(material, self.bsdf(material, 'csgo_environment.vfx').inputs['Base Color'],
-                                self.vrf_colorize(color, linear_tint, amount), f'{ints}',
-                                object_color=(*tint, 1.0))
+                                self.vrf_colorize(color, linear_tint, amount), f'tinted={tinted} {ints} {floats}',
+                                object_color=(*(other_tint if tinted else tint), 1.0),
+                                tint_color=(*(tint if tinted else other_tint), 1.0))
+
+        material = self.environment('csgo_environment_blend.vfx', 2, tinted=True,
+                                    floats={'g_flModelTintAmount': 0.8}, colors=[color, color],
+                                    heights=[(0.5, raw_mask, 1.0, 0.0)] * 2)
+        amount = 0.8 * (1 - linear_tint.min()) * raw_mask
+        self.assert_link_is(material, self.bsdf(material, 'csgo_environment_blend.vfx').inputs['Base Color'],
+                            self.vrf_colorize(color, linear_tint, amount), 'environment blend TINT',
+                            object_color=(*other_tint, 1.0), tint_color=(*tint, 1.0),
+                            uv_layers={'TEXCOORD_4': (0.0, 0.0), 'TEXCOORD_4_2': (0.0, 0.0)})
 
     @staticmethod
     def rotate_and_contrast(normal, rotation, contrast):

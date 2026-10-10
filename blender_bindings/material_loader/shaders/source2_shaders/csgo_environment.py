@@ -175,8 +175,7 @@ class CSGOEnvironment(Source2ShaderBase):
         model_tint = (1.0, 1.0, 1.0)
         tint_amount = self._float("g_flModelTintAmount", 1.0)
         if self._int(f"g_bModelTint{n}", 1) and tint_amount:
-            # The tint is stored as authored (sRGB); the vertex shader decodes it.
-            model_tint = m.vector(self._srgb_to_linear(self._model_tint()))
+            model_tint = m.vector(self._model_tint())
             amount = tint_amount * (1.0 - m.min3(model_tint)) * tint_mask
         return group_call(m, _colorize_tint_group(), {'Color': color, 'Tint': model_tint, 'Amount': amount})['Color']
 

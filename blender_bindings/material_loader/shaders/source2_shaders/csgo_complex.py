@@ -143,16 +143,10 @@ class CSGOComplex(Source2ShaderBase):
         tint = material_data.get_vector_property("g_vColorTint", (1.0, 1.0, 1.0, 0.0))
         shader.inputs["g_vColorTint"].default_value = (*tint[:3], 1.0)
 
-        if self.tinted:
-            vcolor_node = self.create_node(Nodes.ShaderNodeVertexColor)
-            vcolor_node.layer_name = "TINT"
-            self.connect_nodes(vcolor_node.outputs[0], shader.inputs["m_vColorTint"])
-        else:
-            object_info_node = self.create_node(Nodes.ShaderNodeObjectInfo)
-            self.connect_nodes(object_info_node.outputs["Color"], shader.inputs["m_vColorTint"])
+        self.connect_nodes(self._model_tint(), shader.inputs["m_vColorTint"])
 
         shader.inputs["g_flModelTintAmount"].default_value = material_data.get_float_property("g_flModelTintAmount",
-                                                                                              0.0)
+                                                                                              1.0)
 
         if metalness_split is not None:
             self.connect_nodes(metalness_split.outputs[1], shader.inputs["TextureMetalness"])

@@ -154,11 +154,11 @@ class CSGOLightmappedGeneric(Source2ShaderBase):
 
         self._connect_layer_blend(shader)
 
-        # TODO: tinting
-
-        if self.tinted:
-            object_color = self.create_node(Nodes.ShaderNodeObjectInfo)
-            self.connect_nodes(object_color.outputs["Color"], shader.inputs["ModelTint"])
+        model_tint = self.create_mix_color('MIX')
+        model_tint.inputs[MIX_FACTOR].default_value = material_data.get_float_property("g_flModelTintAmount", 1.0)
+        model_tint.inputs[MIX_A].default_value = (1.0, 1.0, 1.0, 1.0)
+        self.connect_nodes(self._model_tint(), model_tint.inputs[MIX_B])
+        self.connect_nodes(model_tint.outputs[MIX_RESULT], shader.inputs["ModelTint"])
 
         if material_data.get_int_property("F_ALPHA_TEST", 0):
             self.set_blend_mode('CLIP')

@@ -63,8 +63,19 @@ def import_animations(content_manager: ContentManager, model_resource: CompiledR
 
     binding = _ArmatureBinding(armature_obj, skeleton)
     factory = ActionCurveFactory(model_resource.name, armature_obj, legacy_behavior=True)
-    created = _create_actions(factory, binding, animations, scale, apply_root_motion)
-    created += _create_actions(factory, binding, clips, scale, apply_root_motion)
+    animation_data = armature_obj.animation_data
+    previous_action = animation_data.action if animation_data else None
+    previous_slot = animation_data.action_slot if animation_data else None
+    created = []
+    try:
+        created = _create_actions(factory, binding, animations, scale, apply_root_motion)
+        created += _create_actions(factory, binding, clips, scale, apply_root_motion)
+    finally:
+        animation_data = armature_obj.animation_data
+        if animation_data is not None:
+            animation_data.action = previous_action
+            if previous_action is not None and previous_slot is not None:
+                animation_data.action_slot = previous_slot
     logger.info(f"Imported {len(created)} animation(s) for {model_resource.name}"
                 + (f", {len(clips)} of them graph clips" if clips else ""))
     return created

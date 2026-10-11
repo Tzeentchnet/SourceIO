@@ -88,6 +88,7 @@ class SOURCEIO_OT_VMDLImport(Source2TextureSettingsMixin, ImportOperatorHelper):
         else:
             deserialize_mounted_content(content_manager)
         texture_settings = self.texture_settings(context)
+        active_armature = None
 
         for n, file in enumerate(self.files):
             print(f"Loading {n + 1}/{len(self.files)}")
@@ -101,6 +102,14 @@ class SOURCEIO_OT_VMDLImport(Source2TextureSettingsMixin, ImportOperatorHelper):
 
             master_collection = get_new_unique_collection(model_resource.name, bpy.context.scene.collection)
             put_into_collections(container, TinyPath(model_resource.name).stem, master_collection, False)
+            if container.armature is not None:
+                active_armature = container.armature
+
+        if active_armature is not None:
+            for obj in context.selected_objects:
+                obj.select_set(False)
+            active_armature.select_set(True)
+            context.view_layer.objects.active = active_armature
 
         return {'FINISHED'}
 

@@ -57,6 +57,10 @@ def put_into_collections(model_container, model_name, parent_collection=None, bo
 
     for group_name, objs in model_container.bodygroups.items():
         group_collection = get_new_unique_collection(group_name, master_collection)
+        if model_container.default_bodygroups is not None:
+            visible = group_name in model_container.default_bodygroups
+            group_collection.hide_viewport = not visible
+            group_collection.hide_render = not visible
         for obj in objs:
             group_collection.objects.link(obj)
 
@@ -203,8 +207,14 @@ def create_meshes(content_manager: ContentManager, model_resource: CompiledModel
     lod_count = len(data['m_lodGroupSwitchDistances'])
 
     object_groups = []
-    if data['m_meshGroups']:
-        for i, group in enumerate(data['m_meshGroups']):
+    mesh_groups = list(map(str, data['m_meshGroups']))
+    if mesh_groups:
+        default_mask = int(data.get('m_nDefaultMeshGroupMask', (1 << len(mesh_groups)) - 1))
+        container.default_bodygroups = {
+            group for i, group in enumerate(mesh_groups)
+            if default_mask & (1 << i)
+        }
+        for i, group in enumerate(mesh_groups):
             group_masks[2 ** i] = group
     else:
         group_masks[0xFFFF] = model_resource.name + '_ALL'

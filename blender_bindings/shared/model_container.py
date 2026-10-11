@@ -12,3 +12,4 @@ class ModelContainer:
     attachments: list[bpy.types.Object] = field(default_factory=list)
     armature: Optional[bpy.types.Object] = None
     master_collection: Optional[bpy.types.Collection] = None
+    default_bodygroups: Optional[set[str]] = None

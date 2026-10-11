@@ -3,6 +3,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import bpy
@@ -14,7 +15,10 @@ from SourceIO.blender_bindings.operators.source2_animation_operators import (
     _discover_companion_groups,
     _matching_group,
 )
+from SourceIO.blender_bindings.shared.model_container import ModelContainer
+from SourceIO.blender_bindings.source2 import animation_loader as source2_animation_loader
 from SourceIO.blender_bindings.source2.animation_loader import import_sequence_animations
+from SourceIO.blender_bindings.source2.vmdl_loader import put_into_collections
 from SourceIO.blender_bindings.utils.bpy_utils import edit_armature
 from SourceIO.library.source2.animation import (
     AnimationClip,
@@ -107,6 +111,50 @@ class Source2AnimationBindingTests(unittest.TestCase):
         self.mesh_obj.select_set(True)
         bpy.context.view_layer.objects.active = self.mesh_obj
         self.assertFalse(SOURCEIO_OT_Source2AnimationImport.poll(bpy.context))
+
+    def test_model_import_restores_the_previous_action(self):
+        skeleton = Skeleton(
+            ['root'],
+            np.array([-1], dtype=np.int32),
+            np.zeros((1, 3), dtype=np.float32),
+            np.array([(0, 0, 0, 1)], dtype=np.float32),
+            np.zeros(1, dtype=np.int64),
+        )
+        animation = SequenceAnimation('idle', 30.0, 1)
+        with patch.object(source2_animation_loader, 'model_skeleton', return_value=skeleton), \
+                patch.object(source2_animation_loader, 'load_model_animations', return_value=[animation]):
+            created = source2_animation_loader.import_animations(
+                None, SimpleNamespace(name='character'), self.armature, 1.0
+            )
+            self.assertEqual(len(created), 1)
+            self.assertIsNone(self.armature.animation_data.action)
+
+            previous_action = bpy.data.actions.new('previous')
+            previous_slot = previous_action.slots.new(id_type='OBJECT', name=self.armature.name)
+            self.armature.animation_data.action = previous_action
+            self.armature.animation_data.action_slot = previous_slot
+            source2_animation_loader.import_animations(
+                None, SimpleNamespace(name='character'), self.armature, 1.0
+            )
+
+        self.assertIs(self.armature.animation_data.action, previous_action)
+        self.assertEqual(self.armature.animation_data.action_slot, previous_slot)
+
+    def test_non_default_mesh_groups_start_hidden(self):
+        body = bpy.data.objects.new('thirdperson', bpy.data.meshes.new('thirdperson'))
+        arms = bpy.data.objects.new('firstperson', bpy.data.meshes.new('firstperson'))
+        container = ModelContainer(
+            [body, arms],
+            {'thirdperson_default': [body], 'firstperson_default': [arms]},
+            armature=self.armature,
+            default_bodygroups={'thirdperson_default'},
+        )
+        put_into_collections(container, 'character')
+
+        self.assertFalse(bpy.data.collections['thirdperson_default'].hide_viewport)
+        self.assertFalse(bpy.data.collections['thirdperson_default'].hide_render)
+        self.assertTrue(bpy.data.collections['firstperson_default'].hide_viewport)
+        self.assertTrue(bpy.data.collections['firstperson_default'].hide_render)
 
     def test_user_generic_and_unknown_channels_become_inspectable_curves(self):
         values = np.array([0.25, 0.75], dtype='<f4').tobytes()

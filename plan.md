@@ -9,7 +9,7 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: remove completed items, update the validation baseline, and add concrete follow-ups found along the way. Completed implementation history belongs in the local Git-ignored planning archive (`docs/modernization-history.md`, rounds 1–25) rather than this file; "round N" below refers to its sections.
 
-State (2026-10-09): [5.11.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.11.0-blender5.2) is the current release. `origin/master` and the release tag point to the validated 5.11.0 release commit. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
+State (2026-10-11): [5.11.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.11.1-blender5.2) is the current release. `origin/master` and the release tag point to the validated 5.11.1 release commit. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
 
 Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
 
@@ -19,6 +19,7 @@ blender -b --factory-startup --python tests/e2e/run_sample_imports.py           
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s)
+blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 478 pass, 2 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
@@ -29,7 +30,7 @@ cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 61 pass; 42 shader follow-up tests in six adjacent modules, 103 total
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 11 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 9 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 6 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_sounds', argv=['x'], exit=False)"   # 2 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import unittest; unittest.main(module='SourceIO.tests.blender_tests.test_source2_exports', argv=['x'], exit=False)"   # 3 pass
 ```

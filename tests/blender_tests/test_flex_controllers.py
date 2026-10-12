@@ -1,7 +1,7 @@
 """Run with a Python environment providing bpy: python -m unittest ...test_flex_controllers.
 
-Covers the object-level Flex controllers panel data that create_flex_drivers fills, the operators behind it,
-and the combo driver shortcut (a product of component flexes, not clamped).
+Covers the object-level Flex controllers panel data that create_flex_drivers fills, non-destructive stereo
+adjustments, the operators behind the panel, and the unclamped combo driver shortcut.
 """
 import tempfile
 import unittest
@@ -12,6 +12,13 @@ import bpy
 
 from SourceIO.blender_bindings import bindings
 from SourceIO.blender_bindings.models.common import create_flex_drivers
+from SourceIO.blender_bindings.operators.flex_operators import (
+    _FlexDragSession,
+    _flex_drag_terminal_action,
+    balance_multipliers,
+    SOURCEIO_OT_FlexSliderHandler,
+    stereo_delta_values,
+)
 from SourceIO.library.models.mdl.flex_expressions import FetchController, Mul
 
 _registered_here = False
@@ -101,58 +108,129 @@ class FlexControllerTests(unittest.TestCase):
         self.evaluate()
         self.assertAlmostEqual(self.obj.data.shape_keys.key_blocks['a_b'].value, 0.75, places=5)
 
-    def test_stereo_slider_sets_both_sides_by_balance(self):
+    def test_balance_multipliers_match_sfm(self):
+        self.assertEqual(balance_multipliers(-1.0), (1.0, 0.0))
+        self.assertEqual(balance_multipliers(-0.5), (1.0, 0.5))
+        self.assertEqual(balance_multipliers(0.0), (1.0, 1.0))
+        self.assertEqual(balance_multipliers(0.5), (0.5, 1.0))
+        self.assertEqual(balance_multipliers(1.0), (0.0, 1.0))
+
+    def test_stereo_drag_preserves_asymmetry_and_uses_snapshot(self):
         data, scene = self.obj.data, bpy.context.scene
         stereo = self.obj.flex_controllers['cs']
-
-        scene.sourceio_flex_lr_balance = 0.0
-        stereo.value = 0.25
-        self.assertAlmostEqual(data[stereo.L], 0.25)
-        self.assertAlmostEqual(data[stereo.R], 0.25)
-        self.assertAlmostEqual(stereo.value, 0.25)
-
-        scene.sourceio_flex_lr_balance = -1.0  # left only: the right side is left alone
-        stereo.value = 0.75
-        self.assertAlmostEqual(data[stereo.L], 0.75)
-        self.assertAlmostEqual(data[stereo.R], 0.25)
-        self.assertAlmostEqual(stereo.value, 0.75)  # reads the side the balance gives in full
-
-        scene.sourceio_flex_lr_balance = -0.5  # left in full, right at half
-        stereo.value = 0.5
-        self.assertAlmostEqual(data[stereo.L], 0.5)
-        self.assertAlmostEqual(data[stereo.R], 0.25)
-        self.assertAlmostEqual(stereo.value, 0.5)
-
-        scene.sourceio_flex_lr_balance = 0.0
         data[stereo.L], data[stereo.R] = 0.25, 0.6
-        self.assertAlmostEqual(stereo.value, 0.6)  # both in full: the larger side
 
-    def test_stereo_slider_is_absolute_and_keys(self):
-        # The value stays where it is set (the old additive slider reset to 0 on release and lost the change).
+        session = _FlexDragSession(self.obj, stereo, scene)
+        self.assertEqual(session.apply(0.1, 0.0), (stereo.L, stereo.R))
+        self.assertAlmostEqual(data[stereo.L], 0.35)
+        self.assertAlmostEqual(data[stereo.R], 0.7)
+
+        session.apply(0.2, 0.0)
+        self.assertAlmostEqual(data[stereo.L], 0.45)
+        self.assertAlmostEqual(data[stereo.R], 0.8)
+
+    def test_stereo_drag_respects_balance_and_cancel(self):
         data, scene = self.obj.data, bpy.context.scene
         stereo = self.obj.flex_controllers['cs']
-        scene.sourceio_flex_lr_balance = 0.0
+        data[stereo.L], data[stereo.R] = 0.25, 0.6
+
+        session = _FlexDragSession(self.obj, stereo, scene)
+        self.assertEqual(session.apply(0.2, -1.0), (stereo.L,))
+        self.assertAlmostEqual(data[stereo.L], 0.45)
+        self.assertAlmostEqual(data[stereo.R], 0.6)
+        self.assertTrue(session.cancel())
+        self.assertAlmostEqual(data[stereo.L], 0.25)
+        self.assertAlmostEqual(data[stereo.R], 0.6)
+
+        session = _FlexDragSession(self.obj, stereo, scene)
+        self.assertEqual(session.apply(0.2, -0.5), (stereo.L, stereo.R))
+        self.assertAlmostEqual(data[stereo.L], 0.45)
+        self.assertAlmostEqual(data[stereo.R], 0.7)
+
+    def test_drag_session_rejects_a_different_active_object(self):
+        session = _FlexDragSession(self.obj, self.obj.flex_controllers['cs'], bpy.context.scene)
+        self.assertTrue(session.matches_context(SimpleNamespace(object=self.obj)))
+
+        other = bpy.data.objects.new('other', bpy.data.meshes.new('other'))
+        bpy.context.scene.collection.objects.link(other)
+        self.assertFalse(session.matches_context(SimpleNamespace(object=other)))
+        self.assertFalse(session.matches_context(SimpleNamespace(object=None)))
+        bpy.data.objects.remove(other, do_unlink=True)
+
+    def test_stereo_commit_keys_only_changed_side(self):
+        data, scene = self.obj.data, bpy.context.scene
+        stereo = self.obj.flex_controllers['cs']
+        data[stereo.L], data[stereo.R] = 0.25, 0.6
+        session = _FlexDragSession(self.obj, stereo, scene)
         scene.tool_settings.use_keyframe_insert_auto = True
         try:
-            stereo.value = 0.4
+            self.assertTrue(session.commit(0.2, -1.0))
         finally:
             scene.tool_settings.use_keyframe_insert_auto = False
-        self.evaluate()
-        self.assertAlmostEqual(stereo.value, 0.4)
-        self.assertAlmostEqual(data[stereo.L], 0.4)
+        self.assertAlmostEqual(data[stereo.L], 0.45)
+        self.assertAlmostEqual(data[stereo.R], 0.6)
         curves = data.animation_data.action.layers[0].strips[0].channelbags[0].fcurves
-        self.assertEqual({curve.data_path for curve in curves}, {f'["{stereo.L}"]', f'["{stereo.R}"]'})
+        self.assertEqual({curve.data_path for curve in curves}, {f'["{stereo.L}"]'})
 
-    def test_signed_stereo_slider_and_clamp(self):
+    def test_stereo_drag_clamps_to_controller_range(self):
+        stereo = self.obj.flex_controllers['cs']
+        stereo.minimum, stereo.maximum = -1.0, 0.5
+        left, right = stereo_delta_values(0.4, -0.8, 0.5, 0.0, stereo.minimum, stereo.maximum)
+        self.assertAlmostEqual(left, 0.5)
+        self.assertAlmostEqual(right, -0.3)
+        left, right = stereo_delta_values(0.4, -0.8, -0.5, 0.0, stereo.minimum, stereo.maximum)
+        self.assertAlmostEqual(left, -0.1)
+        self.assertAlmostEqual(right, -1.0)
+
+    def test_cancel_and_noop_do_not_key(self):
         data, scene = self.obj.data, bpy.context.scene
         stereo = self.obj.flex_controllers['cs']
-        scene.sourceio_flex_lr_balance = 0.0
-        stereo.minimum, stereo.maximum = -1.0, 0.5
-        stereo.value_signed = -0.5
-        self.assertAlmostEqual(data[stereo.L], -0.5)
-        self.assertAlmostEqual(stereo.value_signed, -0.5)
-        stereo.value_signed = 1.0  # clamped to the controller's maximum
-        self.assertAlmostEqual(data[stereo.R], 0.5)
+        data[stereo.L], data[stereo.R] = 0.25, 0.6
+        scene.tool_settings.use_keyframe_insert_auto = True
+        try:
+            session = _FlexDragSession(self.obj, stereo, scene)
+            session.apply(0.3, 0.0)
+            self.assertTrue(session.cancel())
+            self.assertIsNone(data.animation_data)
+
+            session = _FlexDragSession(self.obj, stereo, scene)
+            self.assertTrue(session.commit(0.0, 0.0))
+            self.assertIsNone(data.animation_data)
+        finally:
+            scene.tool_settings.use_keyframe_insert_auto = False
+        self.assertAlmostEqual(data[stereo.L], 0.25)
+        self.assertAlmostEqual(data[stereo.R], 0.6)
+
+    def test_drag_terminal_events(self):
+        self.assertEqual(_flex_drag_terminal_action('LEFTMOUSE', 'RELEASE'), 'COMMIT')
+        self.assertEqual(_flex_drag_terminal_action('RET', 'PRESS'), 'COMMIT')
+        self.assertEqual(_flex_drag_terminal_action('NUMPAD_ENTER', 'PRESS'), 'COMMIT')
+        self.assertEqual(_flex_drag_terminal_action('ESC', 'PRESS'), 'CANCEL')
+        self.assertEqual(_flex_drag_terminal_action('RIGHTMOUSE', 'PRESS'), 'CANCEL')
+        self.assertIsNone(_flex_drag_terminal_action('MOUSEMOVE', 'NOTHING'))
+        self.assertIsNone(_flex_drag_terminal_action('A', 'RELEASE'))
+
+    def test_blender_52_timer_without_event_timer_is_accepted(self):
+        handler = SimpleNamespace(_timer=object())
+        timer_event = SimpleNamespace(type='TIMER', timer=None)
+        self.assertTrue(SOURCEIO_OT_FlexSliderHandler._is_own_timer(handler, timer_event))
+        self.assertFalse(SOURCEIO_OT_FlexSliderHandler._is_own_timer(
+            SimpleNamespace(_timer=None),
+            timer_event,
+        ))
+
+    def test_background_delta_assignment_commits_and_resets(self):
+        if not bpy.app.background:
+            self.skipTest('Requires Blender background mode')
+        data = self.obj.data
+        stereo = self.obj.flex_controllers['cs']
+        data[stereo.L], data[stereo.R] = 0.25, 0.6
+
+        stereo.value = 0.2
+
+        self.assertAlmostEqual(data[stereo.L], 0.45)
+        self.assertAlmostEqual(data[stereo.R], 0.8)
+        self.assertEqual(stereo.value, 0.0)
 
     def test_key_toggle_and_key_all(self):
         data = self.obj.data
@@ -187,6 +265,7 @@ class FlexControllerTests(unittest.TestCase):
             obj = bpy.data.objects['face']
             self.assertEqual(len(obj.flex_controllers), count)
             self.assertTrue(obj.flex_controllers['cs'].split)
+            self.assertEqual(obj.flex_controllers['cs'].value, 0.0)
             bpy.ops.wm.read_homefile(use_empty=True)
 
 

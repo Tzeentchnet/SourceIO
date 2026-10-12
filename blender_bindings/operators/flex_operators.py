@@ -4,12 +4,18 @@ from bpy.props import BoolProperty, FloatProperty, StringProperty
 from bpy.types import Operator
 from bpy_extras import anim_utils
 
+from ...logger import SourceLogMan
 from .shared_operators import UITools
 
 # Adapted from REDxEYE/SourceIO#477 (hisprofile). Each entry of Object.flex_controllers drives one or two
 # custom properties on the mesh data (made by create_flex_drivers); the shape key drivers read those properties.
-# A mono controller's slider is that property itself. A stereo controller's slider is computed: it reads and
-# writes the left and right properties together, split by the scene's L/R balance.
+# A mono controller's slider is that property itself. A stereo controller uses a temporary additive slider:
+# each drag snapshots both properties and applies a balance-weighted delta without destroying their existing offset.
+
+logger = SourceLogMan().get_logger('SourceIO::FlexControllers')
+
+_active_flex_drag = None
+_resetting_flex_delta = False
 
 
 def get_frame(context):
@@ -32,44 +38,194 @@ def has_key(context, obj, prop_name) -> bool:
     return get_frame(context) in co[::2]
 
 
-def map_range(x, a, b, c, d):
-    y = (x - a) / (b - a) * (d - c) + c
-    return min(max(y, c), d)
+def balance_multipliers(balance):
+    """Return SFM's left/right shares for a balance in the range -1..1."""
+    balance = min(max(balance, -1.0), 1.0)
+    left = 1.0 if balance <= 0.0 else 1.0 - balance
+    right = 1.0 if balance >= 0.0 else 1.0 + balance
+    return left, right
 
 
-def balance_multipliers(scene):
-    """(left, right) shares of a stereo slider: both 1 at balance 0, left only at -1, right only at 1."""
-    balance = scene.sourceio_flex_lr_balance
-    return map_range(balance, 1.0, 0.0, 0.0, 1.0), map_range(balance, -1.0, 0.0, 0.0, 1.0)
+def stereo_delta_values(left, right, delta, balance, minimum, maximum):
+    """Apply an SFM-style slider delta to a left/right pair."""
+    magnitude = max(abs(maximum), abs(minimum))
+    left_mult, right_mult = balance_multipliers(balance)
+
+    def clamp(value):
+        return min(max(value, minimum), maximum)
+
+    return (
+        clamp(left + delta * magnitude * left_mult),
+        clamp(right + delta * magnitude * right_mult),
+    )
 
 
-def get_stereo_value(slider):
-    """The value of the side the balance gives in full (the larger one when both are), as a fraction of the
-    controller's range."""
-    data = slider.id_data.data
-    magnitude = max(abs(slider.maximum), abs(slider.minimum)) or 1.0
-    l_mult, r_mult = balance_multipliers(bpy.context.scene)
-    values = [data.get(prop, 0.0) for prop, mult in ((slider.L, l_mult), (slider.R, r_mult)) if mult == 1.0]
-    return max(values, key=abs) / magnitude
+def _flex_drag_terminal_action(event_type, event_value):
+    if event_type == 'LEFTMOUSE' and event_value == 'RELEASE':
+        return 'COMMIT'
+    if event_type in {'RET', 'NUMPAD_ENTER'} and event_value == 'PRESS':
+        return 'COMMIT'
+    if event_type in {'ESC', 'RIGHTMOUSE'} and event_value == 'PRESS':
+        return 'CANCEL'
+    return None
 
 
-def set_stereo_value(slider, value):
-    """Sets the full side to `value` and the other to its balance share (left alone at a share of 0), and keys
-    what changed when auto keying is on."""
+def _set_flex_delta(slider, value):
+    global _resetting_flex_delta
+    was_resetting = _resetting_flex_delta
+    _resetting_flex_delta = True
+    try:
+        slider.value = value
+    finally:
+        _resetting_flex_delta = was_resetting
+
+
+class _FlexDragSession:
+    def __init__(self, obj, slider, scene):
+        self.obj = obj
+        self.object_pointer = obj.as_pointer()
+        self.data = obj.data
+        self.scene = scene
+        self.slider_name = slider.name
+        self.left_name = slider.L
+        self.right_name = slider.R
+        self.minimum = slider.minimum
+        self.maximum = slider.maximum
+        self.original_left = float(self.data[self.left_name])
+        self.original_right = float(self.data[self.right_name])
+        self.delta = 0.0
+        self.balance = scene.sourceio_flex_lr_balance
+        self.changed_properties = ()
+
+    def matches(self, slider):
+        try:
+            return slider.id_data.as_pointer() == self.object_pointer and slider.name == self.slider_name
+        except ReferenceError:
+            return False
+
+    def matches_context(self, context):
+        obj = context.object
+        if obj is None:
+            return False
+        try:
+            return obj.as_pointer() == self.object_pointer
+        except ReferenceError:
+            return False
+
+    def current_slider(self):
+        try:
+            if self.obj.as_pointer() != self.object_pointer or self.obj.data != self.data:
+                return None
+            return self.obj.flex_controllers.get(self.slider_name)
+        except ReferenceError:
+            return None
+
+    def data_is_available(self):
+        try:
+            return self.data.as_pointer() != 0
+        except ReferenceError:
+            return False
+
+    def apply(self, delta, balance):
+        if not self.data_is_available():
+            return None
+        left, right = stereo_delta_values(
+            self.original_left,
+            self.original_right,
+            delta,
+            balance,
+            self.minimum,
+            self.maximum,
+        )
+        values = ((self.left_name, left, self.original_left), (self.right_name, right, self.original_right))
+        for prop_name, value, _original in values:
+            if self.data.get(prop_name) != value:
+                self.data[prop_name] = value
+        self.data.update()
+        self.delta = delta
+        self.balance = balance
+        self.changed_properties = tuple(
+            prop_name for prop_name, value, original in values if value != original
+        )
+        return self.changed_properties
+
+    def commit(self, delta, balance):
+        changed = self.apply(delta, balance)
+        if changed is None:
+            return False
+        if self.scene.tool_settings.use_keyframe_insert_auto:
+            frame = self.scene.frame_float if self.scene.show_subframe else self.scene.frame_current
+            for prop_name in changed:
+                self.data.keyframe_insert(data_path=f'["{prop_name}"]', frame=frame)
+        return True
+
+    def cancel(self):
+        if not self.data_is_available():
+            return False
+        self.data[self.left_name] = self.original_left
+        self.data[self.right_name] = self.original_right
+        self.data.update()
+        self.delta = 0.0
+        self.changed_properties = ()
+        return True
+
+    def reset_delta(self):
+        slider = self.current_slider()
+        if slider is None:
+            return False
+        _set_flex_delta(slider, 0.0)
+        return True
+
+
+def slider_update(slider, context):
+    global _active_flex_drag
+    if _resetting_flex_delta:
+        return
+    if _active_flex_drag is not None:
+        if not _active_flex_drag.matches(slider):
+            logger.error(
+                f'Flex controller "{slider.name}" changed while "{_active_flex_drag.slider_name}" is being dragged'
+            )
+            _set_flex_delta(slider, 0.0)
+            return
+        changed = _active_flex_drag.apply(slider.value, context.scene.sourceio_flex_lr_balance)
+        if changed is None:
+            logger.error(f'Flex controller "{slider.name}" lost its mesh data during a drag')
+        return
+    if slider.value == 0.0:
+        return
+    if not slider.split:
+        logger.error(f'Additive flex slider "{slider.name}" is not a stereo controller')
+        _set_flex_delta(slider, 0.0)
+        return
     obj = slider.id_data
-    data = obj.data
-    scene = bpy.context.scene
-    magnitude = max(abs(slider.maximum), abs(slider.minimum)) or 1.0
-    written = []
-    for prop, mult in zip((slider.L, slider.R), balance_multipliers(scene)):
-        if mult > 0.0:
-            data[prop] = min(max(value * magnitude * mult, slider.minimum), slider.maximum)
-            written.append(prop)
-    if scene.tool_settings.use_keyframe_insert_auto:
-        frame = scene.frame_float if scene.show_subframe else scene.frame_current
-        for prop in written:
-            data.keyframe_insert(data_path=f'["{prop}"]', frame=frame)
-    data.update()
+    if obj.data.library is not None:
+        logger.error(f'Flex controller "{slider.name}" belongs to linked mesh data')
+        _set_flex_delta(slider, 0.0)
+        return
+    if bpy.app.background or context.window is None:
+        try:
+            session = _FlexDragSession(obj, slider, context.scene)
+        except KeyError as ex:
+            logger.error(f'Flex controller property {ex} is missing from "{obj.name}"')
+            _set_flex_delta(slider, 0.0)
+            return
+        if not session.commit(slider.value, context.scene.sourceio_flex_lr_balance):
+            logger.error(f'Could not apply flex controller "{slider.name}" to "{obj.name}"')
+        session.reset_delta()
+        return
+    try:
+        result = bpy.ops.sourceio.flex_slider_handler(
+            'INVOKE_DEFAULT',
+            object_name=obj.name,
+            flex_controller=slider.name,
+        )
+    except RuntimeError as ex:
+        logger.error(f'Could not start flex controller drag for "{slider.name}": {ex}')
+        _set_flex_delta(slider, 0.0)
+        return
+    if 'CANCELLED' in result:
+        _set_flex_delta(slider, 0.0)
 
 
 # noinspection PyPep8Naming
@@ -81,13 +237,15 @@ class SourceIO_PG_FlexController(bpy.types.PropertyGroup):
     minimum: FloatProperty(options=set())
     maximum: FloatProperty(options=set())
 
-    # Stereo slider, as a fraction of the controller's range: 0..1, or -1..1 for a controller that goes negative.
-    # Not animatable: the left and right properties are what gets keyed.
-    value: FloatProperty(name='Value', min=0.0, max=1.0, options=set(), get=get_stereo_value, set=set_stereo_value,
-                         description='Sets left and right together, split by the L/R balance')
-    value_signed: FloatProperty(name='Value', min=-1.0, max=1.0, options=set(), get=get_stereo_value,
-                                set=set_stereo_value,
-                                description='Sets left and right together, split by the L/R balance')
+    value: FloatProperty(
+        name='Additive Value',
+        default=0.0,
+        min=-1.0,
+        max=1.0,
+        options={'SKIP_SAVE'},
+        update=slider_update,
+        description='Adds to the current left/right values using the L/R balance; resets to 0 after the drag',
+    )
 
     realvalue: BoolProperty(name='Show left and right', default=False, options=set(),
                             description='Show the left and right values separately instead of one slider')
@@ -98,6 +256,124 @@ class SourceIO_PG_FlexController(bpy.types.PropertyGroup):
     def prop_names(self):
         """The mesh custom properties this controller sets."""
         return (self.R, self.L) if self.split else (self.name,)
+
+
+class SOURCEIO_OT_FlexSliderHandler(Operator):
+    bl_idname = 'sourceio.flex_slider_handler'
+    bl_label = 'Adjust Flex Controller'
+    bl_description = 'Apply a non-destructive left/right flex adjustment'
+    bl_options = {'INTERNAL', 'UNDO'}
+
+    object_name: StringProperty(options={'HIDDEN', 'SKIP_SAVE'})
+    flex_controller: StringProperty(options={'HIDDEN', 'SKIP_SAVE'})
+
+    def invoke(self, context, event):
+        global _active_flex_drag
+        self._timer = None
+        self._completed = False
+        self._pending_action = None
+
+        if _active_flex_drag is not None:
+            self.report({'ERROR'}, 'Another flex controller drag is already active')
+            return {'CANCELLED'}
+
+        obj = bpy.data.objects.get(self.object_name)
+        if obj is None or obj.type != 'MESH':
+            self.report({'ERROR'}, f'No mesh object named "{self.object_name}"')
+            return {'CANCELLED'}
+        slider = obj.flex_controllers.get(self.flex_controller)
+        if slider is None or not slider.split:
+            self.report({'ERROR'}, f'No stereo flex controller "{self.flex_controller}"')
+            return {'CANCELLED'}
+        if obj.data.library is not None:
+            self.report({'ERROR'}, 'Linked mesh data cannot be edited')
+            return {'CANCELLED'}
+
+        try:
+            self._session = _FlexDragSession(obj, slider, context.scene)
+        except KeyError as ex:
+            self.report({'ERROR'}, f'Flex controller property {ex} is missing from "{obj.name}"')
+            return {'CANCELLED'}
+
+        _active_flex_drag = self._session
+        if self._session.apply(slider.value, context.scene.sourceio_flex_lr_balance) is None:
+            _active_flex_drag = None
+            self.report({'ERROR'}, f'Mesh data for "{obj.name}" is no longer available')
+            return {'CANCELLED'}
+
+        if bpy.app.background or context.window is None:
+            return self._complete(context, 'COMMIT')
+
+        self._window_manager = context.window_manager
+        self._timer = self._window_manager.event_timer_add(0.05, window=context.window)
+        self._pending_action = _flex_drag_terminal_action(event.type, event.value)
+        if self._pending_action is None and event.type not in {'LEFTMOUSE', 'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
+            self._pending_action = 'COMMIT'
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def _remove_timer(self):
+        if self._timer is not None:
+            self._window_manager.event_timer_remove(self._timer)
+            self._timer = None
+
+    def _is_own_timer(self, event):
+        if event.type != 'TIMER' or self._timer is None:
+            return False
+        event_timer = getattr(event, 'timer', None)
+        if event_timer is None:
+            return True
+        return event_timer.as_pointer() == self._timer.as_pointer()
+
+    def _complete(self, context, action):
+        global _active_flex_drag
+        if self._completed:
+            return {'FINISHED'} if action == 'COMMIT' else {'CANCELLED'}
+
+        success = False
+        if action == 'COMMIT':
+            slider = self._session.current_slider()
+            if slider is not None:
+                success = self._session.commit(
+                    slider.value,
+                    self._session.scene.sourceio_flex_lr_balance,
+                )
+            if not success:
+                self._session.cancel()
+        else:
+            success = self._session.cancel()
+
+        self._session.reset_delta()
+        _active_flex_drag = None
+        self._remove_timer()
+        self._completed = True
+
+        if not success:
+            self.report({'ERROR'}, f'Could not finish flex controller "{self.flex_controller}"')
+            return {'CANCELLED'}
+        return {'FINISHED'} if action == 'COMMIT' else {'CANCELLED'}
+
+    def modal(self, context, event):
+        if self._is_own_timer(event):
+            if self._pending_action is not None:
+                return self._complete(context, self._pending_action)
+            if not self._session.matches_context(context) or self._session.current_slider() is None:
+                self.report({'WARNING'}, 'Flex controller drag cancelled because its object is no longer active')
+                return self._complete(context, 'CANCEL')
+            return {'RUNNING_MODAL'}
+
+        action = _flex_drag_terminal_action(event.type, event.value)
+        if action is not None:
+            self._pending_action = action
+            return {'RUNNING_MODAL', 'PASS_THROUGH'}
+        if event.type == 'WINDOW_DEACTIVATE':
+            self._pending_action = 'CANCEL'
+            return {'RUNNING_MODAL', 'PASS_THROUGH'}
+        return {'RUNNING_MODAL', 'PASS_THROUGH'}
+
+    def cancel(self, context):
+        if not self._completed:
+            self._complete(context, 'CANCEL')
 
 
 class SOURCEIO_OT_FlexAdjustBalance(Operator):
@@ -242,9 +518,9 @@ class SOURCEIO_UL_FlexControllerList(bpy.types.UIList):
             row.prop(obj.data, f'["{item.L}"]', slider=True, text=f'{item.display_name} L')
             row.prop(obj.data, f'["{item.R}"]', slider=True, text='R')
         else:
-            # The computed slider isn't an animated property itself, so show the keyed state through alert.
+            # The temporary additive slider isn't animated itself, so show the raw properties' keyed state.
             row.alert = keyed
-            row.prop(item, 'value_signed' if item.minimum < 0 else 'value', slider=True, text=item.display_name)
+            row.prop(item, 'value', slider=True, text=item.display_name)
             row.alert = False
 
         op = row.operator(SOURCEIO_OT_KeyFlexController.bl_idname, text='', emboss=False, depress=keyed,
@@ -260,6 +536,7 @@ classes = (
     SOURCEIO_UL_FlexControllerList,
     SOURCEIO_PT_FlexControlPanel,
     SOURCEIO_OT_FlexAdjustBalance,
+    SOURCEIO_OT_FlexSliderHandler,
     SOURCEIO_OT_KeyFlexController,
     SOURCEIO_OT_ResetFlexControllers,
     SOURCEIO_OT_KeyAllFlexControllers,

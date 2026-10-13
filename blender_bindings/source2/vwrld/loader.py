@@ -1,6 +1,6 @@
 import math
 import re
-from typing import Any, Iterator, Type
+from typing import Any, Iterable, Iterator, Type
 
 import bpy
 from mathutils import Euler, Matrix, Vector
@@ -24,7 +24,7 @@ from ...exporting.source2.provenance import (
     build_resource_import_payload,
 )
 
-from .entities.abstract_entity_handlers import get_angles, get_origin, parse_float_vector
+from .entities.abstract_entity_handlers import WORLD_LAYERS_COLLECTION, get_angles, get_origin, parse_float_vector
 from .entities.base_entity_handlers import BaseEntityHandler
 from .entities.cs2_entity_handlers import CS2EntityHandler
 from .entities.deadlock_entity_handlers import DeadlockEntityHandler
@@ -157,7 +157,15 @@ def load_world_nodes(world_resource: CompiledWorldResource, map_resource: Compil
             raise RequiredFileNotFound("Failed to find WorldNode resource")
         collection = get_or_create_child_collection(f"static_props_{TinyPath(node_prefix).name}",
                                                     master_collection)
-        for scene_object in node_resource.get_scene_objects():
+        layer_names = node_resource.get_layer_names()
+        layer_indices = node_resource.get_scene_object_layer_indices()
+
+        def layer_collection(layer_index: int) -> bpy.types.Collection:
+            if 0 < layer_index < len(layer_names):
+                return world_layer_collection(layer_names[layer_index], master_collection)
+            return collection
+
+        for i, scene_object in enumerate(node_resource.get_scene_objects()):
             renderable_model = scene_object["m_renderableModel"]
             proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
             if (transform := scene_object.get('m_vTransform', None)) is not None:
@@ -169,7 +177,9 @@ def load_world_nodes(world_resource: CompiledWorldResource, map_resource: Compil
                 create_static_prop_placeholder(scene_object, proper_path, matrix, shadow_casters, scale, uv_scale,
                                                shadow_only=True)
             else:
-                create_static_prop_placeholder(scene_object, proper_path, matrix, collection, scale, uv_scale)
+                layer_index = layer_indices[i] if i < len(layer_indices) else 0
+                create_static_prop_placeholder(scene_object, proper_path, matrix, layer_collection(layer_index),
+                                               scale, uv_scale)
         for scene_object in node_resource.get_aggregate_scene_objects():
             renderable_model = scene_object["m_renderableModel"]
             proper_path = cheap_path_check(renderable_model, content_manager, node_resource)
@@ -193,10 +203,46 @@ def load_world_nodes(world_resource: CompiledWorldResource, map_resource: Compil
                         "matrix": list(matrix)
                     }
                     fragments.append(fragment)
-                create_aggregate_prop_placeholder(scene_object, proper_path, fragments, collection, scale, uv_scale)
+                create_aggregate_prop_placeholder(scene_object, proper_path, fragments,
+                                                  layer_collection(int(scene_object.get("m_nLayer", 0))), scale,
+                                                  uv_scale)
             else:
-                create_static_prop_placeholder(scene_object, proper_path, None, collection, scale, uv_scale)
+                create_static_prop_placeholder(scene_object, proper_path, None,
+                                               layer_collection(int(scene_object.get("m_nLayer", 0))), scale,
+                                               uv_scale)
     hide_shadow_casters(master_collection)
+
+
+def world_layer_collection(layer_name: str, master_collection: bpy.types.Collection) -> bpy.types.Collection:
+    """The collection of a world layer other than the base one (Dota's world_layer_dire_destruction)."""
+    layers = get_or_create_child_collection(WORLD_LAYERS_COLLECTION, master_collection)
+    collection = get_or_create_child_collection(layer_name, layers)
+    collection["sourceio_world_layer"] = layer_name
+    return collection
+
+
+def world_layer_states(entities: Iterable[dict]) -> dict[str, bool]:
+    """Whether each world layer with an ``info_world_layer`` is shown when the map starts (spawnflag 1,
+    *Visible on spawn*). Dota's base layers are; the destruction layers, drawn over them, aren't."""
+    states = {}
+    for entity in entities:
+        values = entity_values(entity)
+        if values.get("classname") == "info_world_layer" and values.get("layerName"):
+            states[str(values["layerName"])] = bool(int(values.get("spawnflags", 0)) & 1)
+    return states
+
+
+def exclude_hidden_world_layers(master_collection: bpy.types.Collection, states: dict[str, bool]):
+    """Exclude the layers not visible on spawn from the view layer; the collection's checkbox shows them."""
+    hidden = {name for name, visible in states.items() if not visible}
+    if not hidden:
+        return
+    for child in master_collection.children_recursive:
+        if child.get("sourceio_world_layer") not in hidden:
+            continue
+        layer_collection = find_layer_collection(bpy.context.view_layer.layer_collection, child.name)
+        if layer_collection is not None:
+            layer_collection.exclude = True
 
 
 def hide_shadow_casters(master_collection: bpy.types.Collection):
@@ -299,14 +345,20 @@ def load_entities(world_resource: CompiledWorldResource, collection: bpy.types.C
                   texture_settings: TextureImportSettings | None = None):
     handler_class = get_entity_handler(cm)
     diagnostics = EntityImportDiagnostics()
-    for entity_resource in iter_entity_lumps(world_resource, cm):
-        entities = [entity for entity in entity_resource.get_entities()
-                    if entity_values(entity).get("classname") not in skipped_classes]
-        handler = handler_class(entities, collection, cm, scale)
+    lumps = [(entity_resource, [entity for entity in entity_resource.get_entities()
+                                if entity_values(entity).get("classname") not in skipped_classes])
+             for entity_resource in iter_entity_lumps(world_resource, cm)]
+    layer_states = world_layer_states(entity for _, entities in lumps for entity in entities)
+    for entity_resource, entities in lumps:
+        # A world layer's entities have a lump of their own, named after the layer.
+        lump_name = entity_resource.get_name()
+        parent = world_layer_collection(lump_name, collection) if lump_name in layer_states else collection
+        handler = handler_class(entities, parent, cm, scale)
         if hasattr(handler, "set_entity_import_diagnostics"):
             handler.set_entity_import_diagnostics(diagnostics)
         handler.texture_settings = texture_settings or TextureImportSettings()
         handler.load_entities()
+    exclude_hidden_world_layers(collection, layer_states)
     diagnostics.attach(collection)
     diagnostics.log_summary(logger)
     return diagnostics.to_dict()

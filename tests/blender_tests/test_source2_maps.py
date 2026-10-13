@@ -36,9 +36,13 @@ def assert_vectors_equal(test, a, b):
 
 
 class FakeLump:
-    def __init__(self, entities, children=()):
+    def __init__(self, entities, children=(), name="default_ents"):
         self.entities = entities
         self.children = list(children)
+        self.name = name
+
+    def get_name(self):
+        return self.name
 
     def get_entities(self):
         return iter(self.entities)
@@ -269,14 +273,83 @@ class FakeSceneObject(dict):
 
 
 class FakeNode:
-    def __init__(self, models):
+    def __init__(self, models, layer_names=(), layer_indices=(), aggregates=()):
         self.models = models
+        self.layer_names, self.layer_indices = list(layer_names), list(layer_indices)
+        self.aggregates = list(aggregates)
 
     def get_scene_objects(self):
         return [FakeSceneObject(m_renderableModel=model, m_vTransform=None) for model in self.models]
 
     def get_aggregate_scene_objects(self):
-        return []
+        return [FakeSceneObject(m_renderableModel=model, m_fragmentTransforms=None, m_aggregateMeshes=[],
+                                m_nLayer=layer) for model, layer in self.aggregates]
+
+    def get_layer_names(self):
+        return self.layer_names
+
+    def get_scene_object_layer_indices(self):
+        return self.layer_indices
+
+
+class WorldLayerTests(unittest.TestCase):
+    """Dota's world layers: the destruction layers' scorched ground lies over the intact bases and is only
+    shown once a base falls (info_world_layer without spawnflag 1)."""
+
+    LAYERS = ["world_layer_base", "world_layer_dire_destruction", "world_layer_dire_base"]
+
+    def setUp(self):
+        bpy.ops.wm.read_homefile(use_empty=True)
+        self.map_collection = bpy.data.collections.new("dota")
+        bpy.context.scene.collection.children.link(self.map_collection)
+
+    def layer(self, name):
+        return self.map_collection.children["world_layers"].children[name]
+
+    def view_layer(self, name):
+        return (bpy.context.view_layer.layer_collection.children["dota"].children["world_layers"]
+                .children[name])
+
+    def test_world_node_objects_go_into_their_layer(self):
+        node = FakeNode(["maps/dota/worldnodes/n0_lr0_nomerge1_grass.vmdl",
+                         "maps/dota/worldnodes/n0_lr0_nomerge2_scorched.vmdl",
+                         "maps/dota/worldnodes/n0_lr0_nomerge3_rubble.vmdl"],
+                        self.LAYERS, [0, 1, 2],
+                        aggregates=[("maps/dota/worldnodes/n0_lr0_agg_merge_tree_0.vmdl", 0),
+                                    ("maps/dota/worldnodes/n0_lr0_agg_merge_ash_0.vmdl", 1)])
+        world = SimpleNamespace(data_block={}, get_worldnode_prefixes=lambda: iter(["maps/dota/worldnodes/n0"]))
+        map_resource = SimpleNamespace(get_worldnode=lambda prefix, cm: node)
+        loader.load_world_nodes(world, map_resource, SimpleNamespace(check=lambda path: True),
+                                self.map_collection, SCALE)
+
+        base = self.map_collection.children["static_props_n0"]
+        self.assertEqual(sorted(obj.name for obj in base.objects), ["grass", "tree"])
+        destruction = self.layer("world_layer_dire_destruction")
+        self.assertEqual(sorted(obj.name for obj in destruction.objects), ["ash", "scorched"])
+        self.assertEqual(destruction["sourceio_world_layer"], "world_layer_dire_destruction")
+        self.assertEqual([obj.name for obj in self.layer("world_layer_dire_base").objects], ["rubble"])
+
+    def test_layers_not_visible_on_spawn_are_excluded(self):
+        def layer_entity(name, spawnflags):
+            return {"classname": "info_world_layer", "layerName": name, "spawnflags": spawnflags}
+
+        # Layer lumps are children of default_ents; other child lumps (cs_office's) keep the map collection.
+        world = FakeWorld(FakeLump(
+            [layer_entity("world_layer_dire_base", 1), layer_entity("world_layer_dire_destruction", "0"),
+             {"classname": "info_target"}],
+            [FakeLump([{"classname": "prop_dynamic"}], name="world_layer_dire_destruction"),
+             FakeLump([{"classname": "ent_dota_tree"}], name="world_layer_dire_base"),
+             FakeLump([{"classname": "func_brush"}], name="2_42786_7678_13#entityLumpName")]))
+        with mock.patch.object(loader, "get_entity_handler", return_value=RecordingHandler):
+            loader.load_entities(world, self.map_collection, SCALE, cm=None)
+
+        destruction = self.layer("world_layer_dire_destruction")
+        self.assertEqual([obj.name for obj in destruction.children["prop_dynamic"].objects], ["prop_dynamic"])
+        self.assertEqual(destruction["sourceio_world_layer"], "world_layer_dire_destruction")
+        self.assertEqual([obj.name for obj in self.layer("world_layer_dire_base").all_objects], ["ent_dota_tree"])
+        self.assertIn("func_brush", self.map_collection.children)
+        self.assertTrue(self.view_layer("world_layer_dire_destruction").exclude)
+        self.assertFalse(self.view_layer("world_layer_dire_base").exclude)
 
 
 class LightBlockerTests(unittest.TestCase):

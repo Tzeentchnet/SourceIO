@@ -19,6 +19,10 @@ from ..entity_import_diagnostics import EntityImportDiagnostics, EntityImportSta
 strip_patch_coordinates = re.compile(r"_-?\d+_-?\d+_-?\d+.*$")
 log_manager = SourceLogMan()
 
+# Holds a collection per world layer other than the base one (world_layer_dire_destruction), tagged
+# sourceio_world_layer: its info_world_layer, world-node objects and the entities of its entity lump.
+WORLD_LAYERS_COLLECTION = "world_layers"
+
 
 def parse_int_vector(string):
     if isinstance(string, (list, tuple)):

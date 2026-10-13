@@ -20,6 +20,9 @@ class CompiledEntityLumpResource(CompiledResource):
         for child_lump in self.data_block["m_childLumps"]:
             yield self.get_child_resource(child_lump, content_manager, CompiledEntityLumpResource)
 
+    def get_name(self) -> str:
+        # default_ents, or the world layer the lump's entities belong to (world_layer_dire_destruction)
+        return str(self.data_block.get("m_name", ""))
 
     def get_entities(self) -> Iterator[Object]:
         for entity_key_values in self.data_block["m_entityKeyValues"]:
@@ -42,6 +45,14 @@ class CompiledWorldNodeResource(CompiledResource):
 
     def get_aggregate_scene_objects(self) -> list[Object]:
         return self.data_block.get("m_aggregateSceneObjects", [])
+
+    def get_layer_names(self) -> list[str]:
+        """The world layers the node's objects belong to; the first is the base layer (world_layer_base)."""
+        return [str(name) for name in self.data_block.get("m_layerNames", [])]
+
+    def get_scene_object_layer_indices(self) -> list[int]:
+        """Each scene object's index into :meth:`get_layer_names`. Aggregates name theirs in ``m_nLayer``."""
+        return [int(index) for index in self.data_block.get("m_sceneObjectLayerIndices", [])]
 
 
 class CompiledMapResource(CompiledResource):

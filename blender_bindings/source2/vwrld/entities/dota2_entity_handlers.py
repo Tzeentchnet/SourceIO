@@ -5,7 +5,7 @@ from typing import Iterable
 import numpy as np
 
 from .....library.source2.provenance import to_json_safe
-from .abstract_entity_handlers import Base, get_angles, get_origin, parse_float_vector
+from .abstract_entity_handlers import WORLD_LAYERS_COLLECTION, Base, get_angles, get_origin, parse_float_vector
 from .base_entity_handlers import BaseEntityHandler
 from ..entity_import_diagnostics import EntityImportStatus
 
@@ -201,7 +201,7 @@ class Dota2EntityHandler(BaseEntityHandler):
         obj = self._handle_marker(
             entity,
             entity_raw,
-            "world_layers",
+            WORLD_LAYERS_COLLECTION,
             EntityImportStatus.REPRESENTED,
             layer_name,
         )

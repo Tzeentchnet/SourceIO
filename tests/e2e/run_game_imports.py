@@ -275,7 +275,11 @@ def load_placeholders(result: dict):
         for child in layer_collection.children:
             yield from layer_collections(child)
 
-    # Hidden objects can't be selected; show collections hidden by default (light blockers) while loading.
+    # Hidden objects can't be selected; include and show collections excluded or hidden by default (world
+    # layers not visible on spawn, light blockers) while loading.
+    excluded = [layer for layer in layer_collections(view_layer.layer_collection) if layer.exclude]
+    for layer in excluded:
+        layer.exclude = False
     hidden = [layer for layer in layer_collections(view_layer.layer_collection) if layer.hide_viewport]
     for layer in hidden:
         layer.hide_viewport = False
@@ -291,8 +295,12 @@ def load_placeholders(result: dict):
     result["seconds"] = round(result["seconds"] + time.perf_counter() - started, 3)
     for layer in hidden:
         layer.hide_viewport = True
+    for layer in excluded:
+        layer.exclude = True
     if hidden:
         result["details"]["hidden_collections"] = len(hidden)
+    if excluded:
+        result["details"]["excluded_collections"] = len(excluded)
     for name in samples.COUNTED:
         added = sum(1 for item in getattr(bpy.data, name) if item not in before[name])
         if added:

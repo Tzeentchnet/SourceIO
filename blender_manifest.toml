@@ -23,7 +23,7 @@ copyright = [
 platforms = ["windows-x64", "linux-x64", "macos-x64", "macos-arm64"]
 
 [permissions]
-files = "Read game assets and write extracted texture caches"
+files = "Read game assets; write texture caches and authoring exports"
 
 [build]
 paths_exclude_pattern = [

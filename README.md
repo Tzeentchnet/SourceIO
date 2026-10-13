@@ -26,15 +26,81 @@ blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips 
 blender -c sourceio extract-sound [--output DIR] [--overwrite] FILE.vsnd_c [FILE.vsnd_c ...]
 blender -c sourceio export-modeldoc [--overwrite] OUTPUT.vmdl
 blender -c sourceio export-hammer [--overwrite] OUTPUT.vmap
+blender -c sourceio export-cs2 --install-root ROOT --addon ADDON --asset NAME [--scope selected|collection|scene] [--batch] [--overwrite] [--compile]
+blender -c sourceio recompile-cs2 --install-root ROOT --addon ADDON MANIFEST
 ```
 `--clips` imports a Source 2 model's animation graph clips that match the patterns (see below).
-The export commands operate on the selected meshes or active collection in the current `.blend`.
+`export-modeldoc` and `export-hammer` are static reconstruction tools. `export-cs2`
+is the separate editable CS2 Workshop authoring workflow described below.
 
 # Usage
 In order to find the import tools you simply need to go to File>Import>Source Engine Assets
 ![](https://cdn.discordapp.com/attachments/786989240529059900/1143975506589515886/image.png)
 
 Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files, `.vsnd_c` sounds and `.dmx` cameras. Source 2 animation resources (`.vnmclip_c`, `.vanim_c` and `.vagrp_c`) can be dropped onto a selected armature.
+
+## CS2 Workshop static authoring
+
+*File > Export > CS2 Workshop static asset* writes an editable static asset into
+a validated CS2 addon. It emits FBX, ModelDoc 36 VMDL, `csgo_complex.vfx` VMAT,
+32-bit TGA source textures, a deterministic manifest, and a preflight report.
+*Compile after export* optionally runs the installed official Resource Compiler;
+SourceIO does not write compiled Source 2 binaries itself.
+
+The target fields are:
+
+- **CS2 installation**: the install root containing both `content` and `game`,
+  for example `<steam>/common/Counter-Strike Global Offensive`, not
+  `game/csgo`.
+- **Workshop addon**: the existing or new lowercase addon name below
+  `content/csgo_addons` and `game/csgo_addons`.
+- **Asset name**: a lowercase path-safe model name. The default authored
+  directories are `models/sourceio`, `materials/sourceio`, and
+  `materials/sourceio/textures`.
+- **Scope/grouping**: selected meshes by default, or the active collection/scene;
+  combine them into one model or use batch mode for one model per object.
+
+The Blender adapter exports evaluated modifier results without changing source
+objects, materials, selection, mode, transforms, or render settings. Meshes need
+geometry and a UV map; triangulation, normals, FBX units, material names, and
+Source 2 transforms are handled deterministically.
+
+The currently verified material subset is deliberately narrow:
+
+- a SourceIO-imported or explicitly assigned existing `.vmat` is reused first;
+- otherwise, exactly one active Material Output must connect directly to one
+  Principled BSDF;
+- Base Color may be a constant or one directly connected Image Texture;
+- Metallic must remain `0`, Roughness must remain `0.5`, Alpha must remain
+  opaque, and normal/emission/other texture roles or procedural graphs are
+  blocked with preflight diagnostics rather than guessed.
+
+No authored file is written when preflight contains a blocking error. Existing
+editable files are protected unless **Overwrite**/`--overwrite` is explicit.
+Successful exports write
+`sourceio/manifests/<asset>.sourceio.json` and
+`sourceio/reports/<asset>.preflight.json` inside the content addon. Recompile
+revalidates the target identity plus every editable artifact's size and SHA-256
+before launching the compiler. A compiler failure leaves the editable files in
+place and writes a bounded `sourceio/logs/<asset>.compile.log`; it is never
+reported as a successful compiled export.
+
+For command-line use, `SOURCEIO_CS2_WORKSHOP_ROOT` can replace
+`--install-root`:
+
+```powershell
+$env:SOURCEIO_CS2_WORKSHOP_ROOT = "<steam>\common\Counter-Strike Global Offensive"
+blender -c sourceio export-cs2 --addon my_addon --asset my_prop --compile
+blender -c sourceio recompile-cs2 --addon my_addon sourceio/manifests/my_prop.sourceio.json
+```
+
+If export is blocked, inspect the preflight diagnostics for invalid/colliding
+names, missing UVs, unsupported Principled inputs, or protected existing files.
+If compilation is requested, verify that CS2 Workshop Tools installed
+`game/bin/win64/resourcecompiler.exe` and that the installation root and addon
+match the manifest. This workflow is CS2-specific static authoring, not a Dota
+exporter, general Source 2 binary exporter, skeletal exporter, or map authoring
+tool.
 
 ## CS2 map import sizes
 
@@ -174,6 +240,34 @@ It also takes a Source 2 game. With Counter-Strike 2 (9 models: agents, arms, we
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders] [--clips PATTERNS]
 ```
 
+The Dota 2 profile covers three animated models, representative `hero.vfx` and
+`global_lit_simple.vfx` materials, a texture, and the main world. All 7 assets pass
+with Steam app ID 570. The world gate also consumes a bounded entity report; the
+current installed baseline diagnoses 5,127 entities as 3,205 handled, 1,513
+represented, 374 deliberately deferred, and 35 unsupported:
+```
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/dota 2 beta/game/dota" --expect-profile dota
+```
+
+An opt-in Dota 2 Workshop Tools test generates a disposable addon, compiles a
+static model/material/texture fixture with `resourcecompiler.exe`, and re-imports
+the compiled resources. It is a compiler compatibility gate, not a public Dota
+export workflow. The generated addon and proprietary outputs remain local and are
+removed after the test:
+```
+$env:SOURCEIO_DOTA2_WORKSHOP_ROOT = "<steam>\common\dota 2 beta"
+python -m pytest tests/source2_workshop/test_dota_workshop_roundtrip.py -q
+```
+
+The CS2 contract and Blender-authored round-trip gates likewise use uniquely
+named disposable addons and discover the compiler-generated VTEX path from the
+compiled material instead of hardcoding it:
+```powershell
+$env:SOURCEIO_CS2_WORKSHOP_ROOT = "<steam>\common\Counter-Strike Global Offensive"
+python -m pytest tests/source2_workshop/test_cs2_workshop_contract.py -q
+blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, '..'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_cs2_authoring_roundtrip.py', '-q']))"
+```
+
 Generated, redistributable Source 2 fixtures and strict normalized snapshots live under `tests/fixtures` and
 `tests/conformance`. The optional VRF differential oracle never downloads or discovers an executable from `PATH`.
 Set `SOURCEIO_VRF_CLI` to an explicit VRF `Decompiler` path, optionally pin it with
@@ -215,6 +309,7 @@ does not claim a lossless compiled-to-authored round trip.
 | `.vnmclip_c` | AnimGraph 2 animation clip | Yes | No | Applied to a selected armature. |
 | `.vanim_c` / `.vagrp_c` | Compiled animation/group | Yes | No | Applied to compatible selected armatures; AnimGraphs are not executed. |
 | `.vsnd_c` | Compiled sound | Yes | Extract | VSND v1-v4 audio plus available compiler companions. |
+| `.fbx` / `.vmdl` / `.vmat` / `.tga` | Editable CS2 static asset bundle | No | CS2 authoring | Optional official compilation; limited to the documented static base-color subset. |
 | `.vmdl` / `.dmx` | Editable static model bundle | No | Yes | Reconstructed from selected meshes with provenance and a loss report. |
 | `.vmap` | Editable static Hammer map | No | Yes | Reconstructed from the active imported collection with a loss report. |
 | `.dmx` | Valve camera | Yes | No | Camera DMX only; session import is not registered. |
@@ -223,13 +318,13 @@ does not claim a lossless compiled-to-authored round trip.
 
 No game is claimed as fully supported: containers often share an engine format, while shaders and map entities are
 game-specific. Automated end-to-end coverage currently imports models and maps from **Team Fortress 2** and
-**Counter-Strike 2**.
+**Counter-Strike 2**, plus models, materials, a texture, and the main world from **Dota 2**.
 
 Dedicated Source 1 map-entity handling also exists for Half-Life 2 and its episodes, Counter-Strike: Source,
 Garry's Mod, Source Filmmaker, Black Mesa, Counter-Strike: Global Offensive, Left 4 Dead 2, Portal, Portal 2 and
 several Portal 2 mods, Vampire: The Masquerade - Bloodlines, Vindictus, Titanfall and supported Quake III-derived
-formats. Source 2 has dedicated handlers for Counter-Strike 2, Half-Life: Alyx, S&box and Deadlock. Unrecognized
-games use generic entity handling and should be treated as partial support.
+formats. Source 2 has dedicated handlers for Counter-Strike 2, Dota 2, Half-Life: Alyx, S&box and Deadlock.
+Unrecognized games use generic entity handling and should be treated as partial support.
 
 # Credits
 

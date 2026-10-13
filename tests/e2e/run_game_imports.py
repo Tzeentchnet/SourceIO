@@ -7,25 +7,33 @@ Usage:
     blender -b --factory-startup --python tests/e2e/run_game_imports.py -- \
         --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--model models/chicken/chicken.vmdl_c ...] \
         [--map de_dust2 ...] [--include-animations] [--clips "idle*,run_n_*"]
+    blender -b --factory-startup --python tests/e2e/run_game_imports.py -- \
+        --game "<steam>/common/dota 2 beta/game/dota" [--model models/heroes/abaddon/abaddon.vmdl_c ...] \
+        [--material materials/models/heroes/abaddon/abaddon_body.vmat_c ...] \
+        [--texture panorama/images/heroes/npc_dota_hero_abaddon_png.vtex_c ...] [--map dota]
 
-The game folder holds gameinfo.txt (Source 1) or gameinfo.gi (Source 2). With no --model/--map, a default
-TF2 or CS2 set is used. Models are read through the game's own search paths (VPKs included), copied with
-their companion files into a temporary folder, and imported from there with the game still mounted, so
-materials and include models resolve the way they do for a user. Maps are imported from the game's maps
-folder (.bsp, or a Source 2 map .vpk). --include-animations imports the animations of Source 1 include
-models, or turns on *Import animations* for Source 2 models. --load-placeholders then runs *Load Entity* on
-every prop placeholder a map import leaves (Source 2 maps place all their geometry that way). --clips also
-imports the animation graph clips of Source 2 models that match the patterns (implies --include-animations;
-"*" takes every clip, about 2000 for a CS2 character). --save keeps the scene the last import left. Results use
-the same PASS/WARN/FAIL rules as run_sample_imports.py; exit code is 1 if anything failed.
+The game folder holds gameinfo.txt (Source 1) or gameinfo.gi (Source 2). With no explicit assets, a
+profile-specific TF2, CS2 or Dota 2 corpus is used. Assets are read through the game's own search paths
+(VPKs included), copied into a temporary folder, and imported with the game still mounted so dependencies
+resolve the way they do for a user. Maps are imported from the game's maps folder (.bsp, or a Source 2 map
+.vpk). --include-animations imports Source 1 include-model animations or Source 2 model animations.
+The default Dota profile enables model animations because they are part of its acceptance gate.
+--load-placeholders runs *Load Entity* on every prop placeholder left by a Source 2 map. --clips imports
+matching Source 2 animation-graph clips and implies --include-animations; "*" can import thousands.
+--save keeps the scene the last import left. Results use the same basic PASS/WARN/FAIL rules as
+run_sample_imports.py plus profile-specific minimum assertions; exit code is 1 if anything failed.
 """
 import argparse
+import hashlib
 import json
+import re
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
+import bmesh
 import bpy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -55,7 +63,70 @@ CS2_MODELS = [
     "models/props/de_dust/hr_dust/dust_crates/dust_crate_assembly_100x100_01.vmdl_c",
 ]
 CS2_MAPS = ["de_dust2", "de_inferno", "cs_office"]
+DOTA_MODELS = [
+    "models/heroes/abaddon/abaddon.vmdl_c",
+    "models/props_gameplay/aegis.vmdl_c",
+    "models/creeps/lane_creeps/creep_2021_dire/creep_2021_dire_melee.vmdl_c",
+]
+DOTA_MATERIALS = [
+    "materials/models/heroes/abaddon/abaddon_body.vmat_c",
+    "materials/models/heroes/bane/grip_color.vmat_c",
+]
+DOTA_MATERIAL_SHADERS = {
+    DOTA_MATERIALS[0]: "hero.vfx",
+    DOTA_MATERIALS[1]: "global_lit_simple.vfx",
+}
+DOTA_TEXTURES = ["panorama/images/heroes/npc_dota_hero_abaddon_png.vtex_c"]
+DOTA_MAPS = ["dota"]
 COMPANIONS = (".vvd", ".dx90.vtx", ".dx80.vtx", ".sw.vtx", ".vtx", ".phy", ".ani")
+
+
+@dataclass(frozen=True)
+class GameProfile:
+    key: str
+    name: str
+    app_id: int
+    source2: bool
+    models: tuple[str, ...]
+    maps: tuple[str, ...]
+    materials: tuple[str, ...] = ()
+    textures: tuple[str, ...] = ()
+    default_animations: bool = False
+    fingerprint_files: tuple[str, ...] = ()
+
+
+GAME_PROFILES = {
+    440: GameProfile(
+        "tf2",
+        "Team Fortress 2",
+        440,
+        False,
+        tuple(TF2_MODELS),
+        tuple(TF2_MAPS),
+        fingerprint_files=("tf2_misc_dir.vpk", "tf2_textures_dir.vpk"),
+    ),
+    730: GameProfile(
+        "cs2",
+        "Counter-Strike 2",
+        730,
+        True,
+        tuple(CS2_MODELS),
+        tuple(CS2_MAPS),
+        fingerprint_files=("pak01_dir.vpk", "shaders_pc_dir.vpk"),
+    ),
+    570: GameProfile(
+        "dota",
+        "Dota 2",
+        570,
+        True,
+        tuple(DOTA_MODELS),
+        tuple(DOTA_MAPS),
+        tuple(DOTA_MATERIALS),
+        tuple(DOTA_TEXTURES),
+        True,
+        ("pak01_dir.vpk", "shaders_pc_dir.vpk"),
+    ),
+}
 
 
 def is_source2(game: Path) -> bool:
@@ -66,8 +137,34 @@ def mount(game: Path):
     from SourceIO.library.shared.content_manager import ContentManager
     from SourceIO.library.utils.tiny_path import TinyPath
     content_manager = ContentManager()
+    content_manager.clean()
     content_manager.scan_for_content(TinyPath(game / ("gameinfo.gi" if is_source2(game) else "gameinfo.txt")))
     return content_manager
+
+
+def detect_profile(game: Path) -> tuple[GameProfile | None, int]:
+    content_manager = mount(game)
+    try:
+        app_id = int(content_manager.steam_id)
+    finally:
+        content_manager.clean()
+    return GAME_PROFILES.get(app_id), app_id
+
+
+def extract_resource(game: Path, resource: str, out_dir: Path) -> Path | None:
+    from SourceIO.library.utils.tiny_path import TinyPath
+    content_manager = mount(game)
+    try:
+        resource_path = TinyPath(resource)
+        buffer = content_manager.find_file(resource_path)
+        if buffer is None:
+            return None
+        target = out_dir / resource
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(buffer.read())
+        return target
+    finally:
+        content_manager.clean()
 
 
 def extract_model(game: Path, model: str, out_dir: Path) -> Path | None:
@@ -125,6 +222,48 @@ def summarize_model() -> dict:
             "pose_markers": markers, "nla_tracks": nla_tracks, "bone_collections": bone_collections}
 
 
+def summarize_materials() -> dict:
+    node_counts = {
+        material.name: len(material.node_tree.nodes) if material.node_tree is not None else 0
+        for material in bpy.data.materials
+    }
+    dummy_materials = sorted(
+        material.name
+        for material in bpy.data.materials
+        if material.node_tree is not None and "DUMMY" in material.node_tree.nodes
+    )
+    source2_shaders = sorted({
+        str(material.get("source2_shader"))
+        for material in bpy.data.materials
+        if material.get("source2_shader")
+    })
+    unsupported_source2_shaders = sorted({
+        str(material.get("source2_shader"))
+        for material in bpy.data.materials
+        if material.get("source2_shader")
+        and not material.get("source2_shader_supported", False)
+    })
+    return {
+        "material_node_counts": node_counts,
+        "dummy_materials": dummy_materials,
+        "source2_shaders": source2_shaders,
+        "unsupported_source2_shaders": unsupported_source2_shaders,
+    }
+
+
+def summarize_entity_reports() -> list[dict]:
+    reports = []
+    for collection in bpy.data.collections:
+        for key in ("sourceio_entity_report", "sourceio_entity_import_report"):
+            raw = collection.get(key)
+            if raw is None:
+                continue
+            report_data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            reports.append({"collection": collection.name, **report_data})
+            break
+    return reports
+
+
 def load_placeholders(result: dict):
     """Run *Load Entity* on every prop placeholder the map import left, and add what it made to ``result``."""
     placeholders = [obj for obj in bpy.data.objects
@@ -177,12 +316,163 @@ def report(result: dict, label: str):
           + (f"  :: {result['message']}" if result["message"] else ""))
 
 
+def fail_unless(result: dict, requirements: dict[str, int], *, message: str):
+    missing = [
+        f"{name}>={minimum} (got {result['created'].get(name, 0)})"
+        for name, minimum in requirements.items()
+        if result["created"].get(name, 0) < minimum
+    ]
+    if result["status"] != "FAIL" and missing:
+        result["status"] = "FAIL"
+        result["message"] = f"{message}: " + ", ".join(missing)
+
+
+def validate_result(profile: GameProfile | None, kind: str, asset: str, result: dict):
+    if result["status"] == "FAIL":
+        return
+    if kind == "model":
+        fail_unless(result, {"objects": 1, "meshes": 1}, message="model acceptance failed")
+        if profile and profile.key == "dota":
+            fail_unless(result, {"materials": 1, "images": 1}, message="Dota model dependencies missing")
+            if "/heroes/" in asset or "/creeps/" in asset:
+                fail_unless(result, {"armatures": 1, "actions": 1}, message="Dota animation acceptance failed")
+            if asset == DOTA_MODELS[0] and result["details"].get("shape_keys", 0) < 1:
+                result["status"] = "FAIL"
+                result["message"] = "Dota hero acceptance failed: no shape keys"
+    elif kind == "material":
+        fail_unless(result, {"materials": 1, "images": 1}, message="material acceptance failed")
+        if result["status"] != "FAIL" and result["details"].get("empty_materials", 0):
+            result["status"] = "FAIL"
+            result["message"] = "material acceptance failed: empty material graph"
+        if result["status"] != "FAIL" and result["details"].get("dummy_materials"):
+            result["status"] = "FAIL"
+            result["message"] = "material acceptance failed: unsupported dummy shader"
+        unsupported = result["details"].get("unsupported_source2_shaders", ())
+        if result["status"] != "FAIL" and unsupported:
+            result["status"] = "FAIL"
+            result["message"] = (
+                "material acceptance failed: unsupported Source 2 shader(s): "
+                + ", ".join(unsupported)
+            )
+        expected_shader = DOTA_MATERIAL_SHADERS.get(asset) if profile and profile.key == "dota" else None
+        if (
+                result["status"] != "FAIL"
+                and expected_shader
+                and expected_shader not in result["details"].get("source2_shaders", ())
+        ):
+            result["status"] = "FAIL"
+            result["message"] = (
+                f"Dota material acceptance failed: expected shader {expected_shader}"
+            )
+    elif kind == "texture":
+        fail_unless(result, {"images": 1}, message="texture acceptance failed")
+    elif kind == "map":
+        fail_unless(result, {"objects": 1, "collections": 1}, message="map acceptance failed")
+        if profile and profile.key == "dota":
+            fail_unless(result, {"objects": 1000, "collections": 5}, message="Dota world acceptance failed")
+            reports = result["details"].get("entity_reports", ())
+            if result["status"] != "FAIL" and not reports:
+                result["status"] = "FAIL"
+                result["message"] = "Dota world acceptance failed: no entity import report"
+            elif result["status"] != "FAIL":
+                entity_count = sum(int(report.get("entity_count", 0)) for report in reports)
+                represented = sum(
+                    int(report.get("totals", {}).get(category, 0))
+                    for report in reports
+                    for category in ("handled", "represented")
+                )
+                unsupported = sum(int(report.get("totals", {}).get("unsupported", 0)) for report in reports)
+                if entity_count < 4000 or represented < 4000 or unsupported > 100:
+                    result["status"] = "FAIL"
+                    result["message"] = (
+                        "Dota world entity acceptance failed: "
+                        f"entities={entity_count}, handled/represented={represented}, unsupported={unsupported}"
+                    )
+
+
+def file_fingerprint(path: Path) -> dict:
+    if not path.is_file():
+        return {"path": str(path.resolve()), "exists": False}
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    stat = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "exists": True,
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "sha256": digest.hexdigest(),
+    }
+
+
+def installation_report(game: Path, profile: GameProfile | None, app_id: int) -> dict:
+    gameinfo = game / ("gameinfo.gi" if is_source2(game) else "gameinfo.txt")
+    files = {"gameinfo": file_fingerprint(gameinfo)}
+    if profile:
+        for relative_path in profile.fingerprint_files:
+            files[relative_path] = file_fingerprint(game / relative_path)
+    if is_source2(game):
+        files["resourcecompiler.exe"] = file_fingerprint(game.parent / "bin/win64/resourcecompiler.exe")
+
+    common = next((parent for parent in (game, *game.parents) if parent.name.lower() == "common"), None)
+    manifest = common.parent / f"appmanifest_{app_id}.acf" if common is not None else None
+    manifest_fingerprint = file_fingerprint(manifest) if manifest is not None else {"exists": False}
+    build_id = None
+    if manifest is not None and manifest.is_file():
+        match = re.search(r'"buildid"\s+"(\d+)"', manifest.read_text(encoding="utf-8", errors="replace"))
+        build_id = match.group(1) if match else None
+    manifest_fingerprint["build_id"] = build_id
+
+    return {
+        "game_path": str(game.resolve()),
+        "app_id": app_id,
+        "profile": profile.key if profile else None,
+        "steam_manifest": manifest_fingerprint,
+        "files": files,
+    }
+
+
+def save_review_copy(save_dir: Path | None, kind: str, asset: str, result: dict):
+    """Save the scene an import left as <save_dir>/<kind>__<asset>.blend for manual review (images are packed)."""
+    if save_dir is None:
+        return
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(asset).with_suffix("").as_posix().replace("/", "__"))
+    path = save_dir / f"{kind}__{name}.blend"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    # Blender doesn't save data without users: a material or texture import alone leaves its material and images
+    # unused, so show each unused material on a sphere and keep unused images with a fake user.
+    for index, material in enumerate([material for material in bpy.data.materials if material.users == 0]):
+        mesh = bpy.data.meshes.new(f"preview_{material.name}")
+        sphere = bmesh.new()
+        bmesh.ops.create_uvsphere(sphere, u_segments=64, v_segments=32, radius=1.0, calc_uvs=True)
+        sphere.to_mesh(mesh)
+        sphere.free()
+        mesh.shade_smooth()
+        mesh.materials.append(material)
+        obj = bpy.data.objects.new(mesh.name, mesh)
+        obj.location.x = index * 2.5
+        bpy.context.scene.collection.objects.link(obj)
+    for image in bpy.data.images:
+        if image.users == 0:
+            image.use_fake_user = True
+    started = time.perf_counter()
+    bpy.ops.wm.save_as_mainfile(filepath=str(path.resolve()), copy=True, compress=True)
+    result.setdefault("details", {})["saved_blend"] = str(path)
+    print(f"    saved {path} ({time.perf_counter() - started:.1f} s)")
+
+
 def main() -> int:
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", type=Path, required=True, help="mod folder that holds gameinfo.txt or gameinfo.gi")
     parser.add_argument("--model", action="append", default=[], help="game-relative .mdl or .vmdl_c path")
+    parser.add_argument("--material", action="append", default=[], help="game-relative .vmat_c path")
+    parser.add_argument("--texture", action="append", default=[], help="game-relative .vtex_c path")
     parser.add_argument("--map", action="append", default=[], help="map name in <game>/maps")
+    parser.add_argument("--expect-profile", choices=("tf2", "cs2", "dota"),
+                        help="fail if installed-game detection selects a different profile")
     parser.add_argument("--include-animations", action="store_true",
                         help="also import the animations of each model's include models (Source 1), "
                              "or the model's own animations (Source 2)")
@@ -192,16 +482,35 @@ def main() -> int:
                         help="after importing a map, load every prop placeholder (the Load Entity button)")
     parser.add_argument("--json", type=Path)
     parser.add_argument("--save", type=Path, help="save the scene the last import left as this .blend")
+    parser.add_argument("--save-dir", type=Path,
+                        help="save a .blend after every import into this directory, for manual review")
     args = parser.parse_args(argv)
     source2 = is_source2(args.game)
-    if not source2 and not (args.game / "gameinfo.txt").is_file():
+    if not (args.game / ("gameinfo.gi" if source2 else "gameinfo.txt")).is_file():
         print(f"No gameinfo.txt or gameinfo.gi in {args.game}")
         return 1
-    models, maps = args.model, args.map
-    if not models and not maps:
-        models, maps = (CS2_MODELS, CS2_MAPS) if source2 else (TF2_MODELS, TF2_MAPS)
 
     samples.load_addon()
+    profile, app_id = detect_profile(args.game)
+    if args.expect_profile and (profile is None or profile.key != args.expect_profile):
+        actual = profile.key if profile else f"unknown app ID {app_id}"
+        print(f"Expected {args.expect_profile} profile, detected {actual}")
+        return 1
+
+    models, maps = list(args.model), list(args.map)
+    materials, textures = list(args.material), list(args.texture)
+    using_defaults = not any((models, maps, materials, textures))
+    if using_defaults:
+        if profile is None:
+            print(f"No default installed-game corpus for app ID {app_id}; specify assets explicitly")
+            return 1
+        models = list(profile.models)
+        maps = list(profile.maps)
+        materials = list(profile.materials)
+        textures = list(profile.textures)
+    import_animations = args.include_animations or bool(args.clips) or bool(using_defaults and profile
+                                                                            and profile.default_animations)
+
     results = []
     with tempfile.TemporaryDirectory(prefix="sourceio_game_") as tmp:
         for model in models:
@@ -212,16 +521,41 @@ def main() -> int:
             else:
                 # The operator unmounts everything when it finishes, so mount the game for each import.
                 if path.suffix == ".vmdl_c":
-                    operator, options = "vmdl", {"import_animations": args.include_animations or bool(args.clips),
+                    operator, options = "vmdl", {"import_animations": import_animations,
                                                  "animation_clips": args.clips}
                 else:
-                    operator, options = "mdl", {"import_include_animations": args.include_animations}
+                    operator, options = "mdl", {"import_include_animations": import_animations}
                 result = samples.run_one(path, operator, "files", before_import=lambda: mount(args.game),
                                          options=options)
                 result["file"] = model
                 result["details"].update(summarize_model())
+                result["details"].update(summarize_materials())
+            validate_result(profile, "model", model, result)
+            if path is not None:
+                save_review_copy(args.save_dir, "model", model, result)
             results.append(result)
             report(result, model)
+
+        for kind, assets, operator in (
+                ("material", materials, "vmat"),
+                ("texture", textures, "vtex"),
+        ):
+            for asset in assets:
+                path = extract_resource(args.game, asset, Path(tmp))
+                if path is None:
+                    result = {"file": asset, "status": "FAIL", "seconds": 0, "created": {}, "details": {},
+                              "errors": [], "error_count": 0, "message": "not found in the game's search paths"}
+                else:
+                    before_import = (lambda: mount(args.game)) if kind == "material" else None
+                    result = samples.run_one(path, operator, "files", before_import=before_import)
+                    result["file"] = asset
+                    if kind == "material":
+                        result["details"].update(summarize_materials())
+                validate_result(profile, kind, asset, result)
+                if path is not None:
+                    save_review_copy(args.save_dir, kind, asset, result)
+                results.append(result)
+                report(result, asset)
 
         for name in maps:
             path = args.game / "maps" / (f"{name}.vpk" if source2 else f"{name}.bsp")
@@ -232,13 +566,35 @@ def main() -> int:
                 result = samples.run_one(path, "vmap_vpk" if source2 else "bsp", "filepath")
                 if args.load_placeholders and result["status"] != "FAIL":
                     load_placeholders(result)
+                entity_reports = summarize_entity_reports()
+                if entity_reports:
+                    result["details"]["entity_reports"] = entity_reports
+            validate_result(profile, "map", name, result)
+            if path.is_file():
+                save_review_copy(args.save_dir, "map", name, result)
             results.append(result)
             report(result, f"maps/{path.name}")
 
     summary = {status: sum(1 for r in results if r["status"] == status) for status in ("PASS", "WARN", "FAIL")}
     print(f"GAME SUMMARY {summary}")
     if args.json:
-        args.json.write_text(json.dumps({"summary": summary, "results": results}, indent=2))
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps({
+            "schema": "sourceio.game-import-report",
+            "schema_version": 1,
+            "installation": installation_report(args.game, profile, app_id),
+            "selection": {
+                "models": models,
+                "materials": materials,
+                "textures": textures,
+                "maps": maps,
+                "include_animations": import_animations,
+                "clips": args.clips,
+                "load_placeholders": args.load_placeholders,
+            },
+            "summary": summary,
+            "results": results,
+        }, indent=2))
     if args.save:
         bpy.ops.wm.save_as_mainfile(filepath=str(args.save.resolve()))
     return 1 if summary["FAIL"] else 0

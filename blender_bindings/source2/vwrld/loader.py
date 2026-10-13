@@ -28,8 +28,10 @@ from .entities.abstract_entity_handlers import get_angles, get_origin, parse_flo
 from .entities.base_entity_handlers import BaseEntityHandler
 from .entities.cs2_entity_handlers import CS2EntityHandler
 from .entities.deadlock_entity_handlers import DeadlockEntityHandler
+from .entities.dota2_entity_handlers import Dota2EntityHandler
 from .entities.hlvr_entity_handlers import HLVREntityHandler
 from .entities.sbox_entity_handlers import SBoxEntityHandler
+from .entity_import_diagnostics import EntityImportDiagnostics, get_entity_import_report  # noqa: F401 (re-export)
 
 log_manager = SourceLogMan()
 
@@ -265,6 +267,8 @@ def get_entity_handler(cm: ContentManager) -> Type[BaseEntityHandler]:
         return SBoxEntityHandler
     # elif cm.steam_id == 890 and 'steampal' in cm.content_providers:
     #     return SteamPalEntityHandler
+    elif cm.steam_id == SteamAppId.DOTA_2:
+        return Dota2EntityHandler
     elif cm.steam_id == SteamAppId.COUNTER_STRIKE_GO:
         return CS2EntityHandler
     elif cm.steam_id == SteamAppId.DEADLOCK:
@@ -294,12 +298,18 @@ def load_entities(world_resource: CompiledWorldResource, collection: bpy.types.C
                   scale: float, cm: ContentManager, skipped_classes: frozenset[str] = frozenset(),
                   texture_settings: TextureImportSettings | None = None):
     handler_class = get_entity_handler(cm)
+    diagnostics = EntityImportDiagnostics()
     for entity_resource in iter_entity_lumps(world_resource, cm):
         entities = [entity for entity in entity_resource.get_entities()
                     if entity_values(entity).get("classname") not in skipped_classes]
         handler = handler_class(entities, collection, cm, scale)
+        if hasattr(handler, "set_entity_import_diagnostics"):
+            handler.set_entity_import_diagnostics(diagnostics)
         handler.texture_settings = texture_settings or TextureImportSettings()
         handler.load_entities()
+    diagnostics.attach(collection)
+    diagnostics.log_summary(logger)
+    return diagnostics.to_dict()
 
 
 def load_skyboxes(world_resource: CompiledWorldResource, collection: bpy.types.Collection,

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import math
-from pathlib import PurePosixPath
+from os import PathLike
+from pathlib import Path, PurePosixPath
 
 import numpy as np
 
 from ...source1.dmx.source1_to_dmx import DmxModel2
 from ...utils import datamodel
 from ..utils.kv3_generator import KV3mdl
+from ..workshop.target import ContentRelativePath, WorkshopTargetProfile
 from .bundle import ExportBundle
 from .diagnostics import DiagnosticSeverity, LossKind, LossReport
 from .domain import AttachmentInfluence, ModelDocument, PhysicsShape, StaticMesh
@@ -27,6 +29,26 @@ def _output_stem(document: ModelDocument, stem: str | None) -> str:
         raise ValueError("ModelDoc output stem must be a single non-empty file name")
     _validate_source_string(value, "ModelDoc output stem")
     return value
+
+
+def _model_asset_path(
+        output_stem: str,
+        asset_path: str | PathLike[str] | ContentRelativePath | None,
+        target_profile: WorkshopTargetProfile | None,
+) -> ContentRelativePath | None:
+    if asset_path is None:
+        return None
+    normalized = (
+        target_profile.content_relative(asset_path)
+        if target_profile is not None
+        else ContentRelativePath(asset_path)
+    )
+    expected_name = f"{output_stem}.vmdl"
+    if normalized.name != expected_name:
+        raise ValueError(
+            f"ModelDoc asset path must end with {expected_name!r}: {normalized}"
+        )
+    return normalized
 
 
 def _add_attribute(mesh, dmx_name: str, values: np.ndarray, value_type):
@@ -208,11 +230,23 @@ class ModelDocExporter:
             document: ModelDocument,
             *,
             stem: str | None = None,
+            asset_path: str | PathLike[str] | ContentRelativePath | None = None,
+            target_profile: WorkshopTargetProfile | None = None,
             report: LossReport | None = None,
     ) -> ExportBundle:
         loss_report = report if report is not None else LossReport()
         output_stem = _output_stem(document, stem)
         mesh_filename = f"{output_stem}.dmx"
+        model_asset_path = _model_asset_path(
+            output_stem, asset_path, target_profile
+        )
+        mesh_reference = (
+            ContentRelativePath(
+                model_asset_path.parent / mesh_filename
+            ).as_posix()
+            if model_asset_path is not None
+            else mesh_filename
+        )
 
         _validate_source_string(document.name, "model name")
         mesh_names = [mesh.name for mesh in document.meshes]
@@ -241,7 +275,7 @@ class ModelDocExporter:
         )
         modeldoc.storage["rootNode"]["importer_notes"] = "Reconstructed by SourceIO from compiled resource data"
         for mesh in document.meshes:
-            modeldoc.add_render_mesh(mesh.name, mesh_filename, import_filter=(mesh.name,))
+            modeldoc.add_render_mesh(mesh.name, mesh_reference, import_filter=(mesh.name,))
 
         for bodygroup in document.bodygroups:
             group = modeldoc.add_bodygroup(bodygroup.name)
@@ -321,6 +355,8 @@ class ModelDocExporter:
             "schema_version": 1,
             "document": document.to_dict(),
         }
+        if model_asset_path is not None:
+            sidecar["asset_path"] = model_asset_path.as_posix()
         files = {
             f"{output_stem}.vmdl": modeldoc.dump(),
             mesh_filename: dmx.dmx.echo("keyvalues2", 4),
@@ -335,10 +371,21 @@ class ModelDocExporter:
             output_directory,
             *,
             stem: str | None = None,
+            asset_path: str | PathLike[str] | ContentRelativePath | None = None,
+            target_profile: WorkshopTargetProfile | None = None,
             overwrite: bool = False,
             report: LossReport | None = None,
     ):
-        bundle = self.build(document, stem=stem, report=report)
+        if asset_path is None and target_profile is not None:
+            output_stem = _output_stem(document, stem)
+            asset_path = Path(output_directory) / f"{output_stem}.vmdl"
+        bundle = self.build(
+            document,
+            stem=stem,
+            asset_path=asset_path,
+            target_profile=target_profile,
+            report=report,
+        )
         return bundle.write(output_directory, overwrite=overwrite)
 
 

@@ -197,7 +197,10 @@ def _mesh_from_object(obj, report: LossReport, unit_scale: float) -> StaticMesh:
         vertices=tuple(vertices),
         faces=tuple(faces),
         lods=lods,
-        metadata={"blender_object": obj.name},
+        metadata={
+            "blender_object": obj.name,
+            "blender_mesh": obj.data.name,
+        },
     )
 
 

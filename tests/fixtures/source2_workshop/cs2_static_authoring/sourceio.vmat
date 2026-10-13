@@ -1,0 +1,6 @@
+Layer0
+{
+    shader "csgo_complex.vfx"
+    g_vColorTint "[1.000000 1.000000 1.000000 0.000000]"
+    TextureColor "materials/sourceio_contract/sourceio_color.tga"
+}

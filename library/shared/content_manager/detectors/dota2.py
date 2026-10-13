@@ -15,8 +15,9 @@ class Dota2Detector(Source2Detector):
 
     @classmethod
     def find_game_root(cls, path: TinyPath) -> TinyPath | None:
-        dota_pack01 = backwalk_file_resolver(path, r'dota/pak01_dir.vpk')
-        # The resolver also accepts a bare pak01_dir.vpk, which every Source 2 game has.
+        # The resolver also tries the shorter suffixes (dota/pak01_dir.vpk and a bare pak01_dir.vpk, which every
+        # Source 2 game has) at each level, so this finds the game from the install root as well as from inside it.
+        dota_pack01 = backwalk_file_resolver(path, r'game/dota/pak01_dir.vpk')
         if dota_pack01 is not None and dota_pack01.parent.name.lower() == 'dota':
             return dota_pack01.parent.parent
         return None
@@ -29,8 +30,8 @@ class Dota2Detector(Source2Detector):
         providers = set()
         initial_mod_gi_path = backwalk_file_resolver(path, "gameinfo.gi")
         if initial_mod_gi_path is not None:
-            cls.add_provider(Source2GameInfoProvider(initial_mod_gi_path, SteamAppId.COUNTER_STRIKE_GO), providers)
+            cls.add_provider(Source2GameInfoProvider(initial_mod_gi_path, SteamAppId.DOTA_2), providers)
         user_mod_gi_path = game_root / "dota/gameinfo.gi"
         if initial_mod_gi_path != user_mod_gi_path and user_mod_gi_path.exists():
-            cls.add_provider(Source2GameInfoProvider(user_mod_gi_path, SteamAppId.COUNTER_STRIKE_GO), providers)
+            cls.add_provider(Source2GameInfoProvider(user_mod_gi_path, SteamAppId.DOTA_2), providers)
         return providers, game_root

@@ -2,11 +2,14 @@
 
     blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--output out.blend]
                                FILE [FILE ...]
+    blender -c sourceio export-cs2 --install-root ROOT --addon ADDON --asset NAME [--compile]
+    blender -c sourceio recompile-cs2 --install-root ROOT --addon ADDON MANIFEST
 
 Imports each file with the same operator the File > Import menu uses, picked by extension, then
 optionally saves the result as a .blend file.
 """
 import argparse
+import os
 import struct
 from pathlib import Path
 
@@ -15,7 +18,21 @@ import bpy
 from ..library.source2.exceptions import Source2Error
 from ..library.source2.resource_types.compiled_sound_resource import CompiledSoundResource
 from ..library.source2.sound import SoundError
+from ..library.source2.authoring import (
+    AuthoringGrouping,
+    AuthoringScope,
+    Source2AuthoringRequest,
+)
+from ..library.source2.export import ExportBlockedError
+from ..library.source2.workshop import (
+    CS2_WORKSHOP_LAYOUT,
+    ContentRelativePath,
+    ResourceCompilerError,
+    WorkshopTargetError,
+    WorkshopTargetProfile,
+)
 from ..library.utils import FileBuffer
+from .exporting.source2 import execute_cs2_authoring, recompile_cs2_manifest
 
 # extension -> operator name under bpy.ops.sourceio
 OPERATORS = {
@@ -115,6 +132,19 @@ def _export(operator_name: str, output: Path, overwrite: bool) -> bool:
     return True
 
 
+def _cs2_target(install_root: Path, addon_name: str) -> WorkshopTargetProfile:
+    return WorkshopTargetProfile(
+        CS2_WORKSHOP_LAYOUT,
+        install_root,
+        addon_name,
+    )
+
+
+def _print_authoring_failure(exc: Exception):
+    message = str(exc).strip().splitlines()[-1] if str(exc).strip() else type(exc).__name__
+    print(f"sourceio: CS2 authoring failed: {message}")
+
+
 def execute(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="blender -c sourceio",
@@ -156,6 +186,48 @@ def execute(argv: list[str]) -> int:
     )
     hammer_parser.add_argument("output", type=Path, help="target .vmap path")
     hammer_parser.add_argument("--overwrite", action="store_true", help="replace all generated outputs")
+
+    cs2_parser = commands.add_parser(
+        "export-cs2",
+        help="author an editable static CS2 Workshop model/material/texture bundle",
+    )
+    cs2_parser.add_argument(
+        "--install-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_CS2_WORKSHOP_ROOT"),
+        help="CS2 installation root (or set SOURCEIO_CS2_WORKSHOP_ROOT)",
+    )
+    cs2_parser.add_argument("--addon", required=True, help="lowercase Workshop addon name")
+    cs2_parser.add_argument("--asset", required=True, help="lowercase output asset name")
+    cs2_parser.add_argument(
+        "--scope",
+        choices=[scope.value for scope in AuthoringScope],
+        default=AuthoringScope.SELECTED.value,
+    )
+    cs2_parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="write one model per object instead of one combined model",
+    )
+    cs2_parser.add_argument("--overwrite", action="store_true", help="replace all planned editable files")
+    cs2_parser.add_argument("--compile", action="store_true", help="compile after writing editable files")
+
+    recompile_parser = commands.add_parser(
+        "recompile-cs2",
+        help="revalidate and compile an existing CS2 authoring manifest",
+    )
+    recompile_parser.add_argument(
+        "--install-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_CS2_WORKSHOP_ROOT"),
+        help="CS2 installation root (or set SOURCEIO_CS2_WORKSHOP_ROOT)",
+    )
+    recompile_parser.add_argument("--addon", required=True, help="Workshop addon name")
+    recompile_parser.add_argument(
+        "manifest",
+        type=ContentRelativePath,
+        help="content-relative SourceIO authoring manifest",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "extract-sound":
@@ -171,6 +243,61 @@ def execute(argv: list[str]) -> int:
         return 0 if _export("source2_modeldoc_export", args.output, args.overwrite) else 1
     if args.command == "export-hammer":
         return 0 if _export("source2_hammer_export", args.output, args.overwrite) else 1
+    if args.command == "export-cs2":
+        if args.install_root is None:
+            print("sourceio: --install-root or SOURCEIO_CS2_WORKSHOP_ROOT is required")
+            return 2
+        try:
+            request = Source2AuthoringRequest(
+                _cs2_target(args.install_root, args.addon),
+                args.asset,
+                scope=args.scope,
+                grouping=(
+                    AuthoringGrouping.BATCH
+                    if args.batch
+                    else AuthoringGrouping.COMBINED
+                ),
+                overwrite=args.overwrite,
+                compile_after_export=args.compile,
+            )
+            result = execute_cs2_authoring(bpy.context, request)
+        except (
+                ExportBlockedError,
+                ResourceCompilerError,
+                WorkshopTargetError,
+                OSError,
+                TypeError,
+                ValueError,
+        ) as exc:
+            _print_authoring_failure(exc)
+            return 1
+        print(
+            f"sourceio: wrote {len(result.execution.written_paths)} editable file(s); "
+            f"manifest {result.execution.manifest_path}; "
+            f"compiled {len(result.execution.compiler_results)} resource(s)"
+        )
+        return 0
+    if args.command == "recompile-cs2":
+        if args.install_root is None:
+            print("sourceio: --install-root or SOURCEIO_CS2_WORKSHOP_ROOT is required")
+            return 2
+        try:
+            results = recompile_cs2_manifest(
+                args.install_root,
+                args.addon,
+                args.manifest,
+            )
+        except (
+                ResourceCompilerError,
+                WorkshopTargetError,
+                OSError,
+                TypeError,
+                ValueError,
+        ) as exc:
+            _print_authoring_failure(exc)
+            return 1
+        print(f"sourceio: compiled {len(results)} resource(s)")
+        return 0
 
     if args.mip_level < 0:
         parser.error("--mip-level must be non-negative")

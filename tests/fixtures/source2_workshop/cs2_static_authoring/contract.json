@@ -1,0 +1,25 @@
+{
+  "addon_layout": {
+    "content": "content/csgo_addons/{addon}",
+    "game": "game/csgo_addons/{addon}"
+  },
+  "associated_texture_parameter": "g_tColor",
+  "compile_inputs": [
+    "materials/sourceio_contract/sourceio.vmat",
+    "models/sourceio_contract/sourceio.vmdl"
+  ],
+  "expected_primary_outputs": [
+    "materials/sourceio_contract/sourceio.vmat_c",
+    "models/sourceio_contract/sourceio.vmdl_c"
+  ],
+  "fbx_material": "sourceio_slot",
+  "fbx_mesh": "sourceio_mesh",
+  "paths": {
+    "material": "materials/sourceio_contract/sourceio.vmat",
+    "modeldoc": "models/sourceio_contract/sourceio.vmdl",
+    "render_mesh": "models/sourceio_contract/sourceio.fbx",
+    "source_texture": "materials/sourceio_contract/sourceio_color.tga"
+  },
+  "schema": "sourceio.cs2-static-authoring-contract",
+  "schema_version": 1
+}

@@ -7,7 +7,8 @@ from ..library.utils.singleton import SingletonMeta
 from ..library.utils.tiny_path import TinyPath
 
 from .attributes import register_props, unregister_props
-from .operators.flex_operators import classes as flex_classes
+from .operators.flex_operators import (classes as flex_classes, register_handlers as register_flex_handlers,
+                                       unregister_handlers as unregister_flex_handlers)
 from .operators.goldsrc_operators import SOURCEIO_OT_GBSPImport
 from .operators.shared_operators import shared_classes
 from .operators.source1_operators import (SOURCEIO_OT_BSPImport,
@@ -25,6 +26,10 @@ from .operators.source2_operators import (SOURCEIO_OT_VMAPImport,
                                           SOURCEIO_OT_VTEXImport,
                                           SOURCEIO_OT_DMXCameraImport)
 from .operators.source2_animation_operators import SOURCEIO_OT_Source2AnimationImport
+from .operators.source2_authoring_operators import (
+    SOURCEIO_OT_CS2AuthoringExport,
+    SOURCEIO_OT_CS2AuthoringRecompile,
+)
 from .operators.source2_export_operators import (
     SOURCEIO_OT_Source2HammerMapExport,
     SOURCEIO_OT_Source2ModelDocExport,
@@ -115,12 +120,21 @@ class SourceIO_MT_ExportMenu(bpy.types.Menu):
     def draw(self, context):
         layout = self.layout
         layout.operator(
+            SOURCEIO_OT_CS2AuthoringExport.bl_idname,
+            text="CS2 Workshop static asset",
+        )
+        layout.operator(
+            SOURCEIO_OT_CS2AuthoringRecompile.bl_idname,
+            text="Recompile CS2 authoring manifest",
+        )
+        layout.separator()
+        layout.operator(
             SOURCEIO_OT_Source2ModelDocExport.bl_idname,
-            text="Source2 ModelDoc (.vmdl/.dmx)",
+            text="Source2 ModelDoc reconstruction (.vmdl/.dmx)",
         )
         layout.operator(
             SOURCEIO_OT_Source2HammerMapExport.bl_idname,
-            text="Source2 Hammer map (.vmap)",
+            text="Source2 Hammer reconstruction (.vmap)",
         )
 
 
@@ -176,6 +190,8 @@ classes = [
     SOURCEIO_OT_VNMClipImport,
     SOURCEIO_OT_Source2AnimationImport,
     SOURCEIO_OT_VSNDImport,
+    SOURCEIO_OT_CS2AuthoringExport,
+    SOURCEIO_OT_CS2AuthoringRecompile,
     SOURCEIO_OT_Source2ModelDocExport,
     SOURCEIO_OT_Source2HammerMapExport,
     SOURCEIO_OT_VTEXImport,
@@ -236,6 +252,7 @@ def register():
     register_()
     register_nodes()
     register_props()
+    register_flex_handlers()
     bpy.types.TOPBAR_MT_file_import.append(menu_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_export)
     bpy.types.IMAGE_MT_image.append(vtf_export)
@@ -264,6 +281,7 @@ def unregister():
     #     from .operators.source1_operators import export
     #     bpy.types.IMAGE_MT_image.remove(export)
 
+    unregister_flex_handlers()
     unregister_nodes()
     unregister_props()
     SingletonMeta.cleanup()

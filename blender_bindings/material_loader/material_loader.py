@@ -106,11 +106,11 @@ class ShaderRegistry:
         if not data:
             return
         shader = data['m_shaderName']
+        handler_class = cls._handlers.get(shader, DummyShader)
+        material['source2_shader'] = str(shader)
+        material['source2_shader_supported'] = handler_class is not DummyShader
         use_tint = extra_parameters.get(ExtraMaterialParameters.USE_OBJECT_TINT, False)
-        handler: Source2ShaderBase = cls._handlers.get(shader, DummyShader)(content_manager,
-                                                                            material_resource,
-                                                                            use_tint
-                                                                            )
+        handler: Source2ShaderBase = handler_class(content_manager, material_resource, use_tint)
         handler.bpy_material = material
         try:
             handler.create_nodes(material, extra_parameters)

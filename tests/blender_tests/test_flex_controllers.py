@@ -232,6 +232,53 @@ class FlexControllerTests(unittest.TestCase):
         self.assertAlmostEqual(data[stereo.R], 0.8)
         self.assertEqual(stereo.value, 0.0)
 
+    def test_changing_another_slider_commits_the_active_drag_first(self):
+        # A script setting several sliders in a row must apply all of them, not reject all but the first.
+        from SourceIO.blender_bindings.operators import flex_operators
+        scene, data = bpy.context.scene, self.obj.data
+        first = self.obj.flex_controllers['cs']
+        data[first.L], data[first.R] = 0.25, 0.6
+
+        mesh = bpy.data.meshes.new('face2')
+        mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+        other = bpy.data.objects.new('face2', mesh)
+        scene.collection.objects.link(other)
+        other.shape_key_add(name='Basis')
+        other.shape_key_add(name='a_b')
+        create_flex_drivers(other, fake_mdl())
+        second = other.flex_controllers['cs']
+        other.data[second.L], other.data[second.R] = 0.0, 0.0
+
+        session = _FlexDragSession(self.obj, first, scene)
+        flex_operators._active_flex_drag = session
+        try:
+            first.value = 0.2
+            second.value = 0.5
+        finally:
+            flex_operators._active_flex_drag = None
+
+        self.assertTrue(session.finished)
+        self.assertAlmostEqual(data[first.L], 0.45)
+        self.assertAlmostEqual(data[first.R], 0.8)
+        self.assertEqual(first.value, 0.0)
+        self.assertAlmostEqual(other.data[second.L], 0.5)
+        self.assertAlmostEqual(other.data[second.R], 0.5)
+        self.assertEqual(second.value, 0.0)
+
+    def test_undo_handler_zeroes_stale_additive_values(self):
+        from SourceIO.blender_bindings.operators import flex_operators
+        data = self.obj.data
+        stereo = self.obj.flex_controllers['cs']
+        data[stereo.L], data[stereo.R] = 0.25, 0.6
+        flex_operators._set_flex_delta(stereo, 0.3)
+
+        flex_operators.reset_flex_deltas()
+
+        self.assertEqual(stereo.value, 0.0)
+        self.assertAlmostEqual(data[stereo.L], 0.25)
+        self.assertAlmostEqual(data[stereo.R], 0.6)
+        self.assertIn(flex_operators.reset_flex_deltas, bpy.app.handlers.undo_post)
+
     def test_key_toggle_and_key_all(self):
         data = self.obj.data
         name = self.flexmap['ca']

@@ -25,6 +25,14 @@ _INTROSPECTION_INDEPENDENT_BLOCKS = frozenset(("NTRO", "RERL"))
 _PREREQUISITE_BLOCKS = ("NTRO", "RERL", "REDI", "RED2", "CTRL")
 
 
+def _open_child_stream(cm: ContentManager, resource_path: TinyPath) -> Buffer | None:
+    """A buffer only this caller owns, so it can be closed. ContentManager.find_file hands out cached buffers
+    shared with other callers, so ask it for an uncached one."""
+    if isinstance(cm, ContentManager):
+        return cm.find_file(resource_path, do_not_cache=True)
+    return cm.find_file(resource_path)
+
+
 @dataclass(slots=True)
 class CompiledResource:
     _buffer: Buffer
@@ -340,7 +348,11 @@ class CompiledResource:
         resource_path = self.get_child_resource_path(name_or_id)
         if resource_path is None:
             return None
-        return cm.find_file(resource_path) is not None
+        file = _open_child_stream(cm, resource_path)
+        if file is None:
+            return False
+        file.close()
+        return True
 
     def get_child_resource_path(self, name_or_id: str | int) -> TinyPath | None:
         external_resources = self.get_block(
@@ -361,10 +373,13 @@ class CompiledResource:
         resource_path = self.get_child_resource_path(name_or_id)
         if resource_path is None:
             return None
-        file = cm.find_file(resource_path)
+        file = _open_child_stream(cm, resource_path)
         if file is None:
             return None
-        return resource_class.from_buffer(file, resource_path)
+        try:
+            return resource_class.from_buffer(file, resource_path)
+        finally:
+            file.close()
 
     def get_child_resources(self):
         external_resources = self.get_block(

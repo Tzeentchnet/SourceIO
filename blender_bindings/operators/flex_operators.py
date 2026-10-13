@@ -1,5 +1,6 @@
 import bpy
 import numpy as np
+from bpy.app.handlers import persistent
 from bpy.props import BoolProperty, FloatProperty, StringProperty
 from bpy.types import Operator
 from bpy_extras import anim_utils
@@ -96,6 +97,8 @@ class _FlexDragSession:
         self.delta = 0.0
         self.balance = scene.sourceio_flex_lr_balance
         self.changed_properties = ()
+        # Set once the session has been committed or cancelled, possibly before its operator's next timer tick.
+        self.finished = False
 
     def matches(self, slider):
         try:
@@ -177,21 +180,34 @@ class _FlexDragSession:
         return True
 
 
+def _flush_active_flex_drag():
+    """Commit the active session now, so a script setting several sliders in a row applies all of them.
+
+    Its operator sees the session finished on its next timer tick and only cleans up."""
+    global _active_flex_drag
+    session = _active_flex_drag
+    _active_flex_drag = None
+    try:
+        slider = session.current_slider()
+        if slider is None or not session.commit(slider.value, session.scene.sourceio_flex_lr_balance):
+            logger.error(f'Could not apply flex controller "{session.slider_name}"')
+            session.cancel()
+    finally:
+        session.finished = True
+        session.reset_delta()
+
+
 def slider_update(slider, context):
     global _active_flex_drag
     if _resetting_flex_delta:
         return
     if _active_flex_drag is not None:
-        if not _active_flex_drag.matches(slider):
-            logger.error(
-                f'Flex controller "{slider.name}" changed while "{_active_flex_drag.slider_name}" is being dragged'
-            )
-            _set_flex_delta(slider, 0.0)
+        if _active_flex_drag.matches(slider):
+            changed = _active_flex_drag.apply(slider.value, context.scene.sourceio_flex_lr_balance)
+            if changed is None:
+                logger.error(f'Flex controller "{slider.name}" lost its mesh data during a drag')
             return
-        changed = _active_flex_drag.apply(slider.value, context.scene.sourceio_flex_lr_balance)
-        if changed is None:
-            logger.error(f'Flex controller "{slider.name}" lost its mesh data during a drag')
-        return
+        _flush_active_flex_drag()
     if slider.value == 0.0:
         return
     if not slider.split:
@@ -210,9 +226,11 @@ def slider_update(slider, context):
             logger.error(f'Flex controller property {ex} is missing from "{obj.name}"')
             _set_flex_delta(slider, 0.0)
             return
-        if not session.commit(slider.value, context.scene.sourceio_flex_lr_balance):
-            logger.error(f'Could not apply flex controller "{slider.name}" to "{obj.name}"')
-        session.reset_delta()
+        try:
+            if not session.commit(slider.value, context.scene.sourceio_flex_lr_balance):
+                logger.error(f'Could not apply flex controller "{slider.name}" to "{obj.name}"')
+        finally:
+            session.reset_delta()
         return
     try:
         result = bpy.ops.sourceio.flex_slider_handler(
@@ -242,7 +260,7 @@ class SourceIO_PG_FlexController(bpy.types.PropertyGroup):
         default=0.0,
         min=-1.0,
         max=1.0,
-        options={'SKIP_SAVE'},
+        options=set(),
         update=slider_update,
         description='Adds to the current left/right values using the L/R balance; resets to 0 after the drag',
     )
@@ -330,23 +348,32 @@ class SOURCEIO_OT_FlexSliderHandler(Operator):
         if self._completed:
             return {'FINISHED'} if action == 'COMMIT' else {'CANCELLED'}
 
-        success = False
-        if action == 'COMMIT':
-            slider = self._session.current_slider()
-            if slider is not None:
-                success = self._session.commit(
-                    slider.value,
-                    self._session.scene.sourceio_flex_lr_balance,
-                )
-            if not success:
-                self._session.cancel()
-        else:
-            success = self._session.cancel()
-
-        self._session.reset_delta()
-        _active_flex_drag = None
-        self._remove_timer()
         self._completed = True
+        success = False
+        try:
+            if self._session.finished:
+                # Another slider changed first and committed this session early.
+                action = 'COMMIT'
+                success = True
+            elif action == 'COMMIT':
+                slider = self._session.current_slider()
+                if slider is not None:
+                    success = self._session.commit(
+                        slider.value,
+                        self._session.scene.sourceio_flex_lr_balance,
+                    )
+                if not success:
+                    self._session.cancel()
+            else:
+                success = self._session.cancel()
+        finally:
+            # Always release the drag, even if keying raised; a stale session would block every later drag.
+            if not self._session.finished:
+                self._session.finished = True
+                self._session.reset_delta()
+            if _active_flex_drag is self._session:
+                _active_flex_drag = None
+            self._remove_timer()
 
         if not success:
             self.report({'ERROR'}, f'Could not finish flex controller "{self.flex_controller}"')
@@ -355,6 +382,8 @@ class SOURCEIO_OT_FlexSliderHandler(Operator):
 
     def modal(self, context, event):
         if self._is_own_timer(event):
+            if self._session.finished:
+                return self._complete(context, 'COMMIT')
             if self._pending_action is not None:
                 return self._complete(context, self._pending_action)
             if not self._session.matches_context(context) or self._session.current_slider() is None:
@@ -529,6 +558,47 @@ class SOURCEIO_UL_FlexControllerList(bpy.types.UIList):
         if item.split:
             row.prop(item, 'realvalue', text='', emboss=False,
                      icon='RESTRICT_VIEW_OFF' if item.realvalue else 'RESTRICT_VIEW_ON')
+
+
+@persistent
+def reset_flex_deltas(*_args):
+    """Zero every leftover additive slider value. The slider's own undo step is pushed mid-drag, before the
+    operator commits and resets it, so undoing to that step would otherwise bring back a stale delta that the
+    next drag adds on top of."""
+    if _active_flex_drag is not None:
+        return
+    for obj in bpy.data.objects:
+        if obj.library is not None or obj.type != 'MESH':
+            continue
+        for slider in obj.flex_controllers:
+            if slider.value != 0.0:
+                _set_flex_delta(slider, 0.0)
+
+
+@persistent
+def _reset_flex_drag_on_load(*_args):
+    global _active_flex_drag
+    _active_flex_drag = None
+    reset_flex_deltas()
+
+
+_HANDLERS = (
+    (bpy.app.handlers.undo_post, reset_flex_deltas),
+    (bpy.app.handlers.redo_post, reset_flex_deltas),
+    (bpy.app.handlers.load_post, _reset_flex_drag_on_load),
+)
+
+
+def register_handlers():
+    for handler_list, handler in _HANDLERS:
+        if handler not in handler_list:
+            handler_list.append(handler)
+
+
+def unregister_handlers():
+    for handler_list, handler in _HANDLERS:
+        if handler in handler_list:
+            handler_list.remove(handler)
 
 
 classes = (

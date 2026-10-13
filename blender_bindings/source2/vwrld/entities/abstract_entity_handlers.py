@@ -1,6 +1,5 @@
 import math
 import re
-from pprint import pformat
 
 import bpy
 from mathutils import Euler, Matrix
@@ -15,13 +14,14 @@ from .....library.source2 import CompiledMaterialResource, CompiledTextureResour
 from .....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from .....library.utils.tiny_path import TinyPath
 from .....logger import SourceLogMan
+from ..entity_import_diagnostics import EntityImportDiagnostics, EntityImportStatus
 
 strip_patch_coordinates = re.compile(r"_-?\d+_-?\d+_-?\d+.*$")
 log_manager = SourceLogMan()
 
 
 def parse_int_vector(string):
-    if isinstance(string, tuple):
+    if isinstance(string, (list, tuple)):
         return list(string)
     elif isinstance(string, np.ndarray):
         return string
@@ -29,7 +29,7 @@ def parse_int_vector(string):
 
 
 def parse_float_vector(string):
-    if isinstance(string, tuple):
+    if isinstance(string, (list, tuple)):
         return list(string)
     elif isinstance(string, np.ndarray):
         # KV3 arrays are read-only views of the file; handlers adjust the result in place.
@@ -70,13 +70,26 @@ class AbstractEntityHandler:
 
         self._entity_by_name_cache = {}
         self._collections = {}
+        self.entity_import_diagnostics = EntityImportDiagnostics()
+        self._owns_entity_import_diagnostics = True
 
     def load_entities(self):
         for entity in self._entities:
             self.handle_entity(entity)
+        if self._owns_entity_import_diagnostics:
+            self.finalize_entity_import_diagnostics()
+
+    def set_entity_import_diagnostics(self, diagnostics: EntityImportDiagnostics):
+        self.entity_import_diagnostics = diagnostics
+        self._owns_entity_import_diagnostics = False
+
+    def finalize_entity_import_diagnostics(self):
+        if self.parent_collection is not None:
+            self.entity_import_diagnostics.attach(self.parent_collection)
+        self.entity_import_diagnostics.log_summary(self.logger)
 
     def handle_entity(self, entity_data: dict):
-        if "version" in entity_data:
+        if "values" in entity_data and ("version" in entity_data or "classname" not in entity_data):
             entity_data = entity_data["values"]
         entity_class = entity_data['classname']
         if hasattr(self, f'handle_{entity_class}') and entity_class in self.entity_lookup_table:
@@ -84,16 +97,17 @@ class AbstractEntityHandler:
             entity_object = entity_class_obj(entity_data)
             handler_function = getattr(self, f'handle_{entity_class}')
             try:
-                handler_function(entity_object, entity_data)
-            except ValueError as e:
+                result = handler_function(entity_object, entity_data)
+            except (ValueError, TypeError) as e:  # malformed or unserializable entity values
                 import traceback
                 self.logger.error(f'Exception during handling {entity_class} entity: {e.__class__.__name__}("{e}")')
                 self.logger.error(traceback.format_exc())
+                self.entity_import_diagnostics.record(entity_class, EntityImportStatus.UNSUPPORTED)
                 return False
+            status = result if isinstance(result, EntityImportStatus) else EntityImportStatus.HANDLED
+            self.entity_import_diagnostics.record(entity_class, status)
             return True
-        else:
-            self.logger.warn(f"Entity of type {entity_class} is not handled")
-            self.logger.warn(pformat(entity_data))
+        self.entity_import_diagnostics.record(entity_class, EntityImportStatus.UNSUPPORTED)
         return False
 
     def _get_entity_by_name(self, name):
@@ -130,6 +144,7 @@ class AbstractEntityHandler:
         else:
             parent_collection = get_or_create_child_collection(name, self.parent_collection)
         parent_collection.objects.link(obj)
+        return parent_collection
 
     def _apply_light_rotation(self, obj, entity):
         obj.rotation_euler = Euler((0, math.radians(-90), 0))

@@ -13,6 +13,7 @@ class SteamAppId(IntEnum):
     PORTAL_2 = 620
     LEFT_4_DEAD = 500
     LEFT_4_DEAD_2 = 550
+    DOTA_2 = 570
     TEAM_FORTRESS_2 = 440
     COUNTER_STRIKE_SOURCE = 240
     COUNTER_STRIKE_GO = 730

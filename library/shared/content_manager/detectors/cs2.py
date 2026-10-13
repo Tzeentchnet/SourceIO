@@ -3,6 +3,7 @@ from typing import Collection
 from ...app_id import SteamAppId
 from .source2 import Source2Detector
 from ..provider import ContentProvider
+from ..providers.loose_files import LooseFilesContentProvider
 from ..providers.source2_gameinfo_provider import Source2GameInfoProvider
 from ....utils import backwalk_file_resolver, TinyPath
 
@@ -32,4 +33,22 @@ class CS2Detector(Source2Detector):
         user_mod_gi_path = game_root / "csgo/gameinfo.gi"
         if initial_mod_gi_path != user_mod_gi_path and user_mod_gi_path.exists():
             cls.add_provider(Source2GameInfoProvider(user_mod_gi_path, SteamAppId.COUNTER_STRIKE_GO), providers)
+        resolved_path = path.resolve()
+        for addons_name in ("csgo_addons", "csgo_community_addons"):
+            addons_root = (game_root / addons_name).resolve()
+            try:
+                relative_path = resolved_path.relative_to(addons_root)
+            except ValueError:
+                continue
+            if not relative_path.parts:
+                continue
+            addon_root = addons_root / relative_path.parts[0]
+            if addon_root.is_dir():
+                cls.add_provider(
+                    LooseFilesContentProvider(
+                        addon_root,
+                        SteamAppId.COUNTER_STRIKE_GO,
+                    ),
+                    providers,
+                )
         return providers, game_root

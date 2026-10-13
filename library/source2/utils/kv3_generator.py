@@ -76,11 +76,18 @@ class KV3mdl:
                 'worldSpace': False}
         self.animation_list['children'].append(anim)
 
-    def add_render_mesh(self, name, path, mesh_class='RenderMeshFile', import_filter=None):
+    def add_render_mesh(
+            self,
+            name,
+            path,
+            mesh_class='RenderMeshFile',
+            import_filter=None,
+            import_scale=1.0,
+    ):
         render_mesh = {'_class': mesh_class,
                        'name': name,
                        'filename': path,
-                       'import_scale': 1.0
+                       'import_scale': float(import_scale)
                        }
         if import_filter is not None:
             render_mesh['import_filter'] = {

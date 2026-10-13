@@ -1,18 +1,17 @@
 # SourceIO Source Export Capability Plan
 
-**Status: future authoring and compiler work.** The static Source 2 reconstruction,
-provenance, diagnostics, and atomic-staging foundation is implemented; the complete
-editable-asset and official-compiler workflow below is not. Current priorities are
-tracked in [plan.md](plan.md).
+**Status: the first CS2 static-authoring vertical slice is implemented and has
+passed the installed Workshop Tools exit gate.** The broader material matrix,
+Source 1 backend, skeletal/animated assets, and map authoring remain future work.
+Current priorities are tracked in [plan.md](plan.md).
 
 ## Problem and proposed approach
 
 SourceIO is primarily an importer. It has a working single-image Source 1 VTF
-exporter, an experimental Source 1 export-node tree, and deliberately limited
-static Source 2 ModelDoc/DMX and Hammer reconstruction. It still does not provide
-a coherent workflow that authors complete editable Source 1 or Source 2 assets
-from Blender scenes, validates those assets against a target profile, and
-optionally invokes the official compilers.
+exporter, an experimental Source 1 export-node tree, deliberately limited static
+Source 2 ModelDoc/DMX and Hammer reconstruction, and now a profile-validated CS2
+static-authoring workflow. It does not yet provide the equivalent Source 1
+workflow or a general authoring pipeline for every Source/Source 2 asset class.
 
 The proposed solution is a shared, engine-neutral export pipeline with:
 
@@ -24,10 +23,31 @@ The proposed solution is a shared, engine-neutral export pipeline with:
 - optional official compiler integration, never an implicit or silent fallback;
 - end-to-end round-trip validation through SourceIO's existing importers.
 
-The first complete authoring vertical slice will target CS2 Workshop Tools. Source
-SDK 2013 and common Source 1 conventions will follow on the same foundation.
-Existing static reconstruction is an input/provenance-preserving foundation, not
-that authoring vertical slice.
+The first complete authoring vertical slice targets CS2 Workshop Tools and is now
+validated against the installed official compiler. Source SDK 2013 and common
+Source 1 conventions will follow on the same foundation. Existing static
+reconstruction remains a separate input/provenance-preserving workflow.
+
+## Implemented CS2 vertical slice
+
+- File > Export and `export-cs2` use one non-destructive service for selected,
+  collection, or scene scope and combined or per-object grouping.
+- The backend emits deterministic FBX, ModelDoc 36 VMDL, `csgo_complex.vfx`
+  VMAT, 32-bit TGA, preflight report, and hash manifest artifacts.
+- Existing SourceIO material provenance or
+  `sourceio_export_material_path` reuses a `.vmat`. New material authoring is
+  currently limited to an opaque Principled base color (constant or directly
+  connected image); unsupported PBR inputs block export.
+- Name/path collisions, unsafe paths, unsupported graphs, existing outputs, and
+  missing tools fail explicitly before success is reported.
+- `resourcecompiler.exe` runs without a shell and must create fresh expected
+  outputs without compiler error markers. Failure preserves editable files and
+  a bounded local log.
+- `recompile-cs2` verifies target identity and every manifest artifact before
+  compiling.
+- The installed-tools gate compiles and re-imports Blender-authored geometry,
+  normals, UVs, material remaps, and the compiler-named texture, then performs a
+  manifest-driven recompile and exact addon cleanup.
 
 ## Agreed scope and product decisions
 
@@ -119,6 +139,57 @@ that authoring vertical slice.
   complete or safe export pipeline. The new service should not depend on it.
   After the service is stable, the node tree can either emit the shared export
   model or be clearly deprecated.
+
+## Game and SDK access priorities
+
+This is an acquisition and validation roadmap for overall SourceIO compatibility,
+not a claim that the listed products are already supported and not a replacement
+for the implementation order below. Steam availability was checked on 2026-10-11.
+Only products with a direct public Steam install or purchase path, or tools granted
+through such a product, are ranked.
+
+Rank primarily by the breadth and uniqueness of engine/resource coverage unlocked,
+official editor/compiler/SDK value, and ability to validate existing partial code.
+Use acquisition cost only as a tiebreaker, followed by community reach. A priority
+is complete only when its exit gate is reproducible; merely owning or downloading
+the product does not close the gap.
+
+Current local access includes Dota 2, Dota 2 Workshop Tools, and CS2 Workshop
+Tools. The rows below state validation separately because installation alone does
+not complete an exit gate.
+
+| Priority | Game or tool access | Steam access | Major gap addressed and exit gate |
+|---:|---|---|---|
+| 1 | [Dota 2](https://store.steampowered.com/app/570/Dota_2/) plus [Dota 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools) | Installed; free game and optional tools | **Exit gate passed 2026-10-11.** Dota mounts as app ID 570; representative heroes, props, animations, `hero.vfx` and `global_lit_simple.vfx` materials, a texture, and the main world pass the installed-game profile. The bounded world report diagnoses all 5,127 entities, and a disposable Workshop addon compiles and re-imports a generated static model/material/texture fixture. Rarer shaders and deliberately deferred world semantics remain explicit boundaries rather than guessed support. |
+| 2 | [Counter-Strike 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Counter-Strike_2_Workshop_Tools) | Installed; free optional tools for the free CS2 installation | **Tools installed; exit gate open.** CS2 already supplies the strongest Source 2 E2E corpus, but the export plan still lacks the complete current official VMDL/VMAT contract and authoring workflow. **Exit:** a disposable addon authors, compiles, verifies, and re-imports the supported static model/material/texture vertical slice. |
+| 3 | [Source SDK Base 2013](https://developer.valvesoftware.com/wiki/Source_SDK_Base_2013) Singleplayer and Multiplayer, with [Half-Life 2](https://store.steampowered.com/app/220/HalfLife_2/) as the canonical game corpus | Free Steam tools; Half-Life 2 is paid | Supplies the official Source 1 reference, compilers, and a core branch not covered by the TF2 E2E run. **Exit:** discover both SDK profiles, compile SMD/QC/VMT/texture inputs in a disposable mod, verify outputs, re-import them, and run representative Half-Life 2 models and maps without proprietary fixtures in git. |
+| 4 | [Half-Life: Alyx](https://store.steampowered.com/app/546560/HalfLife_Alyx/) plus [Workshop Tools](https://developer.valvesoftware.com/wiki/Half-Life:_Alyx_Workshop_Tools) | Paid; tools included; VR is needed to play, not to inspect files | Adds Valve's richest non-CS2 Source 2 corpus. HLA detection, entities, VR shaders, and sample assets exist without full installed-game or tool E2E coverage. **Exit:** representative characters, props, VR materials, animations, physics, sounds, world entities, and one tool-compiled fixture pass reproducibly. |
+| 5 | [s&box](https://store.steampowered.com/app/590830/sbox/) | Paid; editor included | Adds a public, current, fast-moving Source 2-derived pipeline. SourceIO has a detector and entity handler but no installed-product conformance or E2E matrix. **Exit:** editor-generated fixtures establish which shared Source 2 resources work, which require a profile, and which are explicitly out of scope. |
+| 6 | [Source Filmmaker](https://store.steampowered.com/app/1840/Source_Filmmaker/) | Free | Directly serves SourceIO's Blender audience and adds the SFM DMX/session workflow. SFM is detected, but full session import is disabled as WIP, DMX UI support is camera-focused, and SFM maps reuse the TF2 entity handler. **Exit:** publish a supported/unsupported matrix covering sessions and cameras, models, animation, flexes, materials, particle metadata, Workshop mounting, and maps. |
+| 7 | [Half-Life](https://store.steampowered.com/app/70/HalfLife/) as the GoldSrc baseline, with [Sven Co-op](https://store.steampowered.com/app/225840/Sven_Coop/) as a secondary corpus | Half-Life is paid; Sven Co-op is free | GoldSrc is a headline engine family but lacks installed-game E2E coverage comparable to TF2 and CS2. **Exit:** representative maps, skeletal and animated models, WAD textures, external texture resolution, and variant detection pass against both the canonical and expanded corpora. |
+| 8 | [Alien Swarm: Reactive Drop](https://store.steampowered.com/app/563560/Alien_Swarm_Reactive_Drop/) plus its [SDK](https://store.steampowered.com/app/593000/Alien_Swarm_Reactive_Drop__SDK/) | Free game; paired Steam SDK tool | Adds a distinct Source branch and a controllable authoring corpus. A Swarm entity handler exists but has no active app-ID, detector/dispatch path, or E2E coverage for this product. **Exit:** SDK-authored map/model/material fixtures and shipped assets define and test the branch-specific parser and entity behavior. |
+| 9 | [Left 4 Dead 2](https://store.steampowered.com/app/550/Left_4_Dead_2/) plus [Authoring Tools](https://developer.valvesoftware.com/wiki/Left_4_Dead_2_Authoring_Tools) | Paid; tools available to owners | Exercises a late Source 1 branch, infected shaders, model/animation variants, compressed maps, and game-specific entities. Existing shaders and handlers lack installed-game E2E coverage, and the specialized detector searches for `left4dead.exe` rather than the L4D2 executable. **Exit:** survivors, infected, props, animations, materials, campaign maps, and one tool-built fixture pass. |
+| 10 | [Portal 2](https://store.steampowered.com/app/620/Portal_2/) plus [Authoring Tools](https://developer.valvesoftware.com/wiki/Portal_2_Authoring_Tools) | Paid; tools available to owners | Validates an existing detector/entity path and provides a base for public Portal 2 mod regressions. **Exit:** models, animations, portal/gel materials, maps, entities, and one authoring-tools fixture pass before promoting individual mods into the matrix. |
+| 11 | [Aperture Desk Job](https://store.steampowered.com/app/1902490/Aperture_Desk_Job/) | Free; controller is required to play | Unlocks an unusually direct latent implementation: `SteamPalEntityHandler` and SteamPal shader support exist, but dispatch is commented out behind an obsolete app-ID assumption. **Exit:** identify the product correctly and verify representative models, materials, animations, maps, lights, and SteamPal-specific entities. |
+| 12 | [The Lab](https://store.steampowered.com/app/450390/The_Lab/) and [SteamVR](https://store.steampowered.com/app/250820/SteamVR/) / SteamVR Home | Free; VR is required to run the experiences | Adds early Source 2/VR resource versions and Workshop content. The Robot Repair detector uses a pseudo app ID and its worlds fall back to generic entity handling. **Exit:** produce repeatable compatibility reports for older NTRO resources, Robot Repair, SteamVR Home assets, and world entities. |
+| 13 | [Garry's Mod](https://store.steampowered.com/app/4000/Garrys_Mod/) | Paid | Adds GMA archives, mounted cross-game content, Workshop addons, and broad real-world model/material variation. Detection and a GMA provider exist without an installed-game/workshop E2E corpus. **Exit:** base content plus a small local or redistributable addon matrix validates archive handling, mount precedence, models, maps, materials, and HL2-derived entity fallback. |
+| 14 | [Black Mesa](https://store.steampowered.com/app/362890/Black_Mesa/) | Paid | Adds a heavily customized modern Source branch. Dedicated detection and entity handling exist without installed-game E2E. **Exit:** Earth and Xen models, custom/PBR materials, maps, static props, and branch-specific lumps import with explicit limitations. |
+| 15 | [Dota Underlords](https://store.steampowered.com/app/1046930/Dota_Underlords/) and [Artifact](https://store.steampowered.com/app/583950/Artifact/) | Free | Provides a low-friction secondary Source 2 regression corpus after Dota 2, HLA, and CS2 profiles stabilize. **Exit:** conformance reports identify real resource-version and shader drift; do not add game-specific behavior without a demonstrated difference. |
+| 16 | [Titanfall 2](https://store.steampowered.com/app/1237970/Titanfall_2/) and [Apex Legends](https://store.steampowered.com/app/1172470/Apex_Legends/) | Titanfall 2 is paid; Apex is free; EA account integration applies | Represents a deliberate expansion into divergent Respawn BSP/RPak and live-service formats without an official SDK. Existing Titanfall support targets an earlier branch and its detector is disabled. **Exit:** first complete a format and integration feasibility report; claim support only after representative archives, maps, models, materials, and animations run end to end. |
+| 17 | [INFRA](https://store.steampowered.com/app/251110/INFRA/) and [Vampire: The Masquerade - Bloodlines](https://store.steampowered.com/app/2600/Vampire_The_Masquerade__Bloodlines/) | Paid | Lower-yield checks for large-map modern Source behavior and early BSP v17 behavior. Both already have detector or entity specialization. **Exit:** add focused installed-game reports only after the main engine/tool baselines above are stable. |
+
+Deadlock is excluded while its Steam page remains invite-only. Titanfall 1,
+Portal 2: Community Edition, region-restricted Vindictus access, and delisted or
+unreleased products are also excluded until they gain a direct public Steam
+acquisition path. Recheck this snapshot before spending money or starting a
+priority item.
+
+Proprietary game and tool files remain local and must never be committed. Installed
+game checks are opt-in and should emit machine-readable reports plus installation
+and manifest hashes. Commit only generated fixtures, fixtures whose redistribution
+is explicitly permitted, or download recipes pinned to an open-licensed source.
+Prefer generic format improvements; add a game-specific profile, shader, detector,
+or entity handler only when a controlled corpus proves the branch difference.
 
 ## External tools reviewed
 
@@ -241,7 +312,7 @@ The shared runner:
 
 ### 4. Source 2 / CS2 backend
 
-The first complete authoring backend will emit:
+The implemented first authoring backend emits:
 
 - one FBX per combined model asset, or one per object in batch mode;
 - a current ModelDoc VMDL for a `static_prop_model`;
@@ -249,7 +320,7 @@ The first complete authoring backend will emit:
 - source TGA/PNG textures under the addon's content tree;
 - a SourceIO export manifest and preflight report.
 
-Implementation details:
+Implemented contract details:
 
 - Capture a minimal VMDL and VMAT saved by the current CS2 Workshop Tools as golden
   fixtures before locking the serializer contract.
@@ -258,8 +329,9 @@ Implementation details:
   Workshop Tools output.
 - Wrap Blender's FBX exporter with a context snapshot/restore guard and a temporary
   export selection. Check that the FBX operator exists and report its absence.
-- Support the common static PBR subset: color/tint, normal, roughness, metalness,
-  AO, alpha mode, and emission when the validated shader exposes them.
+- Support the verified opaque base-color/tint subset. Normal, non-default
+  roughness/metalness, AO, non-base texture roles, alpha blend/test, emission,
+  and procedural graphs remain blocked until each mapping is contract-backed.
 - Omit or explicitly configure physics surface data; never guess it from material
   names.
 - Generate deterministic material remaps from FBX material names to VMAT paths.
@@ -306,68 +378,68 @@ modifier/transform policy, material preset/overrides, overwrite policy, and
 `Compile after export`. It shows a preflight summary before execution and directs
 the user to full diagnostics when blocked.
 
-Extend `blender -c sourceio` with a general `export` subcommand that calls the same
-service while retaining the existing `export-modeldoc` and `export-hammer` static
-reconstruction commands. The authoring command includes flags for engine/profile,
-scope, grouping, output asset path, overwrite, compile, and a machine-readable
-report path. UI and CLI runs over the same fixture must produce equivalent
-manifests and authored files.
+`blender -c sourceio export-cs2` calls the same service while retaining the
+existing `export-modeldoc` and `export-hammer` static reconstruction commands.
+`recompile-cs2` consumes a validated content-relative manifest. UI and CLI runs
+over the same fixture produce equivalent manifests and authored files. A general
+multi-profile `export` command remains future work for when a second backend
+exists.
 
 ## Implementation todos
 
-1. **Defining the export contract and fixtures**
+1. [x] **Defining the export contract and fixtures**
    - Record the supported format/material matrix and diagnostic policy.
    - Capture minimal official CS2 VMDL/VMAT and Source SDK 2013 QC/SMD/VMT fixtures.
    - Add golden parse/serialize/compile expectations without checking proprietary
      tool binaries or game content into the repository.
 
-2. **Building the shared export core**
+2. [x] **Building the shared export core**
    - Generalize the existing Source 2 domain, diagnostics, safe staging, and export
      bundles with typed requests, profiles, asset graphs, artifact planning,
      manifests, collision detection, and compiler result types.
    - Add deterministic unit tests for every safety boundary.
 
-3. **Building the non-destructive Blender adapter**
+3. [x] **Building the non-destructive Blender adapter**
    - Implement scope/grouping, evaluated mesh extraction, transform conversion,
      material translation, texture staging, retained-provenance consumption, and
      complete context restoration.
    - Add headless Blender fixtures for success and injected-failure paths.
 
-4. **Adding shared UI and CLI entry points**
+4. [x] **Adding shared UI and CLI entry points**
    - Register authoring menus/operators and properties alongside the existing
      static reconstruction entries using extension-safe relative imports.
    - Add the general CLI export parser and machine-readable reports without
      duplicating the existing static commands.
    - Keep operators thin; all behavior belongs to the shared service.
 
-5. **Implementing the CS2 authoring backend**
+5. [x] **Implementing the CS2 authoring backend**
    - Add FBX, current VMDL, CS2 VMAT, texture, material-remap, and content-layout
      generation.
    - Consume the retained Source 2 import provenance and existing typed ModelDoc
      primitives for faithful round trips.
 
-6. **Integrating and validating Resource Compiler**
+6. [x] **Integrating and validating Resource Compiler**
    - Add CS2 target discovery, compiler invocation, output verification, logs,
      recompile support, and an opt-in Workshop Tools integration test.
 
-7. **Completing the CS2 vertical slice**
+7. [x] **Completing the CS2 vertical slice**
    - Validate UI/CLI parity, state preservation, collision blocking, compiled
      re-import, geometry/material/texture tolerances, and extension packaging.
 
-8. **Implementing the Source 1 authoring backend**
+8. [ ] **Implementing the Source 1 authoring backend**
    - Add static SMD, QC, VMT, source-texture, and VTEX-sidecar generation.
    - Refactor only the reusable portions of the existing VTF path and preserve its
      current image-editor behavior.
 
-9. **Integrating Source 1 compilers**
+9. [ ] **Integrating Source 1 compilers**
    - Add Source SDK 2013 profile discovery, VTEX and StudioMDL invocation, output
      verification, logs, recompile support, and opt-in compiler integration tests.
 
-10. **Completing the Source 1 vertical slice**
+10. [ ] **Completing the Source 1 vertical slice**
     - Validate UI/CLI parity, state preservation, compiled re-import, geometry and
       material tolerances, and regression coverage for direct VTF export.
 
-11. **Documenting and hardening the release**
+11. [x] **Documenting and hardening the release**
     - Update README usage, CLI help, supported/unsupported matrices, target setup,
       troubleshooting, and the Blender manifest's file-write permission wording.
     - Run focused unit/headless/compiler tests, the import regression suite, clean

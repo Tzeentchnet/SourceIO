@@ -111,7 +111,8 @@ class DotaRepresentationTests(unittest.TestCase):
 
         tree = bpy.data.objects["ent_dota_tree_101"]
         assert_vectors_equal(self, tree.location, Vector((100.0, 200.0, 300.0)) * SCALE)
-        assert_vectors_equal(self, tree.scale, (2.0 * SCALE, 3.0 * SCALE, 4.0 * SCALE))
+        # The model is imported at the scene scale, so the placeholder only carries the entity scale.
+        assert_vectors_equal(self, tree.scale, (2.0, 3.0, 4.0))
         assert_vectors_equal(
             self,
             tree.rotation_euler.to_matrix() @ Vector((1.0, 0.0, 0.0)),

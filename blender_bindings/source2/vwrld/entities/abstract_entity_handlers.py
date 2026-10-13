@@ -268,7 +268,10 @@ class AbstractEntityHandler:
         if model_path and model_path != 'error.vmdl':
             properties['prop_path'] = model_path.replace('.vmdl', '.vmdl_c')
 
-        self._set_location_and_scale(obj, parse_float_vector(entity_raw.get('origin', '0 0 0')))
+        # Only the location takes the scene scale: Load Entity imports the model at that scale already, then
+        # instances it under, or replaces it with, this placeholder's transform, so a scaled placeholder would
+        # scale the model a second time (a CS2 pizza box at 2 cm, a Dota Ancient at 33 cm).
+        self._set_location(obj, parse_float_vector(entity_raw.get('origin', '0 0 0')))
         self._set_rotation(obj, parse_float_vector(entity_raw.get('angles', '0 0 0')))
         self._set_entity_data(obj, properties)
 

@@ -17,7 +17,8 @@ profile-specific TF2, CS2 or Dota 2 corpus is used. Assets are read through the 
 (VPKs included), copied into a temporary folder, and imported with the game still mounted so dependencies
 resolve the way they do for a user. Maps are imported from the game's maps folder (.bsp, or a Source 2 map
 .vpk). --include-animations imports Source 1 include-model animations or Source 2 model animations.
-The default Dota profile enables model animations because they are part of its acceptance gate.
+The default Dota profile enables model animations because they are part of its acceptance gate: a hero or
+creep model that has or references animations must import at least one action.
 --load-placeholders runs *Load Entity* on every prop placeholder left by a Source 2 map. --clips imports
 matching Source 2 animation-graph clips and implies --include-animations; "*" can import thousands.
 --save keeps the scene the last import left. Results use the same basic PASS/WARN/FAIL rules as
@@ -203,6 +204,21 @@ def extract_model(game: Path, model: str, out_dir: Path) -> Path | None:
     return target
 
 
+def source2_model_has_animations(path: Path) -> bool:
+    """Whether a compiled model has animations of its own or references any (groups, include models, graphs).
+    Props under heroes/ (the lich's ice spire) can have a single bone and nothing to play."""
+    from SourceIO.library.source2 import CompiledModelResource
+    from SourceIO.library.source2.animation.loader import DATA_BLOCK, ModelDataBlock
+    from SourceIO.library.utils import FileBuffer
+    from SourceIO.library.utils.tiny_path import TinyPath
+    with FileBuffer(path) as buffer:
+        resource = CompiledModelResource.from_buffer(buffer, TinyPath(path.name))
+        if resource.has_block("ANIM") or resource.has_block("AGRP"):
+            return True
+        data = resource.get_block(ModelDataBlock, block_id=DATA_BLOCK) or {}
+        return any(data.get(key) for key in ("m_refAnimGroups", "m_refAnimIncludeModels", "m_animGraph2Refs"))
+
+
 def summarize_model() -> dict:
     shape_keys = sum(len(mesh.shape_keys.key_blocks) - 1 for mesh in bpy.data.meshes if mesh.shape_keys)
     drivers = sum(len(key.animation_data.drivers) for key in bpy.data.shape_keys if key.animation_data)
@@ -335,14 +351,15 @@ def fail_unless(result: dict, requirements: dict[str, int], *, message: str):
         result["message"] = f"{message}: " + ", ".join(missing)
 
 
-def validate_result(profile: GameProfile | None, kind: str, asset: str, result: dict):
+def validate_result(profile: GameProfile | None, kind: str, asset: str, result: dict, *,
+                    expect_actions: bool = False):
     if result["status"] == "FAIL":
         return
     if kind == "model":
         fail_unless(result, {"objects": 1, "meshes": 1}, message="model acceptance failed")
         if profile and profile.key == "dota":
             fail_unless(result, {"materials": 1, "images": 1}, message="Dota model dependencies missing")
-            if "/heroes/" in asset or "/creeps/" in asset:
+            if expect_actions and ("/heroes/" in asset or "/creeps/" in asset):
                 fail_unless(result, {"armatures": 1, "actions": 1}, message="Dota animation acceptance failed")
             if asset == DOTA_MODELS[0] and result["details"].get("shape_keys", 0) < 1:
                 result["status"] = "FAIL"
@@ -532,13 +549,16 @@ def main() -> int:
                     operator, options = "vmdl", {"import_animations": import_animations,
                                                  "animation_clips": args.clips}
                 else:
-                    operator, options = "mdl", {"import_include_animations": import_animations}
+                    operator, options = "mdl", {"import_animations": import_animations,
+                                                "import_include_animations": import_animations}
                 result = samples.run_one(path, operator, "files", before_import=lambda: mount(args.game),
                                          options=options)
                 result["file"] = model
                 result["details"].update(summarize_model())
                 result["details"].update(summarize_materials())
-            validate_result(profile, "model", model, result)
+            expect_actions = (import_animations and path is not None and path.suffix == ".vmdl_c"
+                              and source2_model_has_animations(path))
+            validate_result(profile, "model", model, result, expect_actions=expect_actions)
             if path is not None:
                 save_review_copy(args.save_dir, "model", model, result)
             results.append(result)

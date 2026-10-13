@@ -7,7 +7,9 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 ## Current work
 
-Start here in a new session. Keep this section current: remove completed items, update the validation baseline, and add concrete follow-ups found along the way. Completed implementation history belongs in the local Git-ignored planning archive (`docs/modernization-history.md`, rounds 1–27) rather than this file; "round N" below refers to its sections.
+Start here in a new session. Keep this section current: remove completed items, update the validation baseline, and add concrete follow-ups found along the way. Completed implementation history belongs in the local Git-ignored planning archive (`docs/modernization-history.md`, rounds 1–28) rather than this file; "round N" below refers to its sections.
+
+**Focus.** The primary goal is reliable imports into Blender: correct, editable geometry, armatures, animation, flexes, materials and scene layout. The secondary goal is a straightforward export path (see [TODO.md](TODO.md)). Matching the game renderer one to one (animated surfaces, runtime shader constants, engine-specific fog, exposure and shadow behavior) is out of scope for now. That work, and anything else parked, lives in `docs/deferred-work.md`; move an item back only when it serves one of the two goals.
 
 State (2026-10-12): [5.12.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.12.0-blender5.2) is the current release (Dota 2 world/material support, CS2 Workshop static authoring, SFM-style flex controllers, Source 1 prop placeholder fix). `origin/master` and the release tag point to the validated 5.12.0 release commit. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`), CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`), Dota 2 (`E:/SteamLibrary/steamapps/common/dota 2 beta/game/dota`), Dota 2 Workshop Tools, and CS2 Workshop Tools are installed. The Dota compatibility milestone and the first CS2 editable static-authoring/compiler vertical slice have passed their installed-tools exit gates and shipped in 5.12.0 from `master`.
 
@@ -25,11 +27,11 @@ blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<
 $env:SOURCEIO_DOTA2_WORKSHOP_ROOT="<Dota2>"; python -m pytest tests/source2_workshop/test_dota_workshop_roundtrip.py -q  # 1 pass; generated model/material/texture compile and re-import
 $env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; python -m pytest tests/source2_workshop/test_cs2_workshop_contract.py -q         # 3 pass; official ModelDoc/FBX/VMAT/TGA contract and re-import
 $env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; blender -b --factory-startup --python-expr "..."                                # 10 pass; Blender authoring plus compile/re-import/recompile/cleanup
-blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s)
+blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s alone); nameless world-node models renamed after their material
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 508 pass, 4 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 215 pass, 1 skip, 28 subtests
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 219 pass, 1 skip, 28 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass
@@ -39,7 +41,7 @@ cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_custom_normals', argv=['x'], exit=False)"   # 3 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 61 pass; 46 shader follow-up tests in six adjacent modules, 107 total
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_source2_dota_materials.py', 'SourceIO/tests/blender_tests/test_source2_materials.py', '-q']))"  # 76 pass, 19 subtests
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 16 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 20 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 9 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_sounds', argv=['x'], exit=False)"   # 2 pass
@@ -47,33 +49,23 @@ cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path
 python tools/build_extension.py --blender "D:/Blender Foundation/Blender 5.2/blender.exe" --platform windows-x64       # built
 ```
 
-### Actionable
+### Import quality (primary)
 
-1. **Dota 2 shader follow-ups**: `crystal.vfx` and `water_dota.vfx` are done (`source2_shaders/crystal.py`, `water_dota.py`), ported from their compiled bytecode with `tools/shader_disasm.py` since VRF has no port; `multiblend.vfx` follows VRF's `multiblend.frag`. Left out, each named in the shader's docstring:
-   - Water: the flow map's world placement comes from runtime constants (`DotaHeightFogParams_t` rows 7–8, `cb3[7..8]` in the pixel shader), so the normal strength uses the flow map's mean |flow|² (0.4 for `dota_flowmap`, a 2:1 strip around an older river layout) and nothing scrolls. Animating the two-phase flow (`floor`/`frac` of time / 2 × interval plus `g_tNoise`, the phases offset by 0.311 UV) could reuse the Source 1 water's driven time node. The depth fog towards `g_vWaterFogColor` comes from the refraction buffer's alpha and has no surface equivalent. `F_FRESNEL` (10 materials), `F_FLOW_COLOR` and the low-end parameters aren't read.
-   - Water in EEVEE: no riverbed shows through the water (a green wash; slab thickness doesn't help), where Cycles refracts it. The Source 1 water behaves the same; likely EEVEE's screen-space refraction rather than the material.
-   - Crystal: the sun highlight the shader adds to the cube map (`g_flSpecularIntensity` × the map's global light direction, exponent and color in `DotaGlobalParams_t`) isn't reproduced; `g_flBloom` is post-processing.
-2. **Smaller CS2 follow-ups** (rounds 8, 17, 19, 20 and 22; the unverified ones are under *Needs verification*):
-   - Lights inside their fixtures (round 22): de_dust2's brightest barn light (`light_barn` at 325 2371 31) sits 9 cm inside the opaque, self-illuminated bulb of `dust_hanging_light_02_on` (`csgo_vertexlitgeneric`, `F_SELF_ILLUM`), so in Blender it lights nothing (it didn't as a point light either). The lamp's aggregate has `NoShadows` (0x20) in `m_allFlags`, but so do 216 of de_dust2's 379 aggregates and 79 of its 138 static scene objects (plants, crates), most likely meaning "shadow baked, not drawn into dynamic shadow maps", so the flag alone can't turn shadows off. Candidates: turn shadow rays off for self-illuminated meshes that enclose a light, or for `NoShadows` objects a light sits inside. Flags come as integers or as enum names (`OBJECT_TYPE_RENDER_TO_CUBEMAPS`).
-   - Light shapes, what's left (round 22): barn lights lose their rectangular shape (`shape` 0; spots are elliptical), skirts, `range` and cookies (`lightcookie`, 177 of 563 barns, mostly `flashlight.vtex`); `soft_x`/`soft_y` as the spot blend and `luminaire_size / 2` as the radius are unverified. The one orthographic barn (de_nuke) is an area light with irradiance π × brightness near it. `light_omni2` tubes (`shape` 1 and 2, 41 lights) are point lights (`shape` isn't read), and whether `size_params[0]` is a sphere's radius is unverified (`# TODO` in `handle_light_omni2`: the other axes are ignored); outer angles over 90° stay point lights (Blender's spot cone ends at 180°). No light uses `range` (EEVEE's custom distance could).
-   - Fog (round 20): `env_cubemap_fog` (fog colored by the sky, on every surveyed map) and `env_gradient_fog` aren't imported; a World volume could approximate the height fog.
-   - World-node models with no material in their name (`node000_lr0_c0_s_cb_nomerge3`, `mesh_cm00_lp<hash>`; the de_dust2 skybox's 14 cloud cards are `nomerge1` to `nomerge44`) keep the remainder of the compiled name (`world_node_model_name` already strips the compiler prefix and names `nomerge<n>_<material>`, `mesh_mat<n>_<material>`, aggregate, overlay and light-blocker models); they could be renamed after their material once loaded.
-   - 3D skyboxes: the skybox's ground can poke through the map's lowest floors (in game it is drawn behind the world). `sky_camera` `use_angles` is ignored (no CS2 skybox sets it), and the skybox's lights other than `light_environment` keep their energy at 16× the distance.
-   - Unhandled CS2 entities include `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points.
-3. **Clip follow-ups** (rounds 9 and 11):
+1. **Unhandled CS2 entities**: `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points.
+2. **Clip follow-ups** (rounds 9 and 11):
    - Event markers sit at the start frame only and have no length. The full events, durations included, are kept only as data in the action's `sourceio_events` JSON property (`animation_loader.py`); nothing in the timeline shows a duration or uses the other fields (attachments, sound positions, curves).
    - Weapon viewmodel clips can't be found from any model: the viewmodel graph pulls them in at runtime through `m_externalGraphSlots` (per-weapon graphs such as `viewmodel_inspects.vnmgraph+ak47.vnmgraph`). The clip importer handles them once extracted; finding them automatically needs whatever ties a weapon to its graphs (item schema or weapon vdata, unverified).
-   - The clip importer (`sourceio.vnmclip`) treats the armature's rest pose as Source bone orientations. That holds for SourceIO's Source 2 armatures; other rigs would need their bone orientation corrected.
-4. **Flex panel with the armature active** (round 13): the panel and its operators act on `context.object`, so it only shows with the face mesh active. Following an active armature to its flexed child mesh means giving the operators a target object.
-5. **Upstream #477 leftovers** (round 12, deferred on purpose): moving the scene settings into one `Scene.sourceio_props` group needs a versioned migration (old .blend values are otherwise lost: tested in the review) and compatibility for mounted-resource collections. Upstream's automatically embedded flex UI script (`Text.use_module`, runs only with auto-execution on) could come back only as an explicit *Embed standalone flex UI* action.
+3. **Flex panel with the armature active** (round 13): the panel and its operators act on `context.object`, so it only shows with the face mesh active. Following an active armature to its flexed child mesh means giving the operators a target object.
 
-### Needs verification
+### Export (secondary)
 
-Not worth implementing until the real behavior is confirmed.
+The CS2 static-authoring slice is done (see [TODO.md](TODO.md)): editable FBX/VMDL/VMAT/TGA staging, preflight, manifests, File > Export and CLI, optional compile, recompile and compiled re-import. Next, in order:
 
-- **Remaining Source 2 shader fidelity**: environment wetness/live-weather state, screen-derivative blend bevels, and mip/distance-dependent softness growth remain unsupported rather than approximated. Character diffuse falloff, animated eyes, and iridescence remain unsupported pending verified shader behavior. Some runtime dynamic VFX expressions still need an explicit supported subset and deterministic Blender equivalents.
-- **CS2 exposure and HL:A lights** (round 20): `g_flBrightnessExposureBias` multiplies the sky by 2^bias (de_dust2 0.765, the other surveyed maps 0); `g_flRenderOnlyExposureBias` (always 0) applies to camera rays only. HL:A's `light_spot` and `light_ortho` still use the entity rotation as is, which points them along −Z where the entity points along +X (as the sun did; `_set_light_rotation` fixes that for the others), and `light_spot` takes `outerconeangle` as the full cone (`spot_size = radians(outerconeangle)`, where CS2's omni2 doubles its half angle); no HL:A install to check.
-- **EEVEE vs Cycles on the dust2 fence**: EEVEE lights the fence's wires much brighter than Cycles (wire color about 0.55 against 0.33 under the same sun and sky, from either side). Not an alpha problem; cause not found.
+1. **Widen the CS2 material contract** (TODO.md item 9) so ordinary Blender PBR materials export without being blocked: normal map, roughness, metalness, then alpha test. Each mapping needs an official Workshop Tools fixture first. Today only opaque base color, or reuse of an existing VMAT, is accepted.
+2. **Source 1 static backend** (TODO.md items 10–12): SMD/QC/VMT/texture staging with optional `vtex`/`studiomdl`, on the same shared service. Needs a Source SDK 2013 install.
+3. **One export path** (TODO.md item 13): decide whether the experimental export node tree (`blender_bindings/ui/export_nodes`) moves onto the shared service or is deprecated, so users see one way to export.
+
+Skeletal, animated, physics and map authoring are deferred (`docs/deferred-work.md`). Static ModelDoc/Hammer reconstruction stays a separate, explicitly lossy workflow.
 
 ### Needs a UI session
 
@@ -83,6 +75,7 @@ Manual checks that can't run headless; do them in a Blender UI session, not in a
 
 ### Blocked on assets
 
+- **HL:A light directions** (round 20, no HL:A install): HL:A's `light_spot` and `light_ortho` still use the entity rotation as is, which points them along −Z where the entity points along +X (as the sun did; `_set_light_rotation` fixes that for the others), and `light_spot` takes `outerconeangle` as the full cone (`spot_size = radians(outerconeangle)`, where CS2's omni2 doubles its half angle).
 - **Bone collections for the other builders** (optional, no samples): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified. GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
 - **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
 - **External mesh morph atlas** (unverified, round 11): `load_external_mesh` resolves `m_pTextureAtlas` against the model resource, as before; it may belong to the mesh or morph set resource. No CS2 or sample model uses this path.
@@ -91,10 +84,6 @@ Manual checks that can't run headless; do them in a Blender UI session, not in a
 Done in round 25, still untested against a real asset: legacy ANIM `MorphChannel` segments become shape-key drivers (`library/source2/animation/animation.py`; `test_source2_animations` covers a synthetic one), and clip float curves (`m_floatCurveIDs`) are decoded as `NmFloatCurve` channels and written as `sourceio:curve:*` properties; no CS2 model or clip has either.
 
 Not needed to import clips: bone masks (`m_maskDefinitions` in a `.vnmskel`) and pose-parameter blending are graph-evaluation features.
-
-### Future work
-
-The CS2 static authoring slice in [TODO.md](TODO.md) is implemented: deterministic editable FBX/VMDL/VMAT/TGA staging, preflight and manifests, non-destructive Blender extraction, File > Export and CLI entry points, optional official compilation, manifest recompile, and compiled re-import are validated. The current authored material contract is intentionally limited to opaque base color or reuse of an existing VMAT. Expanding that contract, implementing the Source 1 backend/compiler slice, and supporting skeletal/animated/physics/map authoring remain future work. Static ModelDoc/Hammer reconstruction stays a separate explicitly lossy workflow.
 
 ## Verification
 

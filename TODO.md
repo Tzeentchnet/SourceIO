@@ -1,9 +1,13 @@
 # SourceIO Source Export Capability Plan
 
 **Status: the first CS2 static-authoring vertical slice is implemented and has
-passed the installed Workshop Tools exit gate.** The broader material matrix,
-Source 1 backend, skeletal/animated assets, and map authoring remain future work.
-Current priorities are tracked in [plan.md](plan.md).
+passed the installed Workshop Tools exit gate.** Export is SourceIO's secondary
+goal after import quality; the aim is one straightforward path from a Blender
+scene to editable, optionally compiled static assets. Next: widen the CS2
+material contract, then the Source 1 static backend (implementation todos 9–13).
+Skeletal, animated, physics, and map authoring, and game coverage beyond
+priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
+are tracked in [plan.md](plan.md).
 
 ## Problem and proposed approach
 
@@ -109,6 +113,9 @@ reconstruction remains a separate input/provenance-preserving workflow.
 - GoldSrc export.
 - A claim of universal support for every Source or Source 2 game branch.
 
+The follow-on roadmap for these (skeletal, animation, physics, maps, more
+profiles, Wine) is parked in `docs/deferred-work.md`.
+
 ## Current SourceIO building blocks
 
 - `blender_bindings/source1/vtf/export_vtf.py` and the bundled VTF library already
@@ -156,33 +163,17 @@ the product does not close the gap.
 
 Current local access includes Dota 2, Dota 2 Workshop Tools, and CS2 Workshop
 Tools. The rows below state validation separately because installation alone does
-not complete an exit gate.
+not complete an exit gate. Priorities 4–17 (HL:A, s&box, SFM, GoldSrc, other
+Source 1 branches, Respawn titles) broaden coverage to new games rather than
+improving the validated ones, and are parked in `docs/deferred-work.md`.
 
 | Priority | Game or tool access | Steam access | Major gap addressed and exit gate |
 |---:|---|---|---|
 | 1 | [Dota 2](https://store.steampowered.com/app/570/Dota_2/) plus [Dota 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools) | Installed; free game and optional tools | **Exit gate passed 2026-10-11.** Dota mounts as app ID 570; representative heroes, props, animations, `hero.vfx` and `global_lit_simple.vfx` materials, a texture, and the main world pass the installed-game profile. The bounded world report diagnoses all 5,127 entities, and a disposable Workshop addon compiles and re-imports a generated static model/material/texture fixture. Rarer shaders and deliberately deferred world semantics remain explicit boundaries rather than guessed support. |
-| 2 | [Counter-Strike 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Counter-Strike_2_Workshop_Tools) | Installed; free optional tools for the free CS2 installation | **Tools installed; exit gate open.** CS2 already supplies the strongest Source 2 E2E corpus, but the export plan still lacks the complete current official VMDL/VMAT contract and authoring workflow. **Exit:** a disposable addon authors, compiles, verifies, and re-imports the supported static model/material/texture vertical slice. |
+| 2 | [Counter-Strike 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Counter-Strike_2_Workshop_Tools) | Installed; free optional tools for the free CS2 installation | **Exit gate passed; shipped in 5.12.0.** CS2 supplies the strongest Source 2 E2E corpus. A disposable addon authors, compiles, verifies, and re-imports the supported static model/material/texture vertical slice. The material contract is still limited to opaque base color (todo 9). |
 | 3 | [Source SDK Base 2013](https://developer.valvesoftware.com/wiki/Source_SDK_Base_2013) Singleplayer and Multiplayer, with [Half-Life 2](https://store.steampowered.com/app/220/HalfLife_2/) as the canonical game corpus | Free Steam tools; Half-Life 2 is paid | Supplies the official Source 1 reference, compilers, and a core branch not covered by the TF2 E2E run. **Exit:** discover both SDK profiles, compile SMD/QC/VMT/texture inputs in a disposable mod, verify outputs, re-import them, and run representative Half-Life 2 models and maps without proprietary fixtures in git. |
-| 4 | [Half-Life: Alyx](https://store.steampowered.com/app/546560/HalfLife_Alyx/) plus [Workshop Tools](https://developer.valvesoftware.com/wiki/Half-Life:_Alyx_Workshop_Tools) | Paid; tools included; VR is needed to play, not to inspect files | Adds Valve's richest non-CS2 Source 2 corpus. HLA detection, entities, VR shaders, and sample assets exist without full installed-game or tool E2E coverage. **Exit:** representative characters, props, VR materials, animations, physics, sounds, world entities, and one tool-compiled fixture pass reproducibly. |
-| 5 | [s&box](https://store.steampowered.com/app/590830/sbox/) | Paid; editor included | Adds a public, current, fast-moving Source 2-derived pipeline. SourceIO has a detector and entity handler but no installed-product conformance or E2E matrix. **Exit:** editor-generated fixtures establish which shared Source 2 resources work, which require a profile, and which are explicitly out of scope. |
-| 6 | [Source Filmmaker](https://store.steampowered.com/app/1840/Source_Filmmaker/) | Free | Directly serves SourceIO's Blender audience and adds the SFM DMX/session workflow. SFM is detected, but full session import is disabled as WIP, DMX UI support is camera-focused, and SFM maps reuse the TF2 entity handler. **Exit:** publish a supported/unsupported matrix covering sessions and cameras, models, animation, flexes, materials, particle metadata, Workshop mounting, and maps. |
-| 7 | [Half-Life](https://store.steampowered.com/app/70/HalfLife/) as the GoldSrc baseline, with [Sven Co-op](https://store.steampowered.com/app/225840/Sven_Coop/) as a secondary corpus | Half-Life is paid; Sven Co-op is free | GoldSrc is a headline engine family but lacks installed-game E2E coverage comparable to TF2 and CS2. **Exit:** representative maps, skeletal and animated models, WAD textures, external texture resolution, and variant detection pass against both the canonical and expanded corpora. |
-| 8 | [Alien Swarm: Reactive Drop](https://store.steampowered.com/app/563560/Alien_Swarm_Reactive_Drop/) plus its [SDK](https://store.steampowered.com/app/593000/Alien_Swarm_Reactive_Drop__SDK/) | Free game; paired Steam SDK tool | Adds a distinct Source branch and a controllable authoring corpus. A Swarm entity handler exists but has no active app-ID, detector/dispatch path, or E2E coverage for this product. **Exit:** SDK-authored map/model/material fixtures and shipped assets define and test the branch-specific parser and entity behavior. |
-| 9 | [Left 4 Dead 2](https://store.steampowered.com/app/550/Left_4_Dead_2/) plus [Authoring Tools](https://developer.valvesoftware.com/wiki/Left_4_Dead_2_Authoring_Tools) | Paid; tools available to owners | Exercises a late Source 1 branch, infected shaders, model/animation variants, compressed maps, and game-specific entities. Existing shaders and handlers lack installed-game E2E coverage, and the specialized detector searches for `left4dead.exe` rather than the L4D2 executable. **Exit:** survivors, infected, props, animations, materials, campaign maps, and one tool-built fixture pass. |
-| 10 | [Portal 2](https://store.steampowered.com/app/620/Portal_2/) plus [Authoring Tools](https://developer.valvesoftware.com/wiki/Portal_2_Authoring_Tools) | Paid; tools available to owners | Validates an existing detector/entity path and provides a base for public Portal 2 mod regressions. **Exit:** models, animations, portal/gel materials, maps, entities, and one authoring-tools fixture pass before promoting individual mods into the matrix. |
-| 11 | [Aperture Desk Job](https://store.steampowered.com/app/1902490/Aperture_Desk_Job/) | Free; controller is required to play | Unlocks an unusually direct latent implementation: `SteamPalEntityHandler` and SteamPal shader support exist, but dispatch is commented out behind an obsolete app-ID assumption. **Exit:** identify the product correctly and verify representative models, materials, animations, maps, lights, and SteamPal-specific entities. |
-| 12 | [The Lab](https://store.steampowered.com/app/450390/The_Lab/) and [SteamVR](https://store.steampowered.com/app/250820/SteamVR/) / SteamVR Home | Free; VR is required to run the experiences | Adds early Source 2/VR resource versions and Workshop content. The Robot Repair detector uses a pseudo app ID and its worlds fall back to generic entity handling. **Exit:** produce repeatable compatibility reports for older NTRO resources, Robot Repair, SteamVR Home assets, and world entities. |
-| 13 | [Garry's Mod](https://store.steampowered.com/app/4000/Garrys_Mod/) | Paid | Adds GMA archives, mounted cross-game content, Workshop addons, and broad real-world model/material variation. Detection and a GMA provider exist without an installed-game/workshop E2E corpus. **Exit:** base content plus a small local or redistributable addon matrix validates archive handling, mount precedence, models, maps, materials, and HL2-derived entity fallback. |
-| 14 | [Black Mesa](https://store.steampowered.com/app/362890/Black_Mesa/) | Paid | Adds a heavily customized modern Source branch. Dedicated detection and entity handling exist without installed-game E2E. **Exit:** Earth and Xen models, custom/PBR materials, maps, static props, and branch-specific lumps import with explicit limitations. |
-| 15 | [Dota Underlords](https://store.steampowered.com/app/1046930/Dota_Underlords/) and [Artifact](https://store.steampowered.com/app/583950/Artifact/) | Free | Provides a low-friction secondary Source 2 regression corpus after Dota 2, HLA, and CS2 profiles stabilize. **Exit:** conformance reports identify real resource-version and shader drift; do not add game-specific behavior without a demonstrated difference. |
-| 16 | [Titanfall 2](https://store.steampowered.com/app/1237970/Titanfall_2/) and [Apex Legends](https://store.steampowered.com/app/1172470/Apex_Legends/) | Titanfall 2 is paid; Apex is free; EA account integration applies | Represents a deliberate expansion into divergent Respawn BSP/RPak and live-service formats without an official SDK. Existing Titanfall support targets an earlier branch and its detector is disabled. **Exit:** first complete a format and integration feasibility report; claim support only after representative archives, maps, models, materials, and animations run end to end. |
-| 17 | [INFRA](https://store.steampowered.com/app/251110/INFRA/) and [Vampire: The Masquerade - Bloodlines](https://store.steampowered.com/app/2600/Vampire_The_Masquerade__Bloodlines/) | Paid | Lower-yield checks for large-map modern Source behavior and early BSP v17 behavior. Both already have detector or entity specialization. **Exit:** add focused installed-game reports only after the main engine/tool baselines above are stable. |
 
-Deadlock is excluded while its Steam page remains invite-only. Titanfall 1,
-Portal 2: Community Edition, region-restricted Vindictus access, and delisted or
-unreleased products are also excluded until they gain a direct public Steam
-acquisition path. Recheck this snapshot before spending money or starting a
-priority item.
+Recheck this snapshot before spending money or starting a priority item.
 
 Proprietary game and tool files remain local and must never be committed. Installed
 game checks are opt-in and should emit machine-readable reports plus installation
@@ -426,24 +417,35 @@ exists.
    - Validate UI/CLI parity, state preservation, collision blocking, compiled
      re-import, geometry/material/texture tolerances, and extension packaging.
 
-8. [ ] **Implementing the Source 1 authoring backend**
-   - Add static SMD, QC, VMT, source-texture, and VTEX-sidecar generation.
-   - Refactor only the reusable portions of the existing VTF path and preserve its
-     current image-editor behavior.
+8. [x] **Documenting and hardening the release**
+   - Update README usage, CLI help, supported/unsupported matrices, target setup,
+     troubleshooting, and the Blender manifest's file-write permission wording.
+   - Run focused unit/headless/compiler tests, the import regression suite, clean
+     register/unregister smoke tests, and extension builds.
 
-9. [ ] **Integrating Source 1 compilers**
-   - Add Source SDK 2013 profile discovery, VTEX and StudioMDL invocation, output
-     verification, logs, recompile support, and opt-in compiler integration tests.
+9. [ ] **Widening the CS2 material contract**
+   - Accept ordinary Blender PBR materials instead of blocking them: normal map,
+     roughness, metalness, then alpha test, in that order.
+   - Capture an official Workshop Tools VMAT per mapping before serializing it;
+     keep emission, blend modes, and procedural graphs blocked.
+   - Extend the installed-tools gate to compile and re-import each new slot.
 
-10. [ ] **Completing the Source 1 vertical slice**
+10. [ ] **Implementing the Source 1 authoring backend**
+    - Add static SMD, QC, VMT, source-texture, and VTEX-sidecar generation.
+    - Refactor only the reusable portions of the existing VTF path and preserve its
+      current image-editor behavior.
+
+11. [ ] **Integrating Source 1 compilers**
+    - Add Source SDK 2013 profile discovery, VTEX and StudioMDL invocation, output
+      verification, logs, recompile support, and opt-in compiler integration tests.
+
+12. [ ] **Completing the Source 1 vertical slice**
     - Validate UI/CLI parity, state preservation, compiled re-import, geometry and
       material tolerances, and regression coverage for direct VTF export.
 
-11. [x] **Documenting and hardening the release**
-    - Update README usage, CLI help, supported/unsupported matrices, target setup,
-      troubleshooting, and the Blender manifest's file-write permission wording.
-    - Run focused unit/headless/compiler tests, the import regression suite, clean
-      register/unregister smoke tests, and extension builds.
+13. [ ] **Settling on one export path**
+    - Move the experimental export node tree onto the shared service, or deprecate
+      it, so File > Export and the CLI are the single documented way to export.
 
 ## Validation and acceptance gates
 
@@ -493,19 +495,9 @@ exists.
 
 ## Later roadmap
 
-After both static vertical slices are stable:
-
-1. Add skeletal reference meshes and skin weights.
-2. Add animation clips, flex/morph targets, and engine-specific action selection.
-3. Add physics/collision, LODs, bodygroups, skins, attachments, and richer material
-   presets.
-4. Add Source 1 VMF and full Source 2 VMAP/world authoring as separate projects
-   with their own intermediate scene representation and validation; keep the
-   existing static Hammer reconstruction explicitly separate.
-5. Migrate the experimental export node tree onto the shared `AssetGraph`, or
-   deprecate it if the property-driven workflow proves clearer.
-6. Add additional game profiles and tested Wine-based compiler execution without
-   weakening the profile or error model.
+Export beyond static props (skeletal meshes, animation, flexes, physics, LODs,
+bodygroups, VMF/VMAP authoring, more profiles, Wine) is parked in the local
+`docs/deferred-work.md` until both static vertical slices are stable.
 
 ## Notes and considerations
 

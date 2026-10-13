@@ -235,6 +235,7 @@ To spend less time on a map:
 * CS:GO Source 2 materials: self-illuminated `csgo_vertexlitgeneric` and `csgo_static_overlay` materials, and `csgo_environment_blend` materials with a colour overlay, failed to build.
 * Source 2 normal maps could get corrupt pixels where compression pushed the stored X/Y past length 1.
 * A CS2 install was also detected as Dota 2.
+* Dota 2 terrain and props (`multiblend.vfx`, `global_lit_simple.vfx`) reflected the sky like wet stone, which showed as a pale haze over whole terrain tiles. Their specular texture holds the strength of a highlight from the map's sun, and it was read as physical reflectance, about 12 times too strong; it is now read the way the hero shader reads its specular mask. Its green channel no longer makes surfaces glow: the game doesn't use it.
 * Morphs of Source 2 models with external meshes (`m_morphSet`) never loaded.
 * Smaller fixes:
   * duplicate *Export to VTF* menu entries after re-enabling the add-on;

@@ -7,7 +7,6 @@ from ...shader_base import ExtraMaterialParameters, Nodes
 from ..node_math import NodeMath, Scalar, Vector
 from ..source2_shader_base import Source2ShaderBase
 from .csgo_environment import srgb_to_linear
-from .generic import F0_PER_SPECULAR_LEVEL
 
 # vmdl_loader's names for Dota's vertex paint streams, each RGBA8 split into xy and zw UV maps:
 # VertexPaintBlendParams (layer 1-3 amounts in xyz), VertexPaintBlendParams1 (layer 1-3 blend softness in xyz)
@@ -22,8 +21,10 @@ class Multiblend(Source2ShaderBase):
     multiblend.frag. Layers 1-3 each show where their painted amount passes their reveal mask (the color
     texture's alpha), softened by the painted softness; layer 0 takes what is left. Colors are tinted per layer
     (g_vColorTintB<n> to g_vColorTint<n> by g_tTintMasks with F_TINT_MASK), then by the painted tint and
-    g_vGlobalTint; normals and g_tSpecular<n> (reflectance in red, self-illumination in green) blend by the
-    same weights. Not handled: parallax (g_tParallaxMask), scrolling and waving UVs, and F_WORLDSPACE_UVS,
+    g_vGlobalTint; normals and g_tSpecular<n> blend by the same weights. The game's specular is a Phong
+    highlight from the map's sun alone (no environment reflection or Fresnel), as strong as the blended red
+    times g_flSpecularIntensity; as for hero.vfx, that strength becomes Specular IOR Level clamped to 0..1.
+    Blue times g_flSpecularBloom only feeds bloom and green is unused. Not handled: parallax (g_tParallaxMask), scrolling and waving UVs, and F_WORLDSPACE_UVS,
     which VRF ignores too (the meshes carry ordinary UVs)."""
     SHADER: str = 'multiblend.vfx'
 
@@ -144,10 +145,7 @@ class Multiblend(Source2ShaderBase):
             m.set(normal_node.inputs['Color'], blend(2))
             self.connect_nodes(normal_node.outputs['Normal'], bsdf.inputs['Normal'])
         if specular:
-            blended = blend(3)
             intensity = self._float("g_flSpecularIntensity", 1.0)
-            m.set(bsdf.inputs['Specular IOR Level'], blended.x * (intensity / F0_PER_SPECULAR_LEVEL))
-            m.set(bsdf.inputs['Emission Color'], color * blended.y)
-            bsdf.inputs['Emission Strength'].default_value = 1.0
+            m.set(bsdf.inputs['Specular IOR Level'], m.min(blend(3).x * intensity, 1.0))
         else:
             bsdf.inputs['Specular IOR Level'].default_value = 0.0

@@ -5,7 +5,6 @@ import bpy
 from ...shader_base import ExtraMaterialParameters, MIX_A, MIX_B, MIX_FACTOR, MIX_RESULT, Nodes
 from ..source2_shader_base import (ADDITIVE, ALPHA_TEST, MOD2X, OPAQUE, TRANSLUCENT,
                                    Source2ShaderBase)
-from .generic import F0_PER_SPECULAR_LEVEL
 
 
 class GlobalLitSimple(Source2ShaderBase):
@@ -66,7 +65,11 @@ class GlobalLitSimple(Source2ShaderBase):
         self.connect_nodes(normal.outputs["Color"], normal_map.inputs["Color"])
         self.connect_nodes(normal_map.outputs["Normal"], shader.inputs["Normal"])
 
-    def _specular(self, shader, color_output, uv_output):
+    def _specular(self, shader, uv_output):
+        """The game's specular is a Phong highlight from the map's sun alone, with no environment reflection or
+        Fresnel, as strong as g_tSpecular's red times g_flSpecularIntensity (blue times g_flSpecularBloom only
+        feeds bloom; green is unused). As for hero.vfx, that strength becomes Specular IOR Level clamped to 0..1;
+        read as F0 (up to 1), it made every surface reflect the sky."""
         intensity = self._material_resource.get_float_property("g_flSpecularIntensity", 1.0)
         if not self._check_flag("F_SPECULAR"):
             self._skip_texture("g_tSpecular")
@@ -74,22 +77,18 @@ class GlobalLitSimple(Source2ShaderBase):
             return
         if not self._have_texture("g_tSpecular"):
             self._skip_texture("g_tSpecular")
-            shader.inputs["Specular IOR Level"].default_value = 0.1 * intensity / F0_PER_SPECULAR_LEVEL
+            shader.inputs["Specular IOR Level"].default_value = min(0.1 * intensity, 1.0)
             return
 
         specular = self._get_texture("g_tSpecular", (0.1, 0.0, 0.0, 1.0), True)
         self.connect_nodes(uv_output, specular.inputs["Vector"])
         channels = self._split_color(specular)
-        reflectance = self._multiply_value(
-            channels.outputs["Red"], intensity / F0_PER_SPECULAR_LEVEL)
-        self.connect_nodes(reflectance, shader.inputs["Specular IOR Level"])
-
-        self_illum = self.create_node(Nodes.ShaderNodeVectorMath)
-        self_illum.operation = "SCALE"
-        self.connect_nodes(color_output, self_illum.inputs[0])
-        self.connect_nodes(channels.outputs["Green"], self_illum.inputs["Scale"])
-        self.connect_nodes(self_illum.outputs[0], shader.inputs["Emission Color"])
-        shader.inputs["Emission Strength"].default_value = 1.0
+        strength = self.create_node(Nodes.ShaderNodeMath)
+        strength.operation = "MULTIPLY"
+        strength.use_clamp = True
+        self.connect_nodes(channels.outputs["Red"], strength.inputs[0])
+        strength.inputs[1].default_value = intensity
+        self.connect_nodes(strength.outputs[0], shader.inputs["Specular IOR Level"])
 
     def _render_mode(self):
         if self._check_flag("F_ALPHA_TEST") or self._check_flag("F_ALPHA_STIPPLE"):
@@ -120,7 +119,7 @@ class GlobalLitSimple(Source2ShaderBase):
 
         self.connect_nodes(color_output, shader.inputs["Base Color"])
         self._normal(shader, uv_output)
-        self._specular(shader, color_output, uv_output)
+        self._specular(shader, uv_output)
 
         blend_mode = self._render_mode()
         alpha_output = color_texture.outputs["Alpha"]

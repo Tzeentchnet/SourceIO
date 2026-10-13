@@ -271,13 +271,13 @@ class Source2DotaMaterialTests(unittest.TestCase):
         self.assertAlmostEqual(normal_map.inputs["Strength"].default_value, 0.4, places=6)
         self.assertEqual(source(normal_map.inputs["Color"]), ("g_tNormal", "Color"))
 
-        reflectance = linked_node(shader.inputs["Specular IOR Level"])
-        self.assertEqual(reflectance.operation, "MULTIPLY")
-        self.assertEqual(source(reflectance.inputs[0]), ("g_tSpecular", "Red"))
-        self.assertAlmostEqual(reflectance.inputs[1].default_value, 25.0, places=6)
-        self_illum = linked_node(shader.inputs["Emission Color"])
-        self.assertEqual(self_illum.operation, "SCALE")
-        self.assertEqual(source(self_illum.inputs["Scale"]), ("g_tSpecular", "Green"))
+        # A highlight strength (red x g_flSpecularIntensity), clamped like hero.vfx's, not an F0; green is unused
+        strength = linked_node(shader.inputs["Specular IOR Level"])
+        self.assertEqual(strength.operation, "MULTIPLY")
+        self.assertTrue(strength.use_clamp)
+        self.assertEqual(source(strength.inputs[0]), ("g_tSpecular", "Red"))
+        self.assertAlmostEqual(strength.inputs[1].default_value, 2.0, places=6)
+        self.assertFalse(shader.inputs["Emission Color"].is_linked)
 
         self.assertTrue(material.node_tree.nodes["g_tNormal"].image.colorspace_settings.is_data)
         self.assertTrue(material.node_tree.nodes["g_tSpecular"].image.colorspace_settings.is_data)
@@ -311,7 +311,7 @@ class Source2DotaMaterialTests(unittest.TestCase):
             floats={"g_flSpecularIntensity": 0.8},
         )
         shader = shader_node(constant_specular, "global_lit_simple.vfx")
-        self.assertAlmostEqual(shader.inputs["Specular IOR Level"].default_value, 1.0, places=6)
+        self.assertAlmostEqual(shader.inputs["Specular IOR Level"].default_value, 0.08, places=6)
 
     def test_global_lit_simple_render_modes(self):
         opaque = build("global_lit_simple.vfx", ("g_tColor",))
@@ -469,8 +469,10 @@ class Source2DotaMaterialTests(unittest.TestCase):
         normal_map = linked_node(shader.inputs["Normal"])
         self.assertEqual(normal_map.bl_idname, "ShaderNodeNormalMap")
         self.assertAlmostEqual(normal_map.inputs["Strength"].default_value, 0.5, places=6)
-        self.assertTrue(shader.inputs["Specular IOR Level"].is_linked)
-        self.assertTrue(shader.inputs["Emission Color"].is_linked)
+        # The blended red x g_flSpecularIntensity is a highlight strength, clamped as for hero.vfx; green is unused
+        strength = linked_node(shader.inputs["Specular IOR Level"])
+        self.assertEqual((strength.operation, strength.inputs[1].default_value), ("MINIMUM", 1.0))
+        self.assertFalse(shader.inputs["Emission Color"].is_linked)
         self.assertTrue({f"g_tNormal{n}" for n in range(4)} <= texture_nodes(material))
 
     def test_crystal_albedo_tints_match_bytecode(self):

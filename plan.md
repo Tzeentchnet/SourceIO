@@ -1,7 +1,7 @@
 # SourceIO work plan
 
 Target: **Blender 5.2.2 LTS only.** Blender 4.x compatibility is dropped.
-Branch: `master`.
+Branch: `master` (`dotafeatures` and `feature/flex-controller-modal` are merged).
 
 All API claims below were checked against Blender 5.2.2 running headless (`D:/Blender Foundation/Blender 5.2/blender.exe -b`).
 
@@ -9,30 +9,41 @@ All API claims below were checked against Blender 5.2.2 running headless (`D:/Bl
 
 Start here in a new session. Keep this section current: remove completed items, update the validation baseline, and add concrete follow-ups found along the way. Completed implementation history belongs in the local Git-ignored planning archive (`docs/modernization-history.md`, rounds 1–25) rather than this file; "round N" below refers to its sections.
 
-State (2026-10-11): [5.11.1-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.11.1-blender5.2) is the current release. `origin/master` and the release tag point to the validated 5.11.1 release commit. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`) and CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`) are installed; no Dota 2.
+State (2026-10-12): [5.12.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.12.0-blender5.2) is the current release (Dota 2 world/material support, CS2 Workshop static authoring, SFM-style flex controllers, Source 1 prop placeholder fix). `origin/master` and the release tag point to the validated 5.12.0 release commit. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`), CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`), Dota 2 (`E:/SteamLibrary/steamapps/common/dota 2 beta/game/dota`), Dota 2 Workshop Tools, and CS2 Workshop Tools are installed. The Dota compatibility milestone and the first CS2 editable static-authoring/compiler vertical slice have passed their installed-tools exit gates on `dotafeatures`.
 
 Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
 
 ```
-blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 596/596 modules, register/unregister/register OK
+blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 612/612 modules, register/unregister/register OK
 blender -b --factory-startup --python tests/e2e/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
+blender -b ... run_game_imports.py -- --game "<TF2>/tf" --load-placeholders                                  # 13 PASS; 2fort 2320/2320, badlands 1308/1308, harvest 673/673, upward 1332/1332 placeholders
+blender -b ... run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota --load-placeholders    # 7 PASS; dota 5311/5311 placeholders (~336 s)
+# Add --save-dir DIR to any run_game_imports.py run to keep one packed .blend per asset for visual review.
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota  # 7 PASS / 0 WARN / 0 FAIL; app ID 570
+$env:SOURCEIO_DOTA2_WORKSHOP_ROOT="<Dota2>"; python -m pytest tests/source2_workshop/test_dota_workshop_roundtrip.py -q  # 1 pass; generated model/material/texture compile and re-import
+$env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; python -m pytest tests/source2_workshop/test_cs2_workshop_contract.py -q         # 3 pass; official ModelDoc/FBX/VMAT/TGA contract and re-import
+$env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; blender -b --factory-startup --python-expr "..."                                # 10 pass; Blender authoring plus compile/re-import/recompile/cleanup
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s)
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 478 pass, 2 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 505 pass, 4 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 203 pass, 1 skip, 23 subtests
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_flex_controllers', argv=['x'], exit=False)"   # 10 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_flex_controllers', argv=['x'], exit=False)"   # 19 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_skins', argv=['x'], exit=False)"   # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_material_paths', argv=['x'], exit=False)"   # 7 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_custom_normals', argv=['x'], exit=False)"   # 3 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 61 pass; 42 shader follow-up tests in six adjacent modules, 103 total
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_source2_dota_materials.py', 'SourceIO/tests/blender_tests/test_source2_materials.py', '-q']))"  # 70 pass, 14 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 11 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 9 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_sounds', argv=['x'], exit=False)"   # 2 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import unittest; unittest.main(module='SourceIO.tests.blender_tests.test_source2_exports', argv=['x'], exit=False)"   # 3 pass
+python tools/build_extension.py --blender "D:/Blender Foundation/Blender 5.2/blender.exe" --platform windows-x64       # built
 ```
 
 ### Actionable
@@ -54,9 +65,9 @@ cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path
    - Event markers sit at the start frame only and have no length. The full events, durations included, are kept only as data in the action's `sourceio_events` JSON property (`animation_loader.py`); nothing in the timeline shows a duration or uses the other fields (attachments, sound positions, curves).
    - Weapon viewmodel clips can't be found from any model: the viewmodel graph pulls them in at runtime through `m_externalGraphSlots` (per-weapon graphs such as `viewmodel_inspects.vnmgraph+ak47.vnmgraph`). The clip importer handles them once extracted; finding them automatically needs whatever ties a weapon to its graphs (item schema or weapon vdata, unverified).
    - The clip importer (`sourceio.vnmclip`) treats the armature's rest pose as Source bone orientations. That holds for SourceIO's Source 2 armatures; other rigs would need their bone orientation corrected.
-4. **Flex panel with the armature active** (round 13): the panel and its operators act on `context.object`, so it only shows with the face mesh active. Following an active armature to its flexed child mesh means giving the operators a target object.
-5. **Upstream #477 leftovers** (round 12, deferred on purpose): moving the scene settings into one `Scene.sourceio_props` group needs a versioned migration (old .blend values are otherwise lost: tested in the review) and compatibility for mounted-resource collections. Upstream's automatically embedded flex UI script (`Text.use_module`, runs only with auto-execution on) could come back only as an explicit *Embed standalone flex UI* action.
-6. **Programmatic Source 1 model defaults ([REDxEYE/SourceIO#478](https://github.com/REDxEYE/SourceIO/pull/478))**: entity-loaded Source 1 props and the other non-operator callers instantiate `ModelOptions()` directly, so Blender's property declarations do not provide their defaults; MDL v44-v52 can then read unset options and raise `AttributeError`. Upstream assigns only the fields needed by one caller. Use `ModelOptions.default()` (or one equivalent default-initialization path) at every programmatic construction site, preserve each caller's explicit overrides, and add a Blender regression that loads a Source 1 entity prop through the real model importer. The PR's BVLG import-menu option is already present locally.
+4. **Flex additive slider, check in the UI** (2026-10-12 review fixes): the modal drag path can't run headless. In a UI session, check that dragging a stereo slider commits on release and cancels on Esc/right-click; that a script setting several stereo `value`s in a row applies all of them (each commits the previous session early); and that undo still takes one step per drag (the 5.11.2-flex-controller.1 GUI smoke confirmed this before the review fixes; `reset_flex_deltas` on `undo_post` now also clears any leftover additive value).
+5. **Flex panel with the armature active** (round 13): the panel and its operators act on `context.object`, so it only shows with the face mesh active. Following an active armature to its flexed child mesh means giving the operators a target object.
+6. **Upstream #477 leftovers** (round 12, deferred on purpose): moving the scene settings into one `Scene.sourceio_props` group needs a versioned migration (old .blend values are otherwise lost: tested in the review) and compatibility for mounted-resource collections. Upstream's automatically embedded flex UI script (`Text.use_module`, runs only with auto-execution on) could come back only as an explicit *Embed standalone flex UI* action.
 
 ### Blocked on assets
 
@@ -71,7 +82,7 @@ Not needed to import clips: bone masks (`m_maskDefinitions` in a `.vnmskel`) and
 
 ### Future work
 
-The general Source 1 / Source 2 authoring and compiler pipeline in [TODO.md](TODO.md) remains future work. The static Source 2 reconstruction, provenance, loss-reporting, and atomic-staging foundation is already implemented.
+The CS2 static authoring slice in [TODO.md](TODO.md) is implemented: deterministic editable FBX/VMDL/VMAT/TGA staging, preflight and manifests, non-destructive Blender extraction, File > Export and CLI entry points, optional official compilation, manifest recompile, and compiled re-import are validated. The current authored material contract is intentionally limited to opaque base color or reuse of an existing VMAT. Expanding that contract, implementing the Source 1 backend/compiler slice, and supporting skeletal/animated/physics/map authoring remain future work. Static ModelDoc/Hammer reconstruction stays a separate explicitly lossy workflow.
 
 ## Verification
 

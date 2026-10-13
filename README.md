@@ -120,6 +120,35 @@ To keep the textures external, set *Scene Properties > SourceIO configuration > 
 The cache still uses disk space and must remain available with the `.blend`, but it can be reused by later imports.
 Using *File > External Data > Pack Resources* embeds those files again and restores the larger file size.
 
+## Import times
+
+Importing a map is quick; most of the time goes into *Load Entity* on its prop placeholders, which imports each
+model and decodes its textures. Measured with SourceIO 5.12.0 in headless Blender 5.2.2 on one Windows desktop,
+with the games installed on a separate drive; times vary with CPU and disk speed:
+
+| Map | Map import | With every placeholder loaded | Placeholders |
+|-----|-----------:|------------------------------:|-------------:|
+| TF2 `ctf_2fort` | 31 s | 64 s | 2,320 |
+| TF2 `cp_badlands` | 17 s | 34 s | 1,308 |
+| TF2 `koth_harvest_final` | 16 s | 23 s | 673 |
+| TF2 `pl_upward` | 20 s | 47 s | 1,332 |
+| CS2 `cs_office` | 5 s | 2 min 10 s | 647 |
+| CS2 `de_dust2` | 8 s | 6 min 10 s | 698 |
+| CS2 `de_inferno` | 10 s | 8 min 35 s | 1,365 |
+| Dota 2 `dota` | 22 s | 5 min 20 s | 5,311 |
+
+A single model takes under 3 s for TF2 and Dota 2 (Dota heroes and creeps with their animations) and 1-12 s for CS2,
+where the agents, hostage and weapons have the most textures. A CS2 agent with all of its 2,089 graph clips takes
+about a minute. Saving a map with its textures embedded adds up to 15 s for TF2, Dota 2 and `cs_office`, and about
+1 and 1.5 minutes for the multi-gigabyte `de_dust2` and `de_inferno` files.
+
+To spend less time on a map:
+
+- Select only the placeholders you need before *Load Entity*; it loads the selected ones.
+- Keep *Use instances* on (the default) so a model placed many times is imported once and instanced.
+- Turn off *Import materials* when you only need the geometry.
+- Set a *TextureCachePath* (above): textures decoded by one import are written to disk and reused by later ones.
+
 # Changes in this fork
 
 ## Blender 5.2 modernization

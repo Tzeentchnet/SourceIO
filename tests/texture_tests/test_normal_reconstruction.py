@@ -25,6 +25,20 @@ def test_normalize_xy_longer_than_one():
     assert (out[0, :, :2] == pixels[0, :, :2]).all()
 
 
+def test_dxt5nm_moves_x_from_alpha_to_red():
+    # Dota 2's DXT5 normal maps keep X in alpha and leave red at 0.
+    pixels = np.array([[[0, 128, 0, 255], [0, 128, 0, 128], [0, 40, 0, 200]]], np.uint8)
+    out = CompiledTextureResource._normalize(CompiledTextureResource._dxt5nm_to_rg(pixels))
+    assert (out[0, :, 0] == [255, 128, 200]).all()
+    assert out[0, 1, 2] == 255  # X = Y = 0.5: flat
+    assert (out[0, :, 3] == 255).all()
+
+
+def test_rg_normal_map_is_not_treated_as_dxt5nm():
+    pixels = np.array([[[128, 128, 0, 255], [255, 128, 0, 10]]], np.uint8)
+    assert (CompiledTextureResource._dxt5nm_to_rg(pixels) == pixels).all()
+
+
 class _Spec:
     def __init__(self, string):
         self.string = string

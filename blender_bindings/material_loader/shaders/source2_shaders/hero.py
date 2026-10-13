@@ -28,6 +28,16 @@ class Hero(Source2ShaderBase):
     def _scale_value(self, value_output, scale: float):
         return value_output if scale == 1.0 else self._multiply_value(value_output, scale)
 
+    def _scale_unit(self, value_output, scale: float):
+        """value * scale, clamped to 0..1. Dota's scales are Blinn-Phong intensities (g_flSpecularScale is often
+        tens), while Blender's Specular IOR Level and Sheen Weight treat 0.5 and 1 as the normal maximum."""
+        scaled = self.create_node(Nodes.ShaderNodeMath)
+        scaled.operation = "MULTIPLY"
+        scaled.use_clamp = True
+        self.connect_nodes(value_output, scaled.inputs[0])
+        scaled.inputs[1].default_value = scale
+        return scaled.outputs[0]
+
     def _scale_color(self, color_output, scale):
         scaled = self.create_node(Nodes.ShaderNodeVectorMath)
         scaled.operation = "SCALE"
@@ -228,13 +238,13 @@ class Hero(Source2ShaderBase):
             emission_output = self._add_colors(emission_output, self._scale_color(color_output, self_illum))
 
         if masks2 is not None:
-            specular = self._scale_value(
+            specular = self._scale_unit(
                 self._blend_to_full(masks2.outputs["Red"], "g_flSpecularBlendToFull"),
                 self._material_resource.get_float_property("g_flSpecularScale", 1.0),
             )
             self.connect_nodes(specular, shader.inputs["Specular IOR Level"])
 
-            rim = self._scale_value(
+            rim = self._scale_unit(
                 masks2.outputs["Green"],
                 self._material_resource.get_float_property("g_flRimLightScale", 1.0),
             )

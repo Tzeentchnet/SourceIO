@@ -60,11 +60,13 @@ class Source2DotaMaterialTests(unittest.TestCase):
         self.assertEqual(specular.operation, "MULTIPLY")
         self.assertEqual(source(specular.inputs[0]), ("g_tMasks2", "Red"))
         self.assertAlmostEqual(specular.inputs[1].default_value, 2.0, places=6)
+        self.assertTrue(specular.use_clamp)  # a Blinn-Phong scale must not push reflectance past Blender's range
 
         sheen = linked_node(shader.inputs["Sheen Weight"])
         self.assertEqual(sheen.operation, "MULTIPLY")
         self.assertEqual(source(sheen.inputs[0]), ("g_tMasks2", "Green"))
         self.assertAlmostEqual(sheen.inputs[1].default_value, 3.0, places=6)
+        self.assertTrue(sheen.use_clamp)
         np.testing.assert_allclose(shader.inputs["Sheen Tint"].default_value, (0.2, 0.4, 0.6, 1.0))
         self.assertFalse(shader.inputs["Coat Weight"].is_linked)
         np.testing.assert_allclose(shader.inputs["Coat Tint"].default_value, (1.0, 1.0, 1.0, 1.0))

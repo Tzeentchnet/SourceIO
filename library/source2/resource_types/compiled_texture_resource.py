@@ -627,7 +627,7 @@ class CompiledTextureResource(CompiledResource):
                 if hemi_oct_aniso_roughness:
                     output = self._hemi_oct_aniso_roughness(output)
                 else:
-                    output = self._normalize(output)
+                    output = self._normalize(self._dxt5nm_to_rg(output))
             if invert:
                 output[:, :, 1] = np.invert(output[:, :, 1])
 
@@ -714,6 +714,21 @@ class CompiledTextureResource(CompiledResource):
         output[:, :, 1] = 255 - ((ny / l * 0.5) + 0.5) * 255
         output[:, :, 2] = ((nz / l * 0.5) + 0.5) * 255
         return output.astype(np.uint8)
+
+    @staticmethod
+    def _dxt5nm_to_rg(output: np.ndarray) -> np.ndarray:
+        """Move X from alpha to red in a DXT5nm normal map (as Dota 2 compiles its normal maps).
+
+        DXT5nm keeps X in the alpha channel, whose separate block keeps more precision, and leaves red constant;
+        _normalize reads X from red. A map with a varying red channel is already in R/G form and is left alone."""
+        red = output[:, :, 0]
+        alpha = output[:, :, 3]
+        if red.min() != red.max() or alpha.min() == alpha.max():
+            return output
+        output = output.copy()
+        output[:, :, 0] = alpha
+        output[:, :, 3] = 255
+        return output
 
     @staticmethod
     def _normalize(output: np.ndarray) -> np.ndarray:

@@ -3,8 +3,10 @@
 CS2 ships a map's 3D skybox as a map of its own, named by the map's ``skybox_reference``, built at
 1/``scale`` of its ``sky_camera``. Also covers the per-map entity collections the skybox needs,
 *Load Entity* on an aggregate whose draw calls repeat (it placed only the first fragment), the names
-of the models the map compiler generates, and the light blockers (hidden, casting shadows only).
+of the models the map compiler generates (renamed after their material once loaded when the name has
+none), and the light blockers (hidden, casting shadows only).
 """
+import functools
 import math
 import tempfile
 import unittest
@@ -266,6 +268,15 @@ class WorldNodeNameTests(unittest.TestCase):
                 ("maps/x/worldnodes/n0_custom_name.vmdl_c", "n0_custom_name")):
             self.assertEqual(loader.world_node_model_name(path), name, path)
 
+    def test_only_names_without_a_material_are_renamed_later(self):
+        for path, lacks in (("maps/x/worldnodes/node000_lr0_c0_s_cb_nomerge3.vmdl_c", True),
+                            ("maps/x/worldnodes/node000_lr0_c0_s_cb_mesh_cm00_lp0123abcd.vmdl_c", True),
+                            ("maps/de_dust2/worldnodes/n0_lr0_c0_s_cb_nomerge6_steam_001.vmdl_c", False),
+                            ("maps/de_dust2/worldnodes/n0_lr0_c10_s_mesh_overlay10.vmdl_c", False),
+                            ("maps/x/worldnodes/n0_custom_name.vmdl_c", False),
+                            ("models/props/crate_01.vmdl_c", False)):
+            self.assertEqual(loader.world_node_model_lacks_material_name(path), lacks, path)
+
 
 class FakeSceneObject(dict):
     def to_dict(self):
@@ -464,3 +475,60 @@ class AggregateLoadTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NameAfterMaterialTests(unittest.TestCase):
+    """The de_dust2 skybox's cloud cards are nomerge1 to nomerge44: once loaded they take their material's name."""
+
+    def setUp(self):
+        bpy.ops.wm.read_homefile(use_empty=True)
+        bpy.context.scene.import_materials = False
+        bpy.context.scene.import_physics = False
+
+    @staticmethod
+    def load_model(cm, resource, import_context,
+                   materials=("materials/skybox/clouds_card.vmat?sourceio-scale=0x1.a027520000000p-6",)):
+        mesh = bpy.data.meshes.new("mesh")
+        mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+        for path in materials:
+            material = bpy.data.materials.new("material")
+            material["full_path"] = path
+            mesh.materials.append(material)
+        obj = bpy.data.objects.new("mesh", mesh)
+        return ModelContainer([obj], {"group": [obj]})
+
+    def load(self, model_path, load_model, use_instances=False):
+        bpy.context.scene.use_instances = use_instances
+        bpy.context.scene.replace_entity = True
+        map_collection = bpy.data.collections.new("de_dust2_skybox")
+        bpy.context.scene.collection.children.link(map_collection)
+        loader.create_static_prop_placeholder(FakeSceneObject(), TinyPath(model_path), None, map_collection,
+                                              SCALE, [1.0, 1.0])
+        placeholder = map_collection.objects[-1]
+        operator = SimpleNamespace(report=lambda *args: None,
+                                   replace_placeholder=shared_operators.SourceIO_OT_LoadEntity.replace_placeholder)
+        with mock.patch.object(shared_operators, "load_model", load_model),                 mock.patch.object(shared_operators.CompiledModelResource, "from_buffer",
+                                  return_value=FakeModelResource()):
+            shared_operators.SourceIO_OT_LoadEntity.load_vmdl(operator, SimpleNamespace(find_file=lambda p: b"vmdl"),
+                                                              bpy.context, placeholder)
+        return placeholder
+
+    def test_loaded_model_takes_its_material_name(self):
+        self.load("maps/de_dust2_skybox/worldnodes/n0_lr0_c0_s_cb_nomerge3.vmdl_c", self.load_model)
+        # The placeholder and the mesh that took its place
+        self.assertEqual(sorted(obj.name for obj in bpy.data.objects), ["clouds_card", "clouds_card.001"])
+
+    def test_instanced_model_takes_its_material_name(self):
+        path = "maps/de_dust2_skybox/worldnodes/n0_lr0_c0_s_cb_nomerge4.vmdl_c"
+        first = self.load(path, self.load_model, use_instances=True)
+        second = self.load(path, self.load_model, use_instances=True)
+        self.assertEqual(first.name, "clouds_card")
+        self.assertEqual(second.name, "clouds_card.001")
+        self.assertEqual(first.instance_collection, second.instance_collection)
+
+    def test_names_with_a_material_or_several_materials_stay(self):
+        self.load("maps/de_dust2/worldnodes/n0_lr0_c0_s_cb_nomerge6_steam_001.vmdl_c", self.load_model)
+        two = functools.partial(self.load_model, materials=("materials/a.vmat", "materials/b.vmat"))
+        self.load("maps/de_dust2/worldnodes/n0_lr0_c0_s_cb_nomerge7.vmdl_c", two)
+        self.assertEqual(sorted(obj.name.split(".")[0] for obj in bpy.data.objects),
+                         ["nomerge7", "nomerge7", "steam_001", "steam_001"])

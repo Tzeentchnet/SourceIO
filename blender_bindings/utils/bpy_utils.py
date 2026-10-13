@@ -225,6 +225,18 @@ def make_shadow_only(objects: Iterable[bpy.types.Object]):
         obj.visible_shadow = True
 
 
+def single_material_name(objects: Iterable[bpy.types.Object]) -> str | None:
+    """The name of the one material the objects use (the stem of its game path when it has one), or None when
+    they use none or several."""
+    materials = {slot.material for obj in objects for slot in obj.material_slots if slot.material is not None}
+    if len(materials) != 1:
+        return None
+    material = materials.pop()
+    # Source 2 identities end in the import settings: materials/x.vmat?sourceio-scale=0x1.a02752p-6
+    full_path = material.get("full_path", "").partition("?")[0]
+    return TinyPath(full_path).stem if full_path else material.name
+
+
 def append_blend(filepath, type_name, link=False):
     with bpy.data.libraries.load(filepath, link=link) as (data_from, data_to):
         setattr(data_to, type_name, [asset for asset in getattr(data_from, type_name)])

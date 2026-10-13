@@ -59,15 +59,25 @@ _MODEL_KINDS = (re.compile(r"agg_(?:merge|prop|nomerge)_(.+)_\d+"), re.compile(r
 def world_node_model_name(model_path: str) -> str:
     """A readable name for a model the map compiler generated: the material (or overlay, light blocker) it was
     made for, without the compiler's bookkeeping. Other models keep their file name."""
+    return _parse_world_node_model_name(model_path)[0]
+
+
+def world_node_model_lacks_material_name(model_path: str) -> bool:
+    """True for compiler-generated models whose name says nothing about them (nomerge3, mesh_cm00_lp<hash>);
+    their placeholder is renamed after the model's material once it is loaded."""
+    return _parse_world_node_model_name(model_path)[1]
+
+
+def _parse_world_node_model_name(model_path: str) -> tuple[str, bool]:
     path = TinyPath(model_path)
     stem = path.stem
     if "worldnodes" not in path.as_posix().split("/") or (prefix := _COMPILER_PREFIX.match(stem)) is None:
-        return stem
+        return stem, False
     name = _RENDER_FLAGS.sub("", stem[prefix.end():])
     for kind in _MODEL_KINDS:
         if match := kind.fullmatch(name):
-            return match[1]
-    return name or stem
+            return match[1], False
+    return name or stem, True
 
 
 def get_entity_name(entity_data: dict[str, Any]):
@@ -271,6 +281,8 @@ def create_static_prop_placeholder(scene_object: Object, proper_path: TinyPath |
                    'skin': scene_object.get('skin', 'default') or 'default'}
     if shadow_only:
         custom_data['shadow_only'] = True
+    if world_node_model_lacks_material_name(proper_path):
+        custom_data['name_after_material'] = True
     empty = create_empty(world_node_model_name(proper_path), scale, custom_data=custom_data)
     if matrix is not None:
         transform_mat = matrix.to_4x4()

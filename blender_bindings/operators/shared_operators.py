@@ -24,7 +24,7 @@ from ..source2.vmdl_loader import load_model, ImportContext
 from ..source2.vmdl_loader import put_into_collections as s2_put_into_collections
 from ..source2.vtex_loader import texture_settings_from_scene
 from ..utils.bpy_utils import (get_or_create_collection, get_new_unique_collection, find_layer_collection,
-                                                       make_shadow_only, pause_view_layer_update)
+                                                       make_shadow_only, pause_view_layer_update, single_material_name)
 from ..utils.resource_utils import deserialize_mounted_content, serialize_mounted_content
 from ...library.shared.content_manager import ContentManager
 from ...library.source2 import CompiledModelResource
@@ -59,6 +59,15 @@ def add_collection(model_path: TinyPath, collection: bpy.types.Collection, *othe
     cache = bpy.context.scene.get("INSTANCE_CACHE", {})
     cache[key] = collection.name
     bpy.context.scene["INSTANCE_CACHE"] = cache
+
+
+def name_after_material(obj: bpy.types.Object, objects: Iterable[bpy.types.Object]):
+    """Compiler-generated world models such as nomerge3 say nothing in their name; name the placeholder, and
+    so the object that replaces it, after the one material the model uses."""
+    if not obj["entity_data"].get("name_after_material"):
+        return
+    if name := single_material_name(objects):
+        obj.name = name
 
 
 # noinspection PyPep8Naming
@@ -400,6 +409,7 @@ class SourceIO_OT_LoadEntity(Operator):
         if instance_collection and use_collections:
             collection = bpy.data.collections.get(instance_collection, None)
             if collection is not None:
+                name_after_material(obj, collection.all_objects)
                 obj.instance_type = 'COLLECTION'
                 obj.instance_collection = collection
                 obj["entity_data"]["prop_path"] = None
@@ -411,6 +421,7 @@ class SourceIO_OT_LoadEntity(Operator):
             model_resource = CompiledModelResource.from_buffer(vmld_file, prop_path)
             container = load_model(content_manager, model_resource, import_context)
             set_model_skin(container, skin)
+            name_after_material(obj, container.objects)
             if custom_prop_data.get("shadow_only", False):
                 make_shadow_only(container.objects)
             if replace_entity:

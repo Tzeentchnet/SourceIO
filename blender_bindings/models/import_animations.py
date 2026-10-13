@@ -40,21 +40,32 @@ def import_animations_to_armature(
         return []
 
     rest_matrices = {bone.name: bone.matrix_local.copy() for bone in armature_obj.data.bones}
+    # The factory assigns each action as it creates it; put back what the armature had, so it is not
+    # left posed by whichever animation came last (often a delta, which distorts the model on its own).
+    animation_data = armature_obj.animation_data
+    previous_action = animation_data.action if animation_data else None
+    previous_slot = animation_data.action_slot if animation_data else None
     action_factory = ActionCurveFactory(mdl_name, armature_obj, not compact_animations)
 
     created = []
     deltas = []
-    for anim_data in animations:
-        try:
-            result = _create_action(armature_obj, action_factory, anim_data, scale, rest_matrices)
-        except Exception as ex:
-            logger.error(f"Failed to import animation '{anim_data.name}': {ex}")
-            continue
-        if result is None:
-            continue
-        created.append(result)
-        if anim_data.is_delta:
-            deltas.append(result)
+    try:
+        for anim_data in animations:
+            try:
+                result = _create_action(armature_obj, action_factory, anim_data, scale, rest_matrices)
+            except Exception as ex:
+                logger.error(f"Failed to import animation '{anim_data.name}': {ex}")
+                continue
+            if result is None:
+                continue
+            created.append(result)
+            if anim_data.is_delta:
+                deltas.append(result)
+    finally:
+        animation_data = armature_obj.animation_data
+        animation_data.action = previous_action
+        if previous_action is not None and previous_slot is not None:
+            animation_data.action_slot = previous_slot
 
     if delta_animations_to_nla and deltas:
         push_to_nla(armature_obj, deltas, blend_type='COMBINE')

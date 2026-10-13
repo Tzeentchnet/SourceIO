@@ -37,7 +37,8 @@ class Source1EntityPropTests(unittest.TestCase):
                 self.assertTrue(hasattr(options, name), name)
         self.assertFalse(options.debug_stereo_balance)
         self.assertTrue(options.generate_wrinkle_map_node_group)
-        self.assertTrue(options.compact_animations)
+        self.assertFalse(options.compact_animations)
+        self.assertTrue(options.import_include_animations)
 
     def test_placeholder_loads_a_real_mdl(self):
         placeholder = bpy.data.objects.new("prop_static_1", None)

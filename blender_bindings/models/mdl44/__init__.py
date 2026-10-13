@@ -42,9 +42,7 @@ def import_mdl44(model_path: TinyPath, buffer: Buffer,
         logger.error(f"Could not find VTX and/or VVD file for {model_path}")
         armature = create_armature(mdl, options.scale, options.load_refpose)
         #try:
-        if not armature or not options.import_animations or options.import_include_animations:
-            if options.import_include_animations and options.import_animations and armature:
-                logger.info('MDL is empty and may include animation, but skipping due to "Include Model Animations" being enabled to prevent duplicate animations.')
+        if not armature or not options.import_animations:
             raise RequiredFileNotFound(f"Could not find VTX and/or VVD file for {model_path}")
         
         import_animations_common(

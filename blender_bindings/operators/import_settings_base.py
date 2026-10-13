@@ -44,8 +44,8 @@ class ModelOptions(SharedOptions, Source1SharedSettings):
     bodygroup_vis_switches: BoolProperty(name='Drive visibility for bodygroups', description='Toggle the visibility of body groups driven by a custom property switch on the armature', default=True, subtype='UNSIGNED')
 
     import_animations: BoolProperty(name="Load animations", default=False, subtype='UNSIGNED')
-    import_include_animations: BoolProperty(name="Load include model animations", default=False, subtype='UNSIGNED')
-    compact_animations: BoolProperty(name='Compact Animations', default=True, description='If True, all animations will be stored as slots under one master action. If False, all animations will be in separate actions, as per legacy behavior.', subtype='UNSIGNED')
+    import_include_animations: BoolProperty(name="Load include model animations", default=True, description='Also load the animations of the models this one includes; most characters keep theirs there (dog.mdl in dog_animations.mdl)', subtype='UNSIGNED')
+    compact_animations: BoolProperty(name='Compact Animations', default=False, description='Store the animations as slots of one action per source model instead of one action per animation', subtype='UNSIGNED')
     delta_animations_to_nla: BoolProperty(name='Delta animations to NLA', default=False, description='Place each delta (additive) animation on its own muted NLA track with Combine blending, ready to layer on top of a base animation', subtype='UNSIGNED')
 
     create_flex_drivers: BoolProperty(name="Create drivers for flexes", default=True, subtype='UNSIGNED')

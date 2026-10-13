@@ -14,11 +14,11 @@ State (2026-10-12): [5.12.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/
 Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
 
 ```
-blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 612/612 modules, register/unregister/register OK
+blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 614/614 modules, register/unregister/register OK
 blender -b --factory-startup --python tests/e2e/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 blender -b ... run_game_imports.py -- --game "<TF2>/tf" --load-placeholders                                  # 13 PASS; 2fort 2320/2320, badlands 1308/1308, harvest 673/673, upward 1332/1332 placeholders
-blender -b ... run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota --load-placeholders    # 7 PASS; dota 5311/5311 placeholders, 6 excluded collections (the two destruction layers) (~301 s)
+blender -b ... run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota --load-placeholders    # 7 PASS; dota 5311/5311 placeholders, 6 excluded collections (the two destruction layers), no unsupported shaders (~313 s)
 # Add --save-dir DIR to any run_game_imports.py run to keep one packed .blend per asset for visual review.
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota  # 7 PASS / 0 WARN / 0 FAIL; app ID 570
@@ -29,15 +29,16 @@ blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 508 pass, 4 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 208 pass, 1 skip, 24 subtests
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 215 pass, 1 skip, 28 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_flex_controllers', argv=['x'], exit=False)"   # 19 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_skins', argv=['x'], exit=False)"   # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_material_paths', argv=['x'], exit=False)"   # 7 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_custom_normals', argv=['x'], exit=False)"   # 3 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 61 pass; 42 shader follow-up tests in six adjacent modules, 103 total
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_source2_dota_materials.py', 'SourceIO/tests/blender_tests/test_source2_materials.py', '-q']))"  # 72 pass, 15 subtests
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 61 pass; 46 shader follow-up tests in six adjacent modules, 107 total
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_source2_dota_materials.py', 'SourceIO/tests/blender_tests/test_source2_materials.py', '-q']))"  # 76 pass, 19 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 16 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 9 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 8 pass
@@ -48,7 +49,11 @@ python tools/build_extension.py --blender "D:/Blender Foundation/Blender 5.2/ble
 
 ### Actionable
 
-1. **Dota 2 shaders still missing**: `water_dota.vfx` (the river, 2 materials, 85 world-node meshes) and `crystal.vfx` (2 materials, `crystal00*_refract` props: exterior/interior cube maps, Fresnel, opacity scale) fall back to the dummy shader and render white. `multiblend.vfx` is done (`source2_shaders/multiblend.py`, after VRF's `multiblend.frag`; 14 materials on `dota`); VRF has no water or crystal shader to port.
+1. **Dota 2 shader follow-ups**: `crystal.vfx` and `water_dota.vfx` are done (`source2_shaders/crystal.py`, `water_dota.py`), ported from their compiled bytecode with `tools/shader_disasm.py` since VRF has no port; `multiblend.vfx` follows VRF's `multiblend.frag`. Left out, each named in the shader's docstring:
+   - Water: the flow map's world placement comes from runtime constants (`DotaHeightFogParams_t` rows 7–8, `cb3[7..8]` in the pixel shader), so the normal strength uses the flow map's mean |flow|² (0.4 for `dota_flowmap`, a 2:1 strip around an older river layout) and nothing scrolls. Animating the two-phase flow (`floor`/`frac` of time / 2 × interval plus `g_tNoise`, the phases offset by 0.311 UV) could reuse the Source 1 water's driven time node. The depth fog towards `g_vWaterFogColor` comes from the refraction buffer's alpha and has no surface equivalent. `F_FRESNEL` (10 materials), `F_FLOW_COLOR` and the low-end parameters aren't read.
+   - Water in EEVEE: no riverbed shows through the water (a green wash; slab thickness doesn't help), where Cycles refracts it. The Source 1 water behaves the same; likely EEVEE's screen-space refraction rather than the material.
+   - Crystal: the sun highlight the shader adds to the cube map (`g_flSpecularIntensity` × the map's global light direction, exponent and color in `DotaGlobalParams_t`) isn't reproduced; `g_flBloom` is post-processing.
+   - `models/heroes/lich/ice_spire_01.vmdl_c` fails `--expect-profile dota` (`actions>=1`: an armature without clips), on `master` as well.
 2. **Smaller CS2 follow-ups** (rounds 8, 17, 19, 20 and 22; the unverified ones are under *Needs verification*):
    - Lights inside their fixtures (round 22): de_dust2's brightest barn light (`light_barn` at 325 2371 31) sits 9 cm inside the opaque, self-illuminated bulb of `dust_hanging_light_02_on` (`csgo_vertexlitgeneric`, `F_SELF_ILLUM`), so in Blender it lights nothing (it didn't as a point light either). The lamp's aggregate has `NoShadows` (0x20) in `m_allFlags`, but so do 216 of de_dust2's 379 aggregates and 79 of its 138 static scene objects (plants, crates), most likely meaning "shadow baked, not drawn into dynamic shadow maps", so the flag alone can't turn shadows off. Candidates: turn shadow rays off for self-illuminated meshes that enclose a light, or for `NoShadows` objects a light sits inside. Flags come as integers or as enum names (`OBJECT_TYPE_RENDER_TO_CUBEMAPS`).
    - Light shapes, what's left (round 22): barn lights lose their rectangular shape (`shape` 0; spots are elliptical), skirts, `range` and cookies (`lightcookie`, 177 of 563 barns, mostly `flashlight.vtex`); `soft_x`/`soft_y` as the spot blend and `luminaire_size / 2` as the radius are unverified. The one orthographic barn (de_nuke) is an area light with irradiance π × brightness near it. `light_omni2` tubes (`shape` 1 and 2, 41 lights) are point lights (`shape` isn't read), and whether `size_params[0]` is a sphere's radius is unverified (`# TODO` in `handle_light_omni2`: the other axes are ignored); outer angles over 90° stay point lights (Blender's spot cone ends at 180°). No light uses `range` (EEVEE's custom distance could).
@@ -111,6 +116,13 @@ Source 2 resource conformance (round 25; `tests/conformance` runs the same check
 "<blender>/5.2/python/bin/python.exe" tools/source2_conformance.py snapshot    # strict snapshot matched 7 fixtures
 "<blender>/5.2/python/bin/python.exe" tools/source2_conformance.py self-test   # passed: 7 valid, 23 malformed fixtures
 "<blender>/5.2/python/bin/python.exe" tools/vrf_oracle.py state                # unconfigured unless SOURCEIO_VRF_CLI is set
+```
+
+Shaders without a VRF port: `tools/shader_params.py` prints a shader's parameters and defaults; `tools/shader_disasm.py` disassembles its compiled DX11 programs per static/dynamic combo (`--list` first), naming the material constants. It needs the game's `bin/win64` (the zstd dictionary in `materialsystem2.dll`, `d3dcompiler_47.dll`) and runs on Windows only:
+
+```
+"<blender>/5.2/python/bin/python.exe" -I tools/shader_disasm.py --game "<Dota2>/game/dota" --shader crystal --list
+"<blender>/5.2/python/bin/python.exe" -I tools/shader_disasm.py --game "<Dota2>/game/dota" --shader crystal --static 496 --dynamic 35
 ```
 
 Command line (`blender -c sourceio`, `blender_bindings/cli.py`): `import`, `extract-sound`, and the static reconstructions `export-modeldoc` and `export-hammer`.

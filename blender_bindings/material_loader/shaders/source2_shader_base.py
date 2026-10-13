@@ -6,10 +6,12 @@ from ..shader_base import (ShaderBase, Nodes, ExtraMaterialParameters,
                                                                    MIX_FACTOR, MIX_A, MIX_B, MIX_RESULT)
 from ...source2.vtex_loader import import_texture
 from ....library.shared.content_manager import ContentManager
-from ....library.source2.blocks.texture_data import TextureData
+from ....library.source2.blocks.texture_data import TextureData, VTexFormat
 from ....library.source2.keyvalues3.types import NullObject
 from ....library.source2.resource_types import CompiledMaterialResource, CompiledTextureResource
+from ....library.utils.path_utilities import path_stem
 from ....library.utils.perf_sampler import timed
+from ....library.utils.thirdparty.equilib.cube2equi_numpy import run as convert_to_eq
 from ....library.utils.tiny_path import TinyPath
 from ....logger import SourceLogMan
 
@@ -250,6 +252,49 @@ class Source2ShaderBase(ShaderBase):
         return self.load_texture(resource, TinyPath(texture_name), invert_y) or self.get_missing_texture(
             f'missing_{texture_name}',
             default_color)
+
+    def load_cubemap_equirect(self, texture_path: str, width: int = 0) -> Optional[bpy.types.Image]:
+        """A cube map texture as a 2:1 equirectangular image (``width`` wide, four faces' width by default), for
+        an Environment Texture node looked up by a world-space direction: the cube's +X (Source's forward) is at
+        the image's center, which is Blender's +X. Images are reused per texture and width."""
+        for image in bpy.data.images:
+            if image.get("sourceio_cubemap") == texture_path and (not width or image.size[0] == width):
+                return image
+        self.loaded_textures.add(texture_path)
+        texture_resource = self._material_resource.get_child_resource(texture_path, self.content_manager,
+                                                                      CompiledTextureResource)
+        if texture_resource is None or not texture_resource.is_cubemap():
+            return None
+        face_width, face_height = texture_resource.get_resolution(0)
+        width = width or 4 * face_width
+        faces = {}
+        for i, k in enumerate("FBLRUD"):
+            data, _ = texture_resource.get_cubemap_face(i, 0)
+            side = data.reshape((face_width, face_height, 4))
+            if k == 'B':
+                side = np.rot90(side, 2)
+            if k == 'L':
+                side = np.rot90(side, 3)
+            if k == 'R':
+                side = np.rot90(side, 1)
+            faces[k] = side.T
+
+        pixel_data = convert_to_eq(faces, "dict", width, width // 2, 'default', 'bilinear').T
+        pixel_data = np.rot90(pixel_data, 1)
+        if pixel_data.shape[0] == 0:
+            return None
+        image = bpy.data.images.new(path_stem(texture_path) + '.tga', width=width, height=width // 2, alpha=True)
+        image.alpha_mode = 'CHANNEL_PACKED'
+        if texture_resource.get_texture_format() in (VTexFormat.RGBA16161616F, VTexFormat.BC6H):
+            image.use_generated_float = True
+            image.file_format = 'HDR'
+            image.pixels.foreach_set(pixel_data.astype(np.float32).ravel())
+        else:
+            image.file_format = 'PNG'
+            image.pixels.foreach_set(pixel_data.ravel())
+        image.pack()
+        image["sourceio_cubemap"] = texture_path
+        return image
 
     def split_normal(self, image: bpy.types.Image):
         roughness_name = self.new_texture_name_with_suffix(image.name, 'roughness', 'tga')

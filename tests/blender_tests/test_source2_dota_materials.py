@@ -1,5 +1,7 @@
 import json
+import math
 import unittest
+from unittest import mock
 
 import bpy
 import numpy as np
@@ -10,7 +12,10 @@ from SourceIO.blender_bindings.material_loader.shader_base import (
     MIX_B,
     MIX_FACTOR,
 )
+from SourceIO.blender_bindings.material_loader.shaders.source2_shader_base import Source2ShaderBase
+from SourceIO.library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from SourceIO.tests.blender_tests.test_source2_materials import (
+    FakeMaterial,
     build,
     linked_node,
     output_node,
@@ -360,9 +365,9 @@ class Source2DotaMaterialTests(unittest.TestCase):
         self.assertEqual(mod2x.surface_render_method, "BLENDED")
 
     @staticmethod
-    def bake_base_color(material, uv_layers: dict[str, tuple[float, float]]):
-        """Bake what feeds the material's Base Color on a quad whose UV maps are constant (vertex paint
-        streams), returning the RGB."""
+    def bake_base_color(material, uv_layers: dict[str, tuple[float, float]], input_name: str = "Base Color"):
+        """Bake what feeds the material's Base Color (or another shader input) on a quad whose UV maps are
+        constant (vertex paint streams), returning the RGB."""
         mesh = bpy.data.meshes.new("paint_quad")
         mesh.from_pydata([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)], [], [(0, 1, 2, 3)])
         mesh.uv_layers.new(name="TEXCOORD").data.foreach_set("uv", (0, 0, 1, 0, 1, 1, 0, 1))
@@ -372,7 +377,7 @@ class Source2DotaMaterialTests(unittest.TestCase):
         obj = bpy.data.objects.new("paint_quad", mesh)
         bpy.context.scene.collection.objects.link(obj)
         nodes, links = material.node_tree.nodes, material.node_tree.links
-        base_color = shader_node(material, material["source2_shader"]).inputs["Base Color"]
+        base_color = shader_node(material, material["source2_shader"]).inputs[input_name]
         emission = nodes.new("ShaderNodeEmission")
         links.new(base_color.links[0].from_socket, emission.inputs["Color"])
         links.new(emission.outputs[0], output_node(material).inputs["Surface"])
@@ -468,8 +473,156 @@ class Source2DotaMaterialTests(unittest.TestCase):
         self.assertTrue(shader.inputs["Emission Color"].is_linked)
         self.assertTrue({f"g_tNormal{n}" for n in range(4)} <= texture_nodes(material))
 
+    def test_crystal_albedo_tints_match_bytecode(self):
+        srgb = lambda c: np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)  # noqa: E731
+        color, mask = np.array((0.8, 0.6, 0.4)), 0.25
+        tint, tint2 = np.array((0.9, 0.7, 0.5)), np.array((0.3, 0.6, 0.9))
+        vectors = {"g_vColorTint": (*tint, 1.0), "g_vColorTint2": (*tint2, 0.0)}
+
+        material = build("crystal.vfx", ("g_tColor", "g_tTintMask"), ints={"F_TINT_MASK": 1}, vectors=vectors)
+        self.constant_image(material.node_tree.nodes["g_tColor"], (*color, 1.0))
+        self.constant_image(material.node_tree.nodes["g_tTintMask"], (0.9, mask, 0.9, 1.0))
+        expected = color * srgb(tint) * (srgb(tint2) + (srgb(tint) - srgb(tint2)) * mask)  # model tint 1
+        np.testing.assert_allclose(self.bake_base_color(material, {}), expected, atol=2e-3)
+
+        # Without the mask the tint applies twice, as the compiled shader does.
+        material = build("crystal.vfx", ("g_tColor", "g_tTintMask"), vectors=vectors)
+        self.assertNotIn("g_tTintMask", texture_nodes(material))
+        self.constant_image(material.node_tree.nodes["g_tColor"], (*color, 1.0))
+        np.testing.assert_allclose(self.bake_base_color(material, {}), color * srgb(tint) ** 2, atol=2e-3)
+
+    def test_crystal_draws_opaque_back_faces_and_cube_map_reflections(self):
+        cube_images = {}
+
+        def fake_cube(shader, texture_path, width=0):
+            return cube_images.setdefault(texture_path, bpy.data.images.new(texture_path, 4, 2))
+
+        textures = ("g_tColor", "g_tNormal", "g_tCubeMapExterior", "g_tCubeMapInterior")
+        flags = {"F_NORMAL_MAP": 1, "F_SPECULAR_CUBE_MAP": 1, "F_SEPARATE_INTERIOR_CUBE_MAP": 1}
+        floats = {"g_flOpacityScale": 0.66, "g_flCubeMapScalarExterior": 11.875, "g_flCubeMapScalarInterior": 10.0,
+                  "g_flFresnelExponent": 2.1, "g_flFresnelReflectance": 0.2, "g_flBumpStrength": 2.0}
+        with mock.patch.object(Source2ShaderBase, "load_cubemap_equirect", fake_cube):
+            material = build("crystal.vfx", textures, ints=flags, floats=floats)
+        shader = shader_node(material, "crystal.vfx")
+        self.assertEqual(material.surface_render_method, "BLENDED")
+        self.assertFalse(material.use_backface_culling)
+        self.assertTrue(material.use_transparency_overlap)
+
+        # Front faces are blended by alpha times the opacity scale, back faces are opaque.
+        alpha = linked_node(shader.inputs["Alpha"])
+        self.assertEqual(alpha.operation, "MAXIMUM")
+        opacity = linked_node(alpha.inputs[0])
+        self.assertEqual(source(opacity.inputs[0]), ("g_tColor", "Alpha"))
+        self.assertAlmostEqual(opacity.inputs[1].default_value, 0.66, places=6)
+        self.assertEqual(alpha.inputs[1].links[0].from_socket.name, "Backfacing")
+
+        normal_map = linked_node(shader.inputs["Normal"])
+        self.assertEqual(normal_map.bl_idname, "ShaderNodeNormalMap")
+        self.assertAlmostEqual(normal_map.inputs["Strength"].default_value, 2.0, places=6)
+
+        # The emission is the cube maps (interior on back faces) times the Fresnel term.
+        reflection = linked_node(shader.inputs["Emission Color"])
+        self.assertEqual(reflection.operation, "SCALE")
+        fresnel = linked_node(reflection.inputs["Scale"])
+        self.assertEqual(fresnel.operation, "ADD")
+        self.assertAlmostEqual(fresnel.inputs[0].default_value, 0.2, places=6)
+        environments = {node.name: node for node in material.node_tree.nodes
+                        if node.bl_idname == "ShaderNodeTexEnvironment"}
+        self.assertEqual(set(environments), {"g_tCubeMapExterior", "g_tCubeMapInterior"})
+        reflected = linked_node(environments["g_tCubeMapExterior"].inputs["Vector"])
+        self.assertEqual(reflected.operation, "REFLECT")
+        self.assertEqual(linked_node(environments["g_tCubeMapInterior"].inputs["Vector"]), reflected)
+        self.assertEqual(linked_node(reflected.inputs[1]), normal_map)
+        scales = {linked_node(node.inputs[0]).name: node.inputs["Scale"].default_value
+                  for node in material.node_tree.nodes
+                  if node.bl_idname == "ShaderNodeVectorMath" and node.operation == "SCALE"
+                  and node.inputs[0].is_linked
+                  and linked_node(node.inputs[0]).bl_idname == "ShaderNodeTexEnvironment"}
+        self.assertAlmostEqual(scales["g_tCubeMapExterior"], 11.875, places=5)
+        self.assertAlmostEqual(scales["g_tCubeMapInterior"], 10.0, places=5)
+
+        # Without a separate interior cube map back faces reflect the exterior one; without cube maps nothing.
+        with mock.patch.object(Source2ShaderBase, "load_cubemap_equirect", fake_cube):
+            material = build("crystal.vfx", textures, ints={"F_SPECULAR_CUBE_MAP": 1})
+        self.assertEqual({node.name for node in material.node_tree.nodes
+                          if node.bl_idname == "ShaderNodeTexEnvironment"}, {"g_tCubeMapExterior"})
+        material = build("crystal.vfx", textures)
+        self.assertFalse(shader_node(material, "crystal.vfx").inputs["Emission Color"].is_linked)
+        self.assertFalse({"g_tNormal"} & texture_nodes(material))
+
+    def test_cube_maps_become_equirectangular_images_with_forward_at_the_center(self):
+        face_colors = ((1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 0, 1), (0, 1, 1))  # F B L R U D
+
+        class FakeCube:
+            def is_cubemap(self):
+                return True
+
+            def get_resolution(self, mip):
+                return 8, 8
+
+            def get_cubemap_face(self, face, mip):
+                return np.tile(np.array((*face_colors[face], 1.0), np.float32), 64), None
+
+            def get_texture_format(self):
+                return None
+
+        material = FakeMaterial("crystal.vfx")
+        material.get_child_resource = lambda *args: FakeCube()
+        shader = Source2ShaderBase(None, material)
+        image = shader.load_cubemap_equirect("materials/test/cube.vtex")
+        self.assertEqual(tuple(image.size), (32, 16))
+        pixels = np.array(image.pixels[:]).reshape(16, 32, 4)
+        np.testing.assert_allclose(pixels[8, 16, :3], face_colors[0], atol=1e-3)  # +X, Source's forward
+        np.testing.assert_allclose(pixels[15, 16, :3], face_colors[4], atol=1e-3)  # up
+        np.testing.assert_allclose(pixels[0, 16, :3], face_colors[5], atol=1e-3)  # down
+        self.assertIs(shader.load_cubemap_equirect("materials/test/cube.vtex"), image)
+
+    def test_water_dota_surface_and_world_space_normal(self):
+        srgb = lambda c: np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)  # noqa: E731
+        refraction_tint = np.array((0.533, 0.565, 0.275))
+        reflection_tint = np.array((0.75, 0.75, 0.75))
+        floats = {"g_flNormalUvScale": 500.0, "g_flWorldPositionScale": 2.0, "g_flBumpStrength": 1.0,
+                  "g_flReflectance": 0.01, "g_flReflectionPower": 3.0}
+        vectors = {"g_vRefractionTint": (*refraction_tint, 0.0), "g_vReflectionTint": (*reflection_tint, 0.0),
+                   "g_vReflectionColor": (0.1, 0.22, 0.25, 0.0), "g_vReflectionDir": (-0.45, -0.5, 0.499, 0.0)}
+        material = build("water_dota.vfx", ("g_tNormal", "g_tNoise", "g_tFlow"), ints={"F_FLOW_NORMALS": 1},
+                         floats=floats, vectors=vectors)
+        shader = shader_node(material, "water_dota.vfx")
+        self.assertEqual(material.surface_render_method, "DITHERED")
+        self.assertTrue(material.use_raytrace_refraction)
+        self.assertEqual(shader.inputs["Transmission Weight"].default_value, 1.0)
+        self.assertAlmostEqual(shader.inputs["IOR"].default_value, 1.333, places=5)
+        np.testing.assert_allclose(shader.inputs["Base Color"].default_value[:3], srgb(refraction_tint), atol=1e-5)
+        np.testing.assert_allclose(shader.inputs["Specular Tint"].default_value[:3], srgb(reflection_tint),
+                                   atol=1e-5)
+        f0 = ((1.333 - 1) / (1.333 + 1)) ** 2
+        self.assertAlmostEqual(shader.inputs["Specular IOR Level"].default_value, 0.5 * 0.01 / f0, places=5)
+        self.assertEqual(texture_nodes(material), {"g_tNormal"})
+
+        # The normal map tiles in Source units: (x, y) * g_flWorldPositionScale / g_flNormalUvScale.
+        uv = linked_node(material.node_tree.nodes["g_tNormal"].inputs[0])
+        self.assertEqual(uv.operation, "SCALE")
+        self.assertEqual(linked_node(uv.inputs[0]).bl_idname, "ShaderNodeNewGeometry")
+        self.assertAlmostEqual(uv.inputs["Scale"].default_value, 2.0 / 500.0 / SOURCE2_HAMMER_UNIT_TO_METERS,
+                               places=4)
+        highlight = linked_node(shader.inputs["Emission Color"])
+        self.assertEqual(highlight.operation, "SCALE")
+        power = linked_node(highlight.inputs["Scale"])
+        self.assertEqual(power.operation, "POWER")
+        self.assertAlmostEqual(power.inputs[1].default_value, 3.0, places=6)
+
+        # xy * (|flow|^2 + 0.1) * g_flBumpStrength, with the default flow (1, 0); clamped to unit length.
+        for bump, expected in ((0.5, (0.55, 0.0, math.sqrt(1 - 0.55 ** 2))), (2.5, (1.0, 0.0, 0.0))):
+            with self.subTest(bump=bump):
+                material = build("water_dota.vfx", ("g_tNormal",), floats={"g_flBumpStrength": bump})
+                self.constant_image(material.node_tree.nodes["g_tNormal"], (1.0, 0.5, 1.0, 1.0))
+                np.testing.assert_allclose(self.bake_base_color(material, {}, "Normal"), expected, atol=2e-3)
+
+        material = build("water_dota.vfx", ("g_tNormal",), vectors={"g_vReflectionColor": (0.0, 0.0, 0.0, 0.0)})
+        self.assertFalse(shader_node(material, "water_dota.vfx").inputs["Emission Color"].is_linked)
+
     def test_source2_shader_metadata_distinguishes_supported_and_dummy_handlers(self):
-        for shader in ("hero.vfx", "global_lit_simple.vfx", "multiblend.vfx"):
+        for shader in ("hero.vfx", "global_lit_simple.vfx", "multiblend.vfx", "crystal.vfx", "water_dota.vfx"):
             with self.subTest(shader=shader):
                 material = build(shader, ("g_tColor",))
                 metadata = {

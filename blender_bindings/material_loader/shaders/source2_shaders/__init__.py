@@ -4,5 +4,5 @@ from . import (blend, complex, dummy, eyeball, generic, global_lit_simple, hero,
                csgo_complex, csgo_glass, csgo_static_overlay, csgo_black_unlit,
                csgo_lightmappedgeneric, csgo_effects, csgo_foliage, csgo_vertexlitgeneric,
                csgo_environment_blend, pbr, citadel_overlay, environment_blend, environment_layer,
-               csgo_environment, csgo_unlitgeneric, multiblend,
+               csgo_environment, csgo_unlitgeneric, multiblend, crystal, water_dota,
                )

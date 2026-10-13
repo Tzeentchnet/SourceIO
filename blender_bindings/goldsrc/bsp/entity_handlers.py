@@ -48,7 +48,7 @@ def handle_model_prop(content_manager: ContentManager, model_name, entity_data, 
             master_collection = parent_collection
         else:
             master_collection = get_new_unique_collection(target_name, parent_collection)
-        opts = ModelOptions()
+        opts = ModelOptions.default()
         opts.scale = scale
         opts.bodygroup_grouping = True
         opts.create_flex_drivers = False

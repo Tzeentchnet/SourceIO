@@ -164,7 +164,8 @@ class SourceIO_OT_LoadEntity(Operator):
                         f"Failed to find MDL file for prop {prop_path}")
             return
         steamapp_id = content_manager.get_steamid_from_asset(prop_path)
-        options = ModelOptions()
+        # Not an operator, so the property declarations give no defaults; start from them explicitly.
+        options = ModelOptions.default()
         options.import_textures = import_materials
         options.import_physics = False
         options.create_flex_drivers = False
@@ -251,7 +252,8 @@ class SourceIO_OT_LoadEntity(Operator):
                         f"Failed to find MDL file for prop {prop_path}")
             return
         steamapp_id = content_manager.get_steamid_from_asset(prop_path)
-        options = ModelOptions()
+        # Not an operator, so the property declarations give no defaults; start from them explicitly.
+        options = ModelOptions.default()
         options.import_textures = import_materials
         options.import_physics = False
         options.create_flex_drivers = False

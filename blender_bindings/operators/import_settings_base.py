@@ -1,3 +1,5 @@
+import inspect
+
 from bpy.props import BoolProperty, FloatProperty
 
 from ...library.utils.math_utilities import SOURCE1_HAMMER_UNIT_TO_METERS
@@ -52,10 +54,15 @@ class ModelOptions(SharedOptions, Source1SharedSettings):
 
     @classmethod
     def default(cls):
+        """An instance with every declared property at its default.
+
+        A plain ``cls()`` has none of them: only Blender gives an operator its property values, so code that
+        builds options itself (prop placeholders, entity handlers) must start from this."""
         defaults = cls()
-        #Collect annotation from MRO and set default values
+        # Collect the annotations from the MRO, so subclasses override their bases' defaults.
         for base in reversed(cls.__mro__):
-            if hasattr(base, '__annotations__'):
-                for key, prop in base.__annotations__.items():
-                    setattr(defaults, key, prop.keywords['default'])
+            for key, prop in inspect.get_annotations(base).items():
+                keywords = getattr(prop, 'keywords', None)
+                if keywords is not None and 'default' in keywords:
+                    setattr(defaults, key, keywords['default'])
         return defaults

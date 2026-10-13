@@ -359,8 +359,117 @@ class Source2DotaMaterialTests(unittest.TestCase):
                          "ShaderNodeBsdfTransparent")
         self.assertEqual(mod2x.surface_render_method, "BLENDED")
 
+    @staticmethod
+    def bake_base_color(material, uv_layers: dict[str, tuple[float, float]]):
+        """Bake what feeds the material's Base Color on a quad whose UV maps are constant (vertex paint
+        streams), returning the RGB."""
+        mesh = bpy.data.meshes.new("paint_quad")
+        mesh.from_pydata([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)], [], [(0, 1, 2, 3)])
+        mesh.uv_layers.new(name="TEXCOORD").data.foreach_set("uv", (0, 0, 1, 0, 1, 1, 0, 1))
+        for name, value in uv_layers.items():
+            mesh.uv_layers.new(name=name).data.foreach_set("uv", value * 4)
+        mesh.materials.append(material)
+        obj = bpy.data.objects.new("paint_quad", mesh)
+        bpy.context.scene.collection.objects.link(obj)
+        nodes, links = material.node_tree.nodes, material.node_tree.links
+        base_color = shader_node(material, material["source2_shader"]).inputs["Base Color"]
+        emission = nodes.new("ShaderNodeEmission")
+        links.new(base_color.links[0].from_socket, emission.inputs["Color"])
+        links.new(emission.outputs[0], output_node(material).inputs["Surface"])
+        image = bpy.data.images.new("bake", 2, 2, float_buffer=True)
+        image.colorspace_settings.name = "Non-Color"
+        target = nodes.new("ShaderNodeTexImage")
+        target.image = image
+        nodes.active = target
+        scene = bpy.context.scene
+        scene.render.engine = "CYCLES"
+        scene.cycles.samples = 1
+        scene.cycles.device = "CPU"
+        for other in bpy.context.scene.objects:  # the bake covers every selected object
+            other.select_set(False)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.bake(type="EMIT", margin=0)
+        pixels = np.array(image.pixels[:], dtype=np.float32).reshape(-1, 4)
+        bpy.data.objects.remove(obj)
+        bpy.data.meshes.remove(mesh)
+        return pixels[:, :3].mean(0)
+
+    @staticmethod
+    def constant_image(node, rgba):
+        image = bpy.data.images.new(f"{node.name} constant", 1, 1, alpha=True, float_buffer=True)
+        image.colorspace_settings.name = "Non-Color"
+        image.pixels = rgba
+        original = node.image
+        for texture in node.id_data.nodes:
+            if texture.bl_idname == "ShaderNodeTexImage" and texture.image == original:
+                texture.image = image
+
+    def test_multiblend_weights_tints_and_vertex_paint_match_vrf(self):
+        srgb = lambda c: np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)  # noqa: E731
+        colors = np.array(((0.8, 0.2, 0.1), (0.1, 0.7, 0.2), (0.2, 0.3, 0.9), (0.6, 0.6, 0.1)))
+        reveals = (1.0, 0.5, 0.4, 0.6)
+        amounts, softness = np.array((0.5, 0.38, 0.3)), np.array((0.2, 0.1, 0.4))
+        tint_masks = (0.25, 0.5, 1.0, 0.0)
+        tints = np.array(((0.9, 0.8, 0.7), (0.5, 1.0, 0.5), (1.0, 1.0, 1.0), (0.4, 0.6, 0.8)))
+        tints_b = np.array(((0.2, 0.4, 0.6), (1.0, 0.5, 0.25), (0.3, 0.3, 0.3), (1.0, 1.0, 1.0)))
+        paint = np.array((0.9, 0.7, 0.5))
+        layers = range(4)
+        material = build(
+            "multiblend.vfx",
+            tuple(f"g_tColor{n}" for n in layers) + ("g_tTintMasks", "g_tParallaxMask"),
+            ints={"F_TINT_MASK": 1},
+            vectors={**{f"g_vColorTint{n}": (*tints[n], 0.0) for n in layers},
+                     **{f"g_vColorTintB{n}": (*tints_b[n], 0.0) for n in layers}},
+        )
+        for n in layers:
+            self.constant_image(material.node_tree.nodes[f"g_tColor{n}"], (*colors[n], reveals[n]))
+        self.constant_image(material.node_tree.nodes["g_tTintMasks"], tint_masks)
+
+        baked = self.bake_base_color(material, {
+            "TEXCOORD_1": tuple(amounts[:2]), "TEXCOORD_1_2": (amounts[2], 0.0),
+            "TEXCOORD_2": tuple(softness[:2]), "TEXCOORD_2_2": (softness[2], 0.0),
+            "TEXCOORD_3": tuple(paint[:2]), "TEXCOORD_3_2": (paint[2], 1.0),
+        })
+
+        def smoothstep(low, high, x):
+            t = np.clip((x - low) / (high - low), 0.0, 1.0)
+            return t * t * (3.0 - 2.0 * t)
+
+        weights, remaining = [], 1.0
+        for n in (1, 2, 3):
+            weight = smoothstep(max(reveals[n] - softness[n - 1], 0.0), min(reveals[n] + softness[n - 1], 1.0),
+                                amounts[n - 1])
+            weight = min(weight, remaining)
+            weights.append(weight)
+            remaining -= weight
+        weights.insert(0, remaining)
+        self.assertTrue(all(weight > 0.01 for weight in weights), weights)
+        layer_tints = [srgb(tints_b[n]) + (srgb(tints[n]) - srgb(tints_b[n])) * tint_masks[n] for n in layers]
+        expected = sum(weights[n] * colors[n] * layer_tints[n] for n in layers) * srgb(paint)
+        np.testing.assert_allclose(baked, expected, atol=2e-3)
+
+    def test_multiblend_gates_optional_inputs(self):
+        material = build("multiblend.vfx", tuple(f"g_tColor{n}" for n in range(4)) + ("g_tNormal0", "g_tSpecular0"))
+        shader = shader_node(material, "multiblend.vfx")
+        self.assertFalse(shader.inputs["Normal"].is_linked)
+        self.assertFalse(shader.inputs["Emission Color"].is_linked)
+        self.assertEqual(shader.inputs["Specular IOR Level"].default_value, 0.0)
+        self.assertFalse({"g_tNormal0", "g_tSpecular0", "g_tTintMasks"} & texture_nodes(material))
+
+        material = build("multiblend.vfx", tuple(f"g_t{kind}{n}" for kind in ("Color", "Normal", "Specular")
+                                                 for n in range(4)),
+                         ints={"F_NORMAL_MAP": 1, "F_SPECULAR": 1}, floats={"g_flBumpStrength": 0.5})
+        shader = shader_node(material, "multiblend.vfx")
+        normal_map = linked_node(shader.inputs["Normal"])
+        self.assertEqual(normal_map.bl_idname, "ShaderNodeNormalMap")
+        self.assertAlmostEqual(normal_map.inputs["Strength"].default_value, 0.5, places=6)
+        self.assertTrue(shader.inputs["Specular IOR Level"].is_linked)
+        self.assertTrue(shader.inputs["Emission Color"].is_linked)
+        self.assertTrue({f"g_tNormal{n}" for n in range(4)} <= texture_nodes(material))
+
     def test_source2_shader_metadata_distinguishes_supported_and_dummy_handlers(self):
-        for shader in ("hero.vfx", "global_lit_simple.vfx"):
+        for shader in ("hero.vfx", "global_lit_simple.vfx", "multiblend.vfx"):
             with self.subTest(shader=shader):
                 material = build(shader, ("g_tColor",))
                 metadata = {

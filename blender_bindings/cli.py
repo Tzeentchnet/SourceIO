@@ -2,6 +2,7 @@
 
     blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--output out.blend]
                                FILE [FILE ...]
+    blender -c sourceio extract-vtf [--output DIR] [--format tga|png] [--overwrite] FILE [FILE ...]
     blender -c sourceio export-cs2 --install-root ROOT --addon ADDON --asset NAME [--compile]
     blender -c sourceio recompile-cs2 --install-root ROOT --addon ADDON MANIFEST
 
@@ -15,6 +16,7 @@ from pathlib import Path
 
 import bpy
 
+from ..library.source1.vtf.editable_export import IMAGE_FORMATS, export_vtf_for_editing
 from ..library.source2.exceptions import Source2Error
 from ..library.source2.resource_types.compiled_sound_resource import CompiledSoundResource
 from ..library.source2.sound import SoundError
@@ -114,6 +116,22 @@ def _extract_sound(path: Path, output: Path, overwrite: bool) -> bool:
     return True
 
 
+def _extract_vtf(path: Path, output: Path, image_format: str, overwrite: bool) -> bool:
+    try:
+        result = export_vtf_for_editing(path.read_bytes(), output, path.stem, image_format, overwrite)
+    except (OSError, ValueError, RuntimeError, IndexError) as ex:
+        print(f"sourceio: failed to extract {path}: {ex}")
+        return False
+    for warning in result.warnings:
+        print(f"sourceio: {path.name}: {warning}")
+    outputs = [item.name for item in result.images]
+    outputs += [item.name for item in (result.sht, result.mks) if item is not None]
+    if result.frame_images:
+        outputs.append(f"{len(result.frame_images)} sheet frames")
+    print(f"sourceio: extracted {path} -> {', '.join(outputs)}")
+    return True
+
+
 def _export(operator_name: str, output: Path, overwrite: bool) -> bool:
     operator = getattr(bpy.ops.sourceio, operator_name)
     try:
@@ -172,6 +190,15 @@ def execute(argv: list[str]) -> int:
     sound_parser.add_argument("files", nargs="+", type=Path)
     sound_parser.add_argument("--output", type=Path, default=Path.cwd(), help="destination directory")
     sound_parser.add_argument("--overwrite", action="store_true", help="replace existing outputs")
+
+    vtf_parser = commands.add_parser(
+        "extract-vtf",
+        help="write VTF textures as editable images, with sprite-sheet frames and a mksheet .mks",
+    )
+    vtf_parser.add_argument("files", nargs="+", type=Path)
+    vtf_parser.add_argument("--output", type=Path, default=Path.cwd(), help="destination directory")
+    vtf_parser.add_argument("--format", choices=IMAGE_FORMATS, default="tga", help="image file format")
+    vtf_parser.add_argument("--overwrite", action="store_true", help="replace existing outputs")
 
     modeldoc_parser = commands.add_parser(
         "export-modeldoc",
@@ -233,6 +260,15 @@ def execute(argv: list[str]) -> int:
     if args.command == "extract-sound":
         extracted = sum(
             _extract_sound(path.resolve(), args.output.resolve(), args.overwrite)
+            for path in args.files
+        )
+        failed = len(args.files) - extracted
+        print(f"sourceio: {extracted} extracted, {failed} failed")
+        return 1 if failed else 0
+
+    if args.command == "extract-vtf":
+        extracted = sum(
+            _extract_vtf(path.resolve(), args.output.resolve(), args.format, args.overwrite)
             for path in args.files
         )
         failed = len(args.files) - extracted

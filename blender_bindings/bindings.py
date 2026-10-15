@@ -16,6 +16,7 @@ from .operators.source1_operators import (SOURCEIO_OT_BSPImport,
 from .operators.source1_operators import (SOURCEIO_OT_SkyboxImport,
                                           SOURCEIO_OT_VMTImport,
                                           SOURCEIO_OT_VTFExport,
+                                          SOURCEIO_OT_VTFExportEditable,
                                           SOURCEIO_OT_VTFImport)
 from .operators.source2_operators import (SOURCEIO_OT_VMAPImport,
                                           SOURCEIO_OT_VMATImport,
@@ -208,6 +209,7 @@ classes = [
 
     SOURCEIO_OT_VTFImport,
     SOURCEIO_OT_VTFExport,
+    SOURCEIO_OT_VTFExportEditable,
     SOURCEIO_OT_VMTImport,
     SOURCEIO_OT_SkyboxImport,
 
@@ -230,6 +232,8 @@ def vtf_export(self, context):
     else:
         self.layout.operator(SOURCEIO_OT_VTFExport.bl_idname, text='Export to VTF...', icon_value=source_io_icon.icon_id).filename = \
             os.path.splitext(cur_img.name)[0]
+    self.layout.operator(SOURCEIO_OT_VTFExportEditable.bl_idname, text='Export for External Editing...',
+                         icon_value=source_io_icon.icon_id)
 
 def register():
     # Taken from https://github.com/lasa01/Plumber/blob/master/plumber/__init__.py

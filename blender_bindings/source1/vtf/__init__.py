@@ -1,3 +1,4 @@
+import json
 import zlib
 import numpy as np
 
@@ -7,6 +8,7 @@ from ...utils.texture_utils import (create_and_cache_texture,
 from ....library.shared.content_manager import ContentManager
 from ....library.source1.vtf import convert_skybox_to_equiangular
 from ....library.source1.vtf import load_texture, load_texture_frames, load_texture_tth
+from ....library.source1.vtf.metadata import read_vtf_metadata
 from ....library.utils.tiny_path import TinyPath
 from ....library.utils import Buffer, MemoryBuffer
 from ....logger import SourceLogMan
@@ -15,12 +17,36 @@ log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::VTF')
 
 
+def tag_vtf_metadata(image, vtf_data: bytes):
+    """Record the VTF header and resources (sprite sheet, LOD clamp, hotspots...) on an imported image.
+
+    ``sourceio_vtf_metadata`` holds the full :meth:`VTFMetadata.to_dict` as JSON; *Image > Export for External
+    Editing* reads the sprite sheet back from it.
+    """
+    try:
+        metadata = read_vtf_metadata(vtf_data)
+    except ValueError as ex:
+        logger.warn(f'Cannot read VTF metadata of "{image.name}": {ex}')
+        return
+    for warning in metadata.warnings:
+        logger.warn(f'"{image.name}": {warning}')
+    image["sourceio_vtf_version"] = metadata.header.version_string
+    image["sourceio_vtf_flags"] = f"0x{metadata.header.flags:08x}"
+    image["sourceio_vtf_frames"] = metadata.header.frame_count
+    if metadata.sprite_sheet is not None:
+        image["sourceio_sprite_sheet_sequences"] = len(metadata.sprite_sheet.sequences)
+    image["sourceio_vtf_metadata"] = json.dumps(metadata.to_dict())
+
+
 def import_texture(texture_path: TinyPath, file_object, update=False):
     logger.info(f'Loading "{texture_path.name}" texture')
-    rgba_data, image_height, image_width = load_texture(file_object)
+    vtf_data = file_object.read()
+    rgba_data, image_height, image_width = load_texture(MemoryBuffer(vtf_data))
     rgba_data = rgba_data.reshape(image_height, image_width, -1)
 
-    return create_and_cache_texture(texture_path, rgba_data, False, False)
+    image = create_and_cache_texture(texture_path, rgba_data, False, False)
+    tag_vtf_metadata(image, vtf_data)
+    return image
 
 
 def import_animated_texture(texture_path: TinyPath, file_object, content_manager: ContentManager | None = None,
@@ -43,7 +69,8 @@ def import_animated_texture(texture_path: TinyPath, file_object, content_manager
     ``pack()`` on it fails outright.
     """
     logger.info(f'Loading "{texture_path.name}" animated texture')
-    frames, image_height, image_width = load_texture_frames(file_object)
+    vtf_data = file_object.read()
+    frames, image_height, image_width = load_texture_frames(MemoryBuffer(vtf_data))
     if not frames:
         return None, 0
 
@@ -57,12 +84,14 @@ def import_animated_texture(texture_path: TinyPath, file_object, content_manager
         if invert_y:
             # Mark it converted so convert_normalmap does not flip green twice.
             image['normalmap_converted'] = True
+        tag_vtf_metadata(image, vtf_data)
         return image, 1
 
     asset_roots = get_asset_cache_roots(content_manager, asset_path) if asset_path is not None else []
     image, frame_count = create_and_cache_image_sequence(texture_path, frames, asset_roots)
     if invert_y:
         image['normalmap_converted'] = True
+    tag_vtf_metadata(image, vtf_data)
     return image, frame_count
 
 

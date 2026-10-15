@@ -1,4 +1,8 @@
+import json
+from pathlib import Path
+
 import bpy
+import numpy as np
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty,
                        StringProperty)
 from bpy_extras.io_utils import ExportHelper
@@ -21,6 +25,7 @@ from ...library.utils.path_utilities import path_stem
 from ...library.utils.tiny_path import TinyPath
 from ...logger import SourceLogMan
 from ..source1.vtf.export_vtf import export_texture, VTFExportOptions
+from ...library.source1.vtf.editable_export import write_editable_texture
 from ...library.source1.vmt import VMT
 from ...library.utils.pylib.vtf import ImageFormat, MipFilter, TextureFlags
 
@@ -346,6 +351,75 @@ class SOURCEIO_OT_VTFExport(bpy.types.Operator, ExportHelper):
             self.filepath = (TinyPath(self.filepath).parent / (self.filename + self.filename_ext)).as_posix()
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
+
+
+class SOURCEIO_OT_VTFExportEditable(bpy.types.Operator):
+    """Write this VTF image, its sprite-sheet frames and a mksheet .mks file to a folder for editing in an
+    external image editor"""
+    bl_idname = "sourceio.vtf_export_editable"
+    bl_label = "Export for External Editing"
+
+    directory: StringProperty(subtype='DIR_PATH')
+    filter_folder: BoolProperty(default=True, options={'HIDDEN'})
+    image_format: EnumProperty(
+        name="Format",
+        items=(
+            ('tga', "TGA", "Read by Photoshop and most editors, and by Valve's mksheet and vtex"),
+            ('png', "PNG", "Read by every image editor; convert to TGA before rebuilding with mksheet"),
+        ),
+        default='tga',
+    )
+    overwrite: BoolProperty(name="Overwrite", description="Replace files that already exist", default=False)
+
+    @classmethod
+    def poll(cls, context):
+        image = getattr(context.space_data, "image", None)
+        if image is None or "sourceio_vtf_metadata" not in image:
+            cls.poll_message_set("Needs an image imported from a VTF")
+            return False
+        return True
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        image = context.space_data.image
+        width, height = image.size
+        if width == 0 or height == 0:
+            self.report({"ERROR"}, "Animated image sequences cannot be exported; "
+                                   "use 'blender -c sourceio extract-vtf' on the .vtf instead")
+            return {'CANCELLED'}
+        channels = image.channels
+        pixels = np.empty(width * height * channels, dtype=np.float32)
+        image.pixels.foreach_get(pixels)
+        # Blender stores rows bottom-up; the export expects them top-down like the VTF.
+        pixels = pixels.reshape(height, width, channels)[::-1]
+        if channels < 4:
+            padded = np.ones((height, width, 4), dtype=np.float32)
+            padded[:, :, :channels] = pixels
+            pixels = padded
+
+        name = TinyPath(image.get("full_path") or image.name).stem
+        try:
+            result = write_editable_texture(
+                [pixels], Path(bpy.path.abspath(self.directory)), name,
+                metadata=json.loads(image["sourceio_vtf_metadata"]),
+                image_format=self.image_format,
+                overwrite=self.overwrite,
+                hdr=image.is_float,
+            )
+        except (OSError, ValueError, KeyError) as ex:
+            self.report({"ERROR"}, str(ex))
+            return {'CANCELLED'}
+        for warning in result.warnings:
+            self.report({"WARNING"}, warning)
+        if result.mks is not None:
+            self.report({"INFO"}, f"Wrote {len(result.written)} files. Edit {result.images[0].name} and run vtex on "
+                                  f"it, or edit the frames and run 'mksheet {result.mks.name}' first")
+        else:
+            self.report({"INFO"}, f"Wrote {len(result.written)} files to {self.directory}")
+        return {'FINISHED'}
 
 
 # noinspection PyUnresolvedReferences,PyPep8Naming

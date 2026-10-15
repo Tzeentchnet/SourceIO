@@ -8,6 +8,12 @@ from typing import Any, Mapping
 import numpy as np
 import numpy.typing as npt
 
+from ....shared.sprite_sheet import (
+    SpriteSheetFrame,
+    SpriteSheetImage,
+    SpriteSheetMetadata,
+    SpriteSheetSequence,
+)
 from ...interfaces import Diagnostic
 from .enums import VTexExtraData, VTexFormat
 
@@ -82,61 +88,6 @@ class TextureMipLayout:
     @property
     def subresource_count(self) -> int:
         return self.depth * self.array_layers * self.face_count
-
-
-@dataclass(frozen=True, slots=True)
-class SpriteSheetImage:
-    cropped_min: tuple[float, float]
-    cropped_max: tuple[float, float]
-    uncropped_min: tuple[float, float]
-    uncropped_max: tuple[float, float]
-
-    @staticmethod
-    def _pixel_rect(
-            minimum: tuple[float, float],
-            maximum: tuple[float, float],
-            width: int,
-            height: int,
-    ) -> tuple[int, int, int, int]:
-        if maximum[0] <= minimum[0] or maximum[1] <= minimum[1]:
-            return 0, 0, 0, 0
-        return (
-            int(minimum[0] * width),
-            int(minimum[1] * height),
-            min(int(maximum[0] * width) + 1, width),
-            min(int(maximum[1] * height) + 1, height),
-        )
-
-    def cropped_rect(self, width: int, height: int) -> tuple[int, int, int, int]:
-        return self._pixel_rect(self.cropped_min, self.cropped_max, width, height)
-
-    def uncropped_rect(self, width: int, height: int) -> tuple[int, int, int, int]:
-        return self._pixel_rect(self.uncropped_min, self.uncropped_max, width, height)
-
-
-@dataclass(frozen=True, slots=True)
-class SpriteSheetFrame:
-    display_time: float
-    images: tuple[SpriteSheetImage, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class SpriteSheetSequence:
-    sequence_id: int
-    clamp: bool
-    alpha_crop: bool
-    no_color: bool
-    no_alpha: bool
-    total_time: float
-    name: str
-    float_params: Mapping[str, float]
-    frames: tuple[SpriteSheetFrame, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class SpriteSheetMetadata:
-    sequences: tuple[SpriteSheetSequence, ...]
-    raw_data: bytes = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)

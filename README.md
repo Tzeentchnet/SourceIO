@@ -24,12 +24,14 @@ With the extension enabled, files can be imported without opening the UI. The im
 ```
 blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--mip-level N] [--no-packed-channels] [--output out.blend] FILE [FILE ...]
 blender -c sourceio extract-sound [--output DIR] [--overwrite] FILE.vsnd_c [FILE.vsnd_c ...]
+blender -c sourceio extract-vtf [--output DIR] [--format tga|png] [--overwrite] FILE.vtf [FILE.vtf ...]
 blender -c sourceio export-modeldoc [--overwrite] OUTPUT.vmdl
 blender -c sourceio export-hammer [--overwrite] OUTPUT.vmap
 blender -c sourceio export-cs2 --install-root ROOT --addon ADDON --asset NAME [--scope selected|collection|scene] [--batch] [--overwrite] [--compile]
 blender -c sourceio recompile-cs2 --install-root ROOT --addon ADDON MANIFEST
 ```
 `--clips` imports a Source 2 model's animation graph clips that match the patterns (see below).
+`extract-vtf` writes textures for editing in an external image editor (see [Editing VTF textures and sprite sheets](#editing-vtf-textures-and-sprite-sheets)).
 `export-modeldoc` and `export-hammer` are static reconstruction tools. `export-cs2`
 is the separate editable CS2 Workshop authoring workflow described below.
 
@@ -38,6 +40,41 @@ In order to find the import tools you simply need to go to File>Import>Source En
 ![](https://cdn.discordapp.com/attachments/786989240529059900/1143975506589515886/image.png)
 
 Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files, `.vsnd_c` sounds and `.dmx` cameras. Source 2 animation resources (`.vnmclip_c`, `.vanim_c` and `.vagrp_c`) can be dropped onto a selected armature.
+
+## Editing VTF textures and sprite sheets
+Particle textures (`SpriteCard` materials) pack many frames into one VTF, plus a *sprite sheet* that says which rectangle is which frame of which animation sequence. SourceIO reads the sheet, and the other metadata a VTF can carry, and can write the texture out for editing in Photoshop or any other image editor. SourceIO cannot write a sheet into a VTF itself, so the edited texture is rebuilt with `mksheet` and `vtex` from a game's `bin` folder (Team Fortress 2 and the Source SDK ship both).
+
+**What import keeps.** Importing a VTF (*File > Import > Source Engine Assets*, drag and drop, or a material on a model or map) stores on the Blender image:
+- `sourceio_vtf_version`, `sourceio_vtf_flags`, `sourceio_vtf_frames` and, for sheets, `sourceio_sprite_sheet_sequences`;
+- `sourceio_vtf_metadata`, a JSON copy of the header and every resource: the sprite sheet (sequences, loop setting, frame timing and rectangles), LOD clamp, CRC, VTFLib keyvalues and Strata Source hotspot rectangles.
+
+Blender has no Image Editor panel for an image's custom properties; read them in the Python console (`bpy.data.images["flamepuff"]["sourceio_vtf_metadata"]`) or export the image and open `name.vtf.json`. The sheet doesn't animate in Blender.
+
+**Exporting.** In the Image Editor, with an image imported from a VTF, choose *Image > Export for External Editing...*, pick a folder and choose TGA or PNG. From the command line (each `.vtf` is decoded straight from the file):
+```
+blender -c sourceio extract-vtf --output DIR [--format tga|png] [--overwrite] FILE.vtf [FILE.vtf ...]
+```
+For a texture named `name` the folder gets:
+
+| File | Contents |
+|---|---|
+| `name.tga` | The whole texture (`name_frameNNN.tga` per frame for an animated VTF). HDR textures are written as `.exr`. |
+| `name.sht` | The sheet exactly as stored in the VTF. |
+| `name_NNN.tga` | One image per sheet frame, each written once even when several sequences use it. |
+| `name.mks` | The sequences, loop settings and frame timing, in `mksheet`'s format. |
+| `name.vtf.json` | The header, every resource, and each frame's pixel rectangle and file. |
+
+A texture without a sheet gets only the image and the JSON. Existing files are not replaced unless you tick *Overwrite* (or pass `--overwrite`).
+
+**Rebuilding.** Pick one of two routes:
+1. *Keep the layout: edit the whole image.* Paint over `name.tga`, keeping every frame inside its cell, then run `vtex name.tga` next to `name.sht`. vtex attaches the `.sht` as it is, so the sheet comes back byte for byte.
+2. *Change the frames: edit the frame images.* Edit `name_NNN.tga` (frames may change size), or edit `name.mks` to change timing, looping or which frames a sequence uses. Run `mksheet name.mks`, which packs the frames into a new `name.tga` and `name.sht`, then `vtex name.tga`. mksheet chooses its own layout, so the sheet looks different from the original even when nothing changed.
+
+Route 2 replaces `name.tga` and `name.sht`, so edit either the frames or the whole image, not both. vtex expects its input inside the game's `materialsrc` folder; pass `-outdir DIR` (and `-game <game folder>` if vtex can't find `gameinfo.txt`) to compile from anywhere else.
+
+**Sheets made with `packmode rgb+a`.** These pack the color frames and the alpha frames separately, so the two layers overlap in the atlas (TF2's `effects/workshop/vistasmokev1` is one). The sheet doesn't record which sequence is color and which is alpha, so the export warns, and each frame image mixes the two layers. Use route 1 for these.
+
+Both routes were checked with TF2's `mksheet` and `vtex` on all 273 sprite-sheet textures in TF2. Route 1 gave back every sheet byte for byte with identical pixels; route 2 kept every sheet's sequences, loop settings, timing and frame pixels.
 
 ## CS2 Workshop static authoring
 
@@ -180,6 +217,7 @@ To spend less time on a map:
 * **Layered content resolution.** Loose files, mounted VPKs and nested archives resolve through deterministic mount precedence with streaming access, traversal checks and an optional lazy asset index.
 * **Static Source 2 reconstruction exports.** Selected Blender meshes can be exported as ModelDoc plus static DMX, and the active imported map collection as Hammer VMAP. Model export applies object transforms, converts Blender coordinates back with the configurable Source-unit scale, and retains canonical VMAT resource paths. Every export includes a machine-readable provenance sidecar and loss report and stages all authored outputs atomically. These are deliberately limited static vertical slices: dynamic rigs, complete animation authoring, original Hammer brush topology and other information absent from compiled resources are not fabricated.
 * **Command-line import.** `blender -c sourceio import ...` (see above).
+* **VTF sprite sheets and metadata.** Imported VTF images keep their header, sprite sheet and other resources, and *Image > Export for External Editing...* (or `blender -c sourceio extract-vtf`) writes a VTF out for Photoshop or any other image editor, with what Valve's `mksheet` and `vtex` need to rebuild it. See [Editing VTF textures and sprite sheets](#editing-vtf-textures-and-sprite-sheets).
 * **Source 1 overlays.** `info_overlay` decals (signs, posters, road markings) are imported into an `overlays` collection, clipped to the faces and displacements they cover. They were previously not imported at all. Controlled by *Load overlays* (on by default).
 * **Bone collections and colours** for Source 1 models (MDL v44–v52). Bones are sorted by what the engine uses them for: *Deform*, *Procedural*, *Bone merge*, *Attachments* and *Other*. Deform bones are coloured by side (left blue, right red, centre yellow), and the others by role.
 * **Flex controller panel** for Source 1 models with flexes (*SourceIO utils > Flex controllers* in the 3D view sidebar, with the face mesh active): a slider per face controller, keying and reset buttons. A stereo controller has one slider for both sides, split by a left/right balance (the eye icon shows left and right separately). With auto keying on, moving a slider keys it. Adapted from [REDxEYE/SourceIO#477](https://github.com/REDxEYE/SourceIO/pull/477) by hisprofile.
@@ -326,7 +364,7 @@ does not claim a lossless compiled-to-authored round trip.
 | `.mdl` | GoldSrc or Source model | Yes | No | The version is detected from the file. |
 | `.md3` | Quake III model | Yes | No | Uses the model importer. |
 | `.bsp` | Compiled GoldSrc or Source map | Yes | No | GoldSrc and Source use separate map importers. |
-| `.vtf` | Source texture | Yes | Yes | VTF is currently the only exported asset format. |
+| `.vtf` | Source texture | Yes | Yes | VTF is currently the only exported asset format. Sprite sheets and other metadata are read on import, and *Export for External Editing* writes TGA/PNG plus a `.sht` and `mksheet` `.mks` for rebuilding with Valve's tools. |
 | `.vmt` | Source material or skybox | Yes | No | Skybox import reads its six VMT faces. |
 
 ## Source 2 and DMX

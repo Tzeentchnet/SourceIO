@@ -2,11 +2,12 @@
 
 Scope: the Blender add-on at `21bf348` (5.14.0), focused on import speed and on how closely materials match the game. Source 1 got the deepest review, because it's the default path for most users. Source 2 materials are built from node groups in bundled `.blend` assets and already have extensive tests, so this review only touches them briefly.
 
-**Patch:** `sourceio-audit.patch` (one commit, `f63bd40`, also pushed to `claude/determined-volta-cfat6r`). It applies cleanly to 5.14.0:
-
-```
-git am sourceio-audit.patch        # or: git apply sourceio-audit.patch
-```
+**Status (2026-10-24):** implemented and merged. The initial changes landed as
+`f63bd403`, the review corrections as `b18ddcd8`, and the Linux/material
+correctness follow-ups in subsequent `master` commits. The historical
+`sourceio-audit.patch` review artifact is not distributed and must not be
+applied to current `master`. The seven items under **Recommended next** remain
+proposals rather than completed work.
 
 ## How this was checked
 

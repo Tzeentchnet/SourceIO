@@ -143,10 +143,11 @@ profiles, Wine) is parked in `docs/deferred-work.md`.
 - `library/shared/content_manager` already discovers Source 1 and Source 2 game
   layouts and can be extended with export-target profiles.
 - `blender_bindings/exporting/source2`, the registered export operators, and
-  `blender_bindings/cli.py` expose static `export-modeldoc` and `export-hammer`
-  paths. The future authoring UI and CLI should reuse their tested transform,
-  provenance, diagnostic, and staging primitives without presenting them as a
-  complete compiler workflow.
+  `blender_bindings/cli.py` retain the explicitly lossy static
+  `export-modeldoc` and `export-hammer` reconstruction paths. The supported CS2
+  and Source 1 File > Export and CLI authoring workflows reuse shared transform,
+  provenance, diagnostic, and staging primitives and add optional, verified
+  compiler execution.
 - Source 1 imported materials retain parsed VMT parameters in addition to their
   canonical resource paths.
 - `blender_bindings/ui/export_nodes` is a deprecated QC/VTF prototype, not a
@@ -168,16 +169,19 @@ Use acquisition cost only as a tiebreaker, followed by community reach. A priori
 is complete only when its exit gate is reproducible; merely owning or downloading
 the product does not close the gap.
 
-Current local access includes Dota 2, Dota 2 Workshop Tools, and CS2 Workshop
-Tools. The rows below state validation separately because installation alone does
-not complete an exit gate. Priorities 4–17 (HL:A, s&box, SFM, GoldSrc, other
-Source 1 branches, Respawn titles) broaden coverage to new games rather than
-improving the validated ones, and are parked in `docs/deferred-work.md`.
+Current local access includes Dota 2, Dota 2 Workshop Tools, CS2 Workshop Tools,
+and TF2 with its shipped VTEX/StudioMDL tools. TF2 validates the generic Source 1
+compiler workflow but does not satisfy the separate Source SDK 2013 and
+Half-Life 2 gate below. The rows state validation separately because
+installation alone does not complete an exit gate. Priorities 4–17 (HL:A,
+s&box, SFM, GoldSrc, other Source 1 branches, Respawn titles) broaden coverage
+to new games rather than improving the validated ones, and are parked in
+`docs/deferred-work.md`.
 
 | Priority | Game or tool access | Steam access | Major gap addressed and exit gate |
 |---:|---|---|---|
 | 1 | [Dota 2](https://store.steampowered.com/app/570/Dota_2/) plus [Dota 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools) | Installed; free game and optional tools | **Exit gate passed 2026-10-11.** Dota mounts as app ID 570; representative heroes, props, animations, `hero.vfx` and `global_lit_simple.vfx` materials, a texture, and the main world pass the installed-game profile. The bounded world report diagnoses all 5,127 entities, and a disposable Workshop addon compiles and re-imports a generated static model/material/texture fixture. Rarer shaders and deliberately deferred world semantics remain explicit boundaries rather than guessed support. |
-| 2 | [Counter-Strike 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Counter-Strike_2_Workshop_Tools) | Installed; free optional tools for the free CS2 installation | **Exit gate passed; shipped in 5.12.0.** CS2 supplies the strongest Source 2 E2E corpus. A disposable addon authors, compiles, verifies, and re-imports the supported static model/material/texture vertical slice. The material contract is still limited to opaque base color (todo 9). |
+| 2 | [Counter-Strike 2 Workshop Tools](https://developer.valvesoftware.com/wiki/Counter-Strike_2_Workshop_Tools) | Installed; free optional tools for the free CS2 installation | **Exit gate passed; base-color slice shipped in 5.12.0.** CS2 supplies the strongest Source 2 E2E corpus. A disposable addon authors, compiles, verifies, and re-imports the supported static model/material/texture vertical slice. The contract on `master` now covers base color, tangent-space normals, constant or image-driven roughness and metalness, and alpha testing; emission, true alpha blending, and arbitrary procedural graphs remain blocked. |
 | 3 | [Source SDK Base 2013](https://developer.valvesoftware.com/wiki/Source_SDK_Base_2013) Singleplayer and Multiplayer, with [Half-Life 2](https://store.steampowered.com/app/220/HalfLife_2/) as the canonical game corpus | Free Steam tools; Half-Life 2 is paid | Supplies the official Source 1 reference, compilers, and a core branch not covered by the TF2 E2E run. **Exit:** discover both SDK profiles, compile SMD/QC/VMT/texture inputs in a disposable mod, verify outputs, re-import them, and run representative Half-Life 2 models and maps without proprietary fixtures in git. |
 
 Recheck this snapshot before spending money or starting a priority item.
@@ -458,11 +462,14 @@ exists.
       current image-editor behavior.
 
 11. [x] **Integrating Source 1 compilers**
-    - Add Source SDK 2013 profile discovery, VTEX and StudioMDL invocation, output
-      verification, logs, recompile support, and opt-in compiler integration tests.
+    - Add explicit Source 1 game/content targets, configured or adjacent
+      VTEX/StudioMDL discovery, output verification, logs, recompile support, and
+      opt-in compiler integration tests.
     - The installed TF2 tools require `VPROJECT` in addition to `-game`; with that
       environment set by the runner, the gate compiles and re-imports VTF/MDL
       outputs and verifies an unchanged-source recompile.
+    - Automatic discovery and corpus validation for both Source SDK Base 2013
+      profiles remains the separate game/SDK priority 3 gate above.
 
 12. [x] **Completing the Source 1 vertical slice**
     - Validate UI/CLI parity, state preservation, compiled re-import, geometry and

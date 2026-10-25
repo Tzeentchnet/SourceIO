@@ -116,13 +116,16 @@ The currently verified material subset is deliberately narrow:
 - Normal may be unlinked or use an Image Texture Color output connected through
   a default-strength tangent-space Normal Map node. SourceIO writes the verified
   CS2 `TextureNormal` mapping and converts Blender's green-channel handedness;
-- Roughness may be a constant or one directly connected Image Texture Color
-  output. SourceIO writes it as linear data through the verified
+- Roughness may be a constant or one directly connected grayscale Image Texture
+  Color output. SourceIO writes it as linear data through the verified
   `TextureRoughness` mapping; Resource Compiler packs it into the compiled normal
   texture's alpha channel;
-- Metallic must remain `0`, Alpha must remain opaque, and emission/other texture
-  roles or procedural graphs are blocked with preflight diagnostics rather than
-  guessed.
+- Metallic may be a constant or one directly connected grayscale Image Texture
+  Color output. SourceIO enables `F_METALNESS_TEXTURE` and writes the verified
+  `TextureMetalness` mapping; Resource Compiler packs its red channel into the
+  compiled color texture's alpha channel;
+- Alpha must remain opaque, and emission/other texture roles or procedural
+  graphs are blocked with preflight diagnostics rather than guessed.
 
 No authored file is written when preflight contains a blocking error. Existing
 editable files are protected unless **Overwrite**/`--overwrite` is explicit.
@@ -392,7 +395,7 @@ does not claim a lossless compiled-to-authored round trip.
 | `.vnmclip_c` | AnimGraph 2 animation clip | Yes | No | Applied to a selected armature. |
 | `.vanim_c` / `.vagrp_c` | Compiled animation/group | Yes | No | Applied to compatible selected armatures; AnimGraphs are not executed. |
 | `.vsnd_c` | Compiled sound | Yes | Extract | VSND v1-v4 audio plus available compiler companions. |
-| `.fbx` / `.vmdl` / `.vmat` / `.tga` | Editable CS2 static asset bundle | No | CS2 authoring | Optional official compilation; limited to the documented static base-color, normal-map, and roughness subset. |
+| `.fbx` / `.vmdl` / `.vmat` / `.tga` | Editable CS2 static asset bundle | No | CS2 authoring | Optional official compilation; limited to the documented static base-color, normal-map, roughness, and metalness subset. |
 | `.vmdl` / `.dmx` | Editable static model bundle | No | Yes | Reconstructed from selected meshes with provenance and a loss report. |
 | `.vmap` | Editable static Hammer map | No | Yes | Reconstructed from the active imported collection with a loss report. |
 | `.dmx` | Valve camera | Yes | No | Camera DMX only; session import is not registered. |

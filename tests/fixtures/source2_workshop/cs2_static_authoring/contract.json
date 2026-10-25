@@ -19,6 +19,7 @@
   "fbx_mesh": "sourceio_mesh",
   "paths": {
     "material": "materials/sourceio_contract/sourceio.vmat",
+    "metalness_source_texture": "materials/sourceio_contract/sourceio_metal.tga",
     "modeldoc": "models/sourceio_contract/sourceio.vmdl",
     "normal_source_texture": "materials/sourceio_contract/sourceio_normal.tga",
     "render_mesh": "models/sourceio_contract/sourceio.fbx",
@@ -26,5 +27,5 @@
     "source_texture": "materials/sourceio_contract/sourceio_color.tga"
   },
   "schema": "sourceio.cs2-static-authoring-contract",
-  "schema_version": 3
+  "schema_version": 4
 }

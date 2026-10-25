@@ -80,6 +80,7 @@ def serialize_vmat(
         *,
         normal_texture: ContentRelativePath | None = None,
         roughness_texture: ContentRelativePath | None = None,
+        metalness_texture: ContentRelativePath | None = None,
         shader: str = "csgo_complex.vfx",
 ) -> str:
     tint = " ".join(
@@ -93,10 +94,14 @@ def serialize_vmat(
         f'    g_vColorTint "[{tint}]"',
         f"    TextureColor {_quoted(color_texture.as_posix())}",
     ]
+    if metalness_texture is not None:
+        lines.insert(3, "    F_METALNESS_TEXTURE 1")
     if normal_texture is not None:
         lines.append(f"    TextureNormal {_quoted(normal_texture.as_posix())}")
     if roughness_texture is not None:
         lines.append(f"    TextureRoughness {_quoted(roughness_texture.as_posix())}")
+    if metalness_texture is not None:
+        lines.append(f"    TextureMetalness {_quoted(metalness_texture.as_posix())}")
     lines.extend(("}", ""))
     return "\n".join(lines)
 
@@ -245,6 +250,7 @@ class CS2AuthoringBackend:
                 role.value for role in textures
                 if role not in {
                     TextureRole.BASE_COLOR,
+                    TextureRole.METALLIC,
                     TextureRole.NORMAL,
                     TextureRole.ROUGHNESS,
                 }
@@ -252,21 +258,13 @@ class CS2AuthoringBackend:
             if unsupported_roles:
                 loss_report.record(
                     "authoring.cs2.material.texture_unsupported",
-                    "The validated CS2 slice currently authors base-color, normal, and roughness textures.",
+                    "The validated CS2 slice currently authors base-color, normal, roughness, and metalness textures.",
                     severity=DiagnosticSeverity.ERROR,
                     loss_kind=LossKind.DEFERRED,
                     details={
                         "material": material_name,
                         "roles": unsupported_roles,
                     },
-                )
-            if material.metallic != 0.0:
-                loss_report.record(
-                    "authoring.cs2.material.scalar_pbr_unsupported",
-                    "Non-default metallic values are outside the validated CS2 slice.",
-                    severity=DiagnosticSeverity.ERROR,
-                    loss_kind=LossKind.DEFERRED,
-                    details={"material": material_name},
                 )
             if material.alpha_mode != MaterialAlphaMode.OPAQUE:
                 loss_report.record(
@@ -342,6 +340,26 @@ class CS2AuthoringBackend:
                 )
             else:
                 roughness_source_path = None
+            metalness_texture = textures.get(TextureRole.METALLIC)
+            if metalness_texture is not None:
+                metalness_source_path = stage_texture(
+                    metalness_texture.name,
+                    metalness_texture.payload,
+                    metalness_texture.extension,
+                )
+            elif material.metallic != 0.0:
+                metalness_source_path = stage_texture(
+                    f"{material_name}_{TextureRole.METALLIC.value}",
+                    solid_color_tga((
+                        material.metallic,
+                        material.metallic,
+                        material.metallic,
+                        1.0,
+                    )),
+                    contract.source_texture_suffix if contract is not None else ".tga",
+                )
+            else:
+                metalness_source_path = None
 
             if contract is not None and contract.source_texture_is_compiler_input:
                 loss_report.record(
@@ -362,6 +380,7 @@ class CS2AuthoringBackend:
                     color_source_path,
                     normal_texture=normal_source_path,
                     roughness_texture=roughness_source_path,
+                    metalness_texture=metalness_source_path,
                     shader=contract.material_shader if contract is not None else "csgo_complex.vfx",
                 ),
             ))

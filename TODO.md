@@ -1,11 +1,11 @@
 # SourceIO Source Export Capability Plan
 
-**Status: the first CS2 static-authoring vertical slice and its normal-map and
-roughness extensions are implemented and have passed the installed Workshop
-Tools exit gate.** Export is SourceIO's secondary goal after import quality; the
-aim is one straightforward path from a Blender scene to editable, optionally
-compiled static assets. Next: add CS2 metalness and alpha-test mappings, then the
-Source 1 static backend (implementation todos 9–13).
+**Status: the first CS2 static-authoring vertical slice and its normal-map,
+roughness, and metalness extensions are implemented and have passed the
+installed Workshop Tools exit gate.** Export is SourceIO's secondary goal after
+import quality; the aim is one straightforward path from a Blender scene to
+editable, optionally compiled static assets. Next: add CS2 alpha-test mapping,
+then the Source 1 static backend (implementation todos 9–13).
 Skeletal, animated, physics, and map authoring, and game coverage beyond
 priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
 are tracked in [plan.md](plan.md).
@@ -321,8 +321,8 @@ Implemented contract details:
   Workshop Tools output.
 - Wrap Blender's FBX exporter with a context snapshot/restore guard and a temporary
   export selection. Check that the FBX operator exists and report its absence.
-- Support the verified opaque base-color/tint, tangent-space normal-map, and
-  roughness subset. Metalness, AO, other texture roles, alpha blend/test,
+- Support the verified opaque base-color/tint, tangent-space normal-map,
+  roughness, and metalness subset. AO, other texture roles, alpha blend/test,
   emission, and procedural graphs remain blocked until each mapping is
   contract-backed.
 - Omit or explicitly configure physics surface data; never guess it from material
@@ -436,7 +436,10 @@ exists.
    - [x] Roughness: serialize the Workshop-verified `TextureRoughness` contract
      without a feature combo, author constants as solid data textures, and verify
      Resource Compiler packs the result into `g_tNormal` alpha.
-   - [ ] Metalness.
+   - [x] Metalness: serialize `TextureMetalness` with
+     `F_METALNESS_TEXTURE`, author constants as solid data textures, and verify
+     the current compiler reads its red channel into `g_tColor` alpha rather than
+     emitting a separate `g_tMetalness`.
    - [ ] Alpha test.
    - Extend the installed-tools gate to compile and re-import each new slot.
 

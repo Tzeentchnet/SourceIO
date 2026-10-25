@@ -1,8 +1,10 @@
 Layer0
 {
     shader "csgo_complex.vfx"
+    F_METALNESS_TEXTURE 1
     g_vColorTint "[1.000000 1.000000 1.000000 0.000000]"
     TextureColor "materials/sourceio_contract/sourceio_color.tga"
     TextureNormal "materials/sourceio_contract/sourceio_normal.tga"
     TextureRoughness "materials/sourceio_contract/sourceio_rough.tga"
+    TextureMetalness "materials/sourceio_contract/sourceio_metal.tga"
 }

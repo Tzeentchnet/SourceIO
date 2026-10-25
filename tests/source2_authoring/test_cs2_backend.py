@@ -232,16 +232,18 @@ def test_cs2_backend_authors_constant_roughness_as_texture(tmp_path):
     )
 
 
-def test_cs2_backend_keeps_metalness_texture_blocked(tmp_path):
+def test_cs2_backend_authors_metalness_texture(tmp_path):
     target = _target(tmp_path)
+    metalness_payload = solid_color_tga((0.75, 0.75, 0.75, 1.0))
     material = AuthoringMaterial(
         "painted",
         textures=(
             AuthoringTexture(
                 "painted_metallic",
                 TextureRole.METALLIC,
-                solid_color_tga((0.5, 0.5, 0.5, 1.0)),
+                metalness_payload,
                 extension=".tga",
+                srgb=False,
             ),
         ),
     )
@@ -251,10 +253,34 @@ def test_cs2_backend_keeps_metalness_texture_blocked(tmp_path):
         (_model(material),),
     )
 
-    assert output.report.has_errors
-    assert "authoring.cs2.material.texture_unsupported" in {
-        diagnostic.code for diagnostic in output.report
-    }
+    files = {artifact.path.as_posix(): artifact.payload for artifact in output.artifacts}
+
+    assert not output.report.has_errors
+    assert files["materials/sourceio/textures/painted_metallic.tga"] == metalness_payload
+    vmat = files["materials/sourceio/painted.vmat"]
+    assert "F_METALNESS_TEXTURE 1" in vmat
+    assert (
+        'TextureMetalness "materials/sourceio/textures/painted_metallic.tga"'
+        in vmat
+    )
+
+
+def test_cs2_backend_authors_constant_metalness_as_texture(tmp_path):
+    target = _target(tmp_path)
+    material = AuthoringMaterial("painted", metallic=0.75)
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+    files = {artifact.path.as_posix(): artifact.payload for artifact in output.artifacts}
+
+    assert not output.report.has_errors
+    metalness_path = "materials/sourceio/textures/painted_metallic.tga"
+    assert files[metalness_path][18:22] == bytes((191, 191, 191, 255))
+    vmat = files["materials/sourceio/painted.vmat"]
+    assert "F_METALNESS_TEXTURE 1" in vmat
+    assert f'TextureMetalness "{metalness_path}"' in vmat
 
 
 def test_solid_color_tga_is_deterministic():

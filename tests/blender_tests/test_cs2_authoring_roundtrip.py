@@ -113,6 +113,18 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             roughness_texture.outputs["Color"],
             principled.inputs["Roughness"],
         )
+        metalness_image = bpy.data.images.new(
+            "sourceio_metalness",
+            width=4,
+            height=4,
+        )
+        metalness_image.pixels[:] = (0.75, 0.75, 0.75, 1.0) * 16
+        metalness_texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+        metalness_texture.image = metalness_image
+        material.node_tree.links.new(
+            metalness_texture.outputs["Color"],
+            principled.inputs["Metallic"],
+        )
         mesh.materials.append(material)
         obj = bpy.data.objects.new("sourceio_mesh", mesh)
         bpy.context.scene.collection.objects.link(obj)
@@ -155,6 +167,10 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             (0.25, 0.5, 0.75, 0.0),
             atol=1e-6,
         )
+        assert compiled_material.get_int_property(
+            "F_METALNESS_TEXTURE",
+            0,
+        ) == 1
         source_normal = np.array((0.25, 0.8, 1.0))
         signed_normal = source_normal * 2.0 - 1.0
         compiled_normal = (
@@ -181,7 +197,9 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             pixels, size = compiled_texture.get_texture_data()
             assert size == (4, 4)
             assert np.allclose(pixels[..., :3], expected_rgb, atol=0.03)
-            if parameter == "g_tNormal":
+            if parameter == "g_tColor":
+                assert np.allclose(pixels[..., 3], 0.75, atol=0.03)
+            else:
                 assert np.allclose(pixels[..., 3], 0.25, atol=0.03)
 
         compiled_model = _compiled_resource(CompiledModelResource, model_path)

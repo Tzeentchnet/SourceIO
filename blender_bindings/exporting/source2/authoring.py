@@ -41,6 +41,10 @@ _TEXTURE_INPUTS = {
 }
 
 
+class _NonGrayscaleScalarTextureError(ValueError):
+    pass
+
+
 def _objects_in_collection(collection) -> tuple:
     objects = []
     seen = set()
@@ -147,6 +151,7 @@ def _encode_image_tga(
         *,
         srgb: bool = False,
         invert_green: bool = False,
+        require_grayscale: bool = False,
 ) -> bytes:
     width, height = (int(value) for value in image.size)
     if width <= 0 or height <= 0:
@@ -154,6 +159,13 @@ def _encode_image_tga(
     pixels = np.empty(len(image.pixels), dtype=np.float32)
     image.pixels.foreach_get(pixels)
     pixels = pixels.reshape(height, width, 4)
+    if require_grayscale:
+        rgb = pixels[..., :3]
+        channel_spread = np.max(rgb, axis=2) - np.min(rgb, axis=2)
+        if np.any(channel_spread > 1.0 / 255.0):
+            raise _NonGrayscaleScalarTextureError(
+                f'{image.name} must have matching RGB channels for a scalar texture'
+            )
     if invert_green:
         pixels[..., 1] = 1.0 - pixels[..., 1]
     if srgb:
@@ -260,13 +272,34 @@ def _extract_principled_material(
             continue
         texture_name = f"{name}_{role.value}"
         images_by_role[role] = image
+        scalar_role = role in {
+            TextureRole.METALLIC,
+            TextureRole.ROUGHNESS,
+        }
+        if scalar_role:
+            try:
+                payload = _encode_image_tga(
+                    image,
+                    require_grayscale=True,
+                )
+            except _NonGrayscaleScalarTextureError as exc:
+                report.record(
+                    "authoring.material.scalar_texture.color_unsupported",
+                    str(exc),
+                    severity=DiagnosticSeverity.ERROR,
+                    loss_kind=LossKind.DEFERRED,
+                    path=("materials", material.name, input_name),
+                )
+                continue
+        else:
+            payload = _encode_image_tga(
+                image,
+                srgb=role == TextureRole.BASE_COLOR,
+            )
         textures.append(AuthoringTexture(
             texture_name,
             role,
-            _encode_image_tga(
-                image,
-                srgb=role == TextureRole.BASE_COLOR,
-            ),
+            payload,
             extension=".tga",
             srgb=role == TextureRole.BASE_COLOR,
         ))

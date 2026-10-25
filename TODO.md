@@ -2,11 +2,13 @@
 
 **Status: the CS2 static-authoring vertical slice and its normal-map,
 roughness, metalness, and alpha-test extensions are implemented and have passed
-the installed Workshop Tools exit gate.** Export is SourceIO's secondary goal
-after import quality; the aim is one straightforward path from a Blender scene
-to editable, optionally compiled static assets. Next: the Source 1 static
-backend (implementation todos 10–12), followed by one settled export path
-(todo 13).
+the installed Workshop Tools exit gate. The pure Source 1 backend now emits
+deterministic SMD, QC, VMT, TGA, VTEX settings, preflight, and manifest files;
+its generated model contract has passed the installed TF2 StudioMDL.** Export is
+SourceIO's secondary goal after import quality; the aim is one straightforward
+path from a Blender scene to editable, optionally compiled static assets. Next:
+Source 1 compiler integration and the Blender vertical slice (implementation
+todos 11–12), followed by one settled export path (todo 13).
 Skeletal, animated, physics, and map authoring, and game coverage beyond
 priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
 are tracked in [plan.md](plan.md).
@@ -447,7 +449,7 @@ exists.
      image's Alpha output while continuing to block true alpha blending.
    - [x] Extend the installed-tools gate to compile and re-import each new slot.
 
-10. [ ] **Implementing the Source 1 authoring backend**
+10. [x] **Implementing the Source 1 authoring backend**
     - Add static SMD, QC, VMT, source-texture, and VTEX-sidecar generation.
     - Refactor only the reusable portions of the existing VTF path and preserve its
       current image-editor behavior.

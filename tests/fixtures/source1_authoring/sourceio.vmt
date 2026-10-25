@@ -1,0 +1,9 @@
+"VertexLitGeneric"
+{
+    "$basetexture" "models/sourceio/crate/crate_base_color"
+    "$bumpmap" "models/sourceio/crate/crate_normal"
+    "$color2" "[0.25 0.5 0.75]"
+    "$alphatest" "1"
+    "$alphatestreference" "0.4"
+    "$nocull" "1"
+}

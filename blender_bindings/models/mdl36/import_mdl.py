@@ -8,11 +8,14 @@ import numpy as np
 from mathutils import Euler, Matrix, Quaternion, Vector
 
 from ..common import create_flex_drivers
-from ...material_loader.material_loader import ShaderRegistry
-from ...material_loader.shaders.source1_shader_base import Source1ShaderBase
+from ...material_loader.material_loader import (
+    ShaderRegistry,
+    get_or_create_source1_material,
+    source1_material_parameters,
+)
 from ..common import merge_meshes, create_eyeballs
 from ...shared.model_container import ModelContainer
-from ...utils.bpy_utils import add_material, edit_armature, get_or_create_material, ActionCurveFactory
+from ...utils.bpy_utils import add_material, edit_armature, ActionCurveFactory
 from ...utils.fast_mesh import FastMesh, set_vertex_weights
 from ....library.models.mdl.structs.header import StudioHDRFlags
 from ....library.models.mdl.v36.mdl_file import MdlV36
@@ -50,9 +53,9 @@ def create_armature(mdl: MdlV36, scale=1.0):
 
 
 def import_model(content_manager: ContentManager, mdl: MdlV36, vtx: Vtx,
-                 scale=1.0, create_drivers=False, load_refpose=False):
+                 scale=1.0, create_drivers=False, load_refpose=False, use_bvlg=False):
     full_material_names = get_model_material_names(content_manager, mdl)
-    [setattr(mat, 'bpy_material', get_or_create_material(mat.name, full_material_names[mat.name])) for mat in mdl.materials if mat.bpy_material is None]
+    [setattr(mat, 'bpy_material', get_or_create_source1_material(mat.name, full_material_names[mat.name], use_bvlg)) for mat in mdl.materials if mat.bpy_material is None]
     # ensure all MaterialV49 has its bpy_material counterpart
 
     desired_lod = 0
@@ -95,13 +98,13 @@ def import_model(content_manager: ContentManager, mdl: MdlV36, vtx: Vtx,
             material_remapper = np.zeros((material_indices_array.max() + 1,), dtype=np.uint32)
             for mat_id in np.unique(material_indices_array):
                 mat_name = mdl.materials[mat_id].name
-                material = get_or_create_material(mat_name, full_material_names[mat_name])
+                material = get_or_create_source1_material(mat_name, full_material_names[mat_name], use_bvlg)
                 material_remapper[mat_id] = add_material(material, mesh_obj)
 
             skin_groups = {str(n): list(map(lambda a: a.bpy_material, group)) for (n, group) in enumerate(mdl.skin_groups)}
             try:
                 mesh_obj['skin_groups'] = skin_groups
-            except:
+            except (TypeError, ValueError):
                 mesh_obj['skin_groups'] = default_skin_groups
 
             mesh_data.polygons.foreach_set('material_index', material_remapper[material_indices_array[::-1]].ravel())
@@ -184,7 +187,7 @@ def import_materials(content_manager: ContentManager, mdl, use_bvlg=False):
         if material_path is None:
             logger.info(f'Material {material.name} not found')
             continue
-        mat = get_or_create_material(material.name, material_path.as_posix())
+        mat = get_or_create_source1_material(material.name, material_path.as_posix(), use_bvlg)
 
         material.bpy_material = mat
         if mat.get('source1_loaded', False):
@@ -197,9 +200,13 @@ def import_materials(content_manager: ContentManager, mdl, use_bvlg=False):
             continue
 
         if material_path:
-            Source1ShaderBase.use_bvlg(use_bvlg)
             vmt = VMT(material_file, material_path, content_manager)
-            mat = ShaderRegistry.source1_create_nodes(content_manager, mat, vmt,{})
+            mat = ShaderRegistry.source1_create_nodes(
+                content_manager,
+                mat,
+                vmt,
+                source1_material_parameters(use_bvlg),
+            )
 
         material.bpy_material = mat
         mdl.blender_materials_imported = True

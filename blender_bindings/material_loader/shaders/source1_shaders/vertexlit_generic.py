@@ -134,7 +134,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
 
     @property
     def basealphaenvmapmask(self):
-        return self._vmt.get_int('$basealphaenvmapmask', 1) == 1
+        return self._vmt.get_int('$basealphaenvmapmask', 0) == 1
 
     @property
     def basemapalphaphongmask(self):
@@ -216,8 +216,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         sio_diffuse = None
         tension = None
-
-        # print(f"BVLG: {self.use_bvlg_status}")
+        use_bvlg = bool(extra_parameters.get(ExtraMaterialParameters.USE_BVLG, False))
 
         if 'proxies' in self._vmt:
             proxies = self._vmt.get('proxies')
@@ -257,7 +256,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             basetexture_node.image = stretch
 
         basetexture = self.basetexture
-        if self.use_bvlg_status:
+        if use_bvlg:
             self.do_arrange = True
 
             self.bpy_material.use_backface_culling = not self.nocull
@@ -504,6 +503,10 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             '''
 
         else:
+            self.bpy_material.use_backface_culling = bool(
+                extra_parameters.get(ExtraMaterialParameters.PRINCIPLED_BACKFACE_CULLING, False)
+                and not self.nocull
+            )
             shader = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
             self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
 

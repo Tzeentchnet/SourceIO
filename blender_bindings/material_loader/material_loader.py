@@ -19,7 +19,10 @@ from .shaders.source2_shaders.dummy import DummyShader
 # noinspection PyUnresolvedReferences
 from .shaders import source1_shaders, source2_shaders, goldsrc_shaders
 from ...library.source2.blocks.kv3_block import KVBlock
+from ...library.utils.tiny_path import TinyPath
 from ...library.utils.perf_sampler import timed
+from ..preferences import principled_backface_culling_enabled
+from ..utils.bpy_utils import get_or_create_material
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('MaterialLoader')
@@ -31,6 +34,20 @@ class MaterialLoaderBase:
 
     def create_material(self, material: bpy.types.Material):
         pass
+
+
+def source1_material_parameters(use_bvlg: bool = False) -> dict[ExtraMaterialParameters, Any]:
+    return {ExtraMaterialParameters.USE_BVLG: bool(use_bvlg)}
+
+
+def source1_material_identity(material_path: str | TinyPath, use_bvlg: bool = False) -> str:
+    path = TinyPath(material_path).as_posix()
+    return f"{path}?sourceio-shader=bvlg" if use_bvlg else path
+
+
+def get_or_create_source1_material(name: str, material_path: str | TinyPath, use_bvlg: bool = False):
+    material_name = f"{name} [BVLG]" if use_bvlg else name
+    return get_or_create_material(material_name, source1_material_identity(material_path, use_bvlg))
 
 
 def _collect_handlers(*bases) -> dict[str, Type[ShaderBase]]:
@@ -77,8 +94,13 @@ class ShaderRegistry:
 
         handler: Source1ShaderBase = cls._handlers.get(shader, Source1ShaderBase)(content_manager, vmt)
         handler.bpy_material = material
+        parameters = dict(extra_parameters)
+        parameters.setdefault(
+            ExtraMaterialParameters.PRINCIPLED_BACKFACE_CULLING,
+            principled_backface_culling_enabled(),
+        )
         try:
-            new_material = handler.create_nodes(material, extra_parameters) or material  # support material templates
+            new_material = handler.create_nodes(material, parameters) or material  # support material templates
             if not isinstance(new_material, bpy.types.Material):
                 new_material = material
             material = new_material

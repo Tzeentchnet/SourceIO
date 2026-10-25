@@ -259,15 +259,12 @@ logger = log_manager.get_logger('MaterialLoader')
 class ExtraMaterialParameters(str, Enum):
     USE_OBJECT_TINT = "UseObjectTint"
     SOURCE2_IMPORT_SCALE = "Source2ImportScale"
+    USE_BVLG = "UseBVLG"
+    PRINCIPLED_BACKFACE_CULLING = "PrincipledBackfaceCulling"
 
 
 class ShaderBase:
     SHADER: str = "Unknown"
-    use_bvlg_status = True
-
-    @classmethod
-    def use_bvlg(cls, status):
-        cls.use_bvlg_status = status
 
     @staticmethod
     def load_bvlg_nodes():

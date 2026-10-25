@@ -190,7 +190,10 @@ class Water(Source1ShaderBase):
 
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
 
-        if self.use_bvlg_status and bpy.data.node_groups.get("Water") is not None:
+        if (
+            extra_parameters.get(ExtraMaterialParameters.USE_BVLG, False)
+            and bpy.data.node_groups.get("Water") is not None
+        ):
             self._create_bvlg_nodes(material_output)
             return
 

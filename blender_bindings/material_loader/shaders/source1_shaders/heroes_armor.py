@@ -145,7 +145,7 @@ class HeroesArmor(Source1ShaderBase):
         if self.alphatest or self.translucent:
             self.set_blend_mode('BLEND' if self.translucent else 'HASHED')
 
-        if self.use_bvlg_status:
+        if extra_parameters.get(ExtraMaterialParameters.USE_BVLG, False):
             self.do_arrange = False
             if self.alphatest or self.translucent:
                 alphatest_node = self.create_node_group("$alphatest", [250, 0])

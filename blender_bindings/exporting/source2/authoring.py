@@ -161,7 +161,7 @@ def _extract_principled_material(
         report: LossReport,
         texture_directory: Path,
 ) -> AuthoringMaterial | None:
-    if not material.use_nodes or material.node_tree is None:
+    if material.node_tree is None:
         report.record(
             "authoring.material.nodes.missing",
             "Material authoring requires a supported Principled BSDF node graph.",

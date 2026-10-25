@@ -8,10 +8,11 @@ import numpy as np
 from mathutils import Euler, Matrix, Quaternion, Vector
 
 from ..common import assign_bone_collections, merge_meshes, create_eyeballs, generate_wrinkle_map_node_group, make_bodygroup_selectors, create_flex_drivers
+from ...material_loader.material_loader import get_or_create_source1_material
 from ...shared.model_container import ModelContainer
 from ...operators.import_settings_base import ModelOptions
 from ..import_animations import set_pose
-from ...utils.bpy_utils import add_material, edit_armature, get_or_create_material
+from ...utils.bpy_utils import add_material, edit_armature
 from ...utils.fast_mesh import FastMesh, set_vertex_weights
 from ....library.models.mdl.structs.header import StudioHDRFlags
 from ....library.models.mdl.structs.local_animation import AnimDescFlags
@@ -68,7 +69,7 @@ def apply_reference_pose(armature_obj: bpy.types.Object, mdl: MdlV44, scale: flo
 def import_model(content_manager: ContentManager, mdl: MdlV44, vtx: Vtx, vvd: Vvd,
                 options: ModelOptions):
     full_material_names = get_model_material_names(content_manager, mdl)
-    [setattr(mat, 'bpy_material', get_or_create_material(mat.name, full_material_names[mat.name])) for mat in mdl.materials if mat.bpy_material is None]
+    [setattr(mat, 'bpy_material', get_or_create_source1_material(mat.name, full_material_names[mat.name], options.use_bvlg)) for mat in mdl.materials if mat.bpy_material is None]
     # ensure all MaterialV49 has its bpy_material counterpart
 
     objects = []
@@ -120,13 +121,17 @@ def import_model(content_manager: ContentManager, mdl: MdlV44, vtx: Vtx, vvd: Vv
             material_remapper = np.zeros((material_indices_array.max() + 1,), dtype=np.uint32)
             for mat_id in np.unique(material_indices_array):
                 mat_name = mdl.materials[mat_id].name
-                material = get_or_create_material(mat_name, full_material_names[mat_name])
+                material = get_or_create_source1_material(
+                    mat_name,
+                    full_material_names[mat_name],
+                    options.use_bvlg,
+                )
                 material_remapper[mat_id] = add_material(material, mesh_obj)
 
             skin_groups = {str(n): list(map(lambda a: a.bpy_material, group)) for (n, group) in enumerate(mdl.skin_groups)}
             try:
                 mesh_obj['skin_groups'] = skin_groups
-            except:
+            except (TypeError, ValueError):
                 mesh_obj['skin_groups'] = default_skin_groups
 
             mesh_data.polygons.foreach_set('material_index', material_remapper[material_indices_array[::-1]])

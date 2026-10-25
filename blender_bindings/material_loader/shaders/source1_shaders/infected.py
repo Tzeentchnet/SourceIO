@@ -214,13 +214,12 @@ class Infected(DetailSupportMixin, Source1ShaderBase):
 
     def create_nodes(self, material:bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         self.do_arrange = False
-        # print(f"BVLG: {self.use_bvlg_status}")
         material_output = self.create_node(Nodes.ShaderNodeOutputMaterial)
         material_output.location = [400, -140]
         parentnode = material_output
 
         uv = None
-        if self.use_bvlg_status:
+        if extra_parameters.get(ExtraMaterialParameters.USE_BVLG, False):
             self.do_arrange = False
 
             group_node = self.create_node_group("infected", [-60, -140])

@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from SourceIO.blender_bindings.material_loader.shader_base import ExtraMaterialParameters
 from SourceIO.blender_bindings.models.materials import get_model_material_names, resolve_model_material
 
 
@@ -58,9 +59,10 @@ class MaterialPathTests(unittest.TestCase):
         cm = Mock()
         cm.check.side_effect = lambda p: str(p) == 'materials/models/props/tube.vmt'
         material = {'source1_loaded': True}
-        with patch.object(import_mdl, 'get_or_create_material', return_value=material):
+        with patch.object(import_mdl, 'get_or_create_source1_material', return_value=material) as get_material:
             import_mdl.import_materials(cm, mdl)
         self.assertIs(mdl.materials[0].bpy_material, material)
+        get_material.assert_called_once_with('tube', 'models/props/tube', False)
         cm.check.reset_mock()
         self.assertEqual(get_model_material_names(cm, mdl), {'tube': 'models/props/tube'})
         cm.check.assert_not_called()
@@ -72,13 +74,18 @@ class MaterialPathTests(unittest.TestCase):
         cm = Mock()
         cm.check.side_effect = lambda p: str(p) == 'materials/models/props/tube.vmt'
         material = {}
-        with patch.object(import_mdl, 'get_or_create_material', return_value=material), \
+        with patch.object(import_mdl, 'get_or_create_source1_material', return_value=material) as get_material, \
              patch.object(import_mdl, 'VMT') as vmt, \
-             patch.object(import_mdl.ShaderRegistry, 'source1_create_nodes', return_value=material):
-            import_mdl.import_materials(cm, mdl)
+             patch.object(import_mdl.ShaderRegistry, 'source1_create_nodes', return_value=material) as create_nodes:
+            import_mdl.import_materials(cm, mdl, use_bvlg=True)
         self.assertEqual(cm.find_file.call_count, 1)
         self.assertEqual(str(cm.find_file.call_args.args[0]), 'materials/models/props/tube.vmt')
         self.assertIs(vmt.call_args.args[0], cm.find_file.return_value)
+        get_material.assert_called_once_with('tube', 'models/props/tube', True)
+        self.assertEqual(
+            create_nodes.call_args.args[3],
+            {ExtraMaterialParameters.USE_BVLG: True},
+        )
 
     def test_generic_path_collection_does_not_open_files(self):
         from SourceIO.library.utils.path_utilities import collect_full_material_names

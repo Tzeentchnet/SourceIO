@@ -9,14 +9,16 @@ from bpy_extras.io_utils import ExportHelper
 
 from .import_settings_base import ModelOptions, Source1BSPSettings
 from .operator_helper import ImportOperatorHelper
-from ..material_loader.material_loader import ShaderRegistry
-from ..material_loader.shaders.source1_shader_base import Source1ShaderBase
+from ..material_loader.material_loader import (
+    ShaderRegistry,
+    get_or_create_source1_material,
+    source1_material_parameters,
+)
 from ..models import import_model
 from ..models.common import put_into_collections
 from ..shared.exceptions import RequiredFileNotFound
 from ..source1.bsp.import_bsp import import_bsp
 from ..source1.vtf import import_texture, load_skybox_texture
-from ..utils.bpy_utils import get_or_create_material
 from ..utils.resource_utils import serialize_mounted_content, deserialize_mounted_content
 from ...library.shared.app_id import SteamAppId
 from ...library.shared.content_manager import ContentManager
@@ -493,9 +495,8 @@ class SOURCEIO_OT_VMTImport(ImportOperatorHelper):
 
         for file in self.files:
             file_path = TinyPath(file.name)
-            mat = get_or_create_material(file_path.stem, file_path.as_posix())
+            mat = get_or_create_source1_material(file_path.stem, file_path.as_posix(), self.use_bvlg)
 
-            Source1ShaderBase.use_bvlg(self.use_bvlg)
             material_path = directory / file.name
             with FileBuffer(material_path) as material_file:
                 vmt = VMT(material_file, material_path, content_manager)
@@ -505,7 +506,12 @@ class SOURCEIO_OT_VMTImport(ImportOperatorHelper):
                     del mat['source_loaded']
                 else:
                     self.report({'INFO'}, f'{mat.name} material already exists')
-            ShaderRegistry.source1_create_nodes(content_manager, mat, vmt, {})
+            ShaderRegistry.source1_create_nodes(
+                content_manager,
+                mat,
+                vmt,
+                source1_material_parameters(self.use_bvlg),
+            )
             
         # content_manager.clean() # lets keep cache just in case
         

@@ -82,24 +82,27 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 | A7 | BVLG: `$bumpcompress`/`$bumpstretch` without `$compress`/`$stretch` created an Attribute node with no name, so wrinkle normals never blended. | The attribute is named `tension`. |
 | A8 | `vertexlit_generic.py` defined `compress` and `lightwarptexture` twice; the first, shadowed versions would have flipped a lightwarp's green channel. | Duplicates removed. Normal-map properties share one helper. |
 
+### Implemented in the correctness follow-up
+
+- **Deterministic shader mode.** BVLG selection is now an explicit material-build parameter instead of global class state. Principled and BVLG variants use distinct, stable material identities, and BSP, entity, VMT and model paths consistently resolve the selected variant.
+- **Opt-in Principled culling.** Principled VertexLitGeneric materials remain two-sided by default. An add-on preference enables Source-style culling for newly imported materials while preserving `$nocull 1`; BVLG behavior is unchanged.
+- **`$basealphaenvmapmask`.** The default is now 0, matching the SDK. Explicit 0 and 1 continue to override it.
+
 ### Recommended next
 
-1. **`$nocull` and backface culling on the Principled VLG path.** Only the BVLG path sets `use_backface_culling`. Source culls back faces unless `$nocull`, so foliage cards and similar look right while ordinary meshes show their back faces in EEVEE and the viewport. This is a visible behaviour change, so I left it as an option for you to decide.
-2. **`$envmap` on models.** The Principled VLG path ignores `$envmap`, `$envmaptint` and `$envmapmask`. `LightmapGeneric._setup_envmap` already turns these into a specular strength and tint, and the same mapping (mask choice included: `$basealphaenvmapmask` or `$normalmapalphaenvmapmask`) could be shared with VLG.
-3. **Phong exponent texture curve.** The exponent texture is mapped to roughness linearly between its endpoints. Rebuilding `sqrt(2 / (1 + 149·r + 2))` from three Math nodes (multiply-add, divide, sqrt) would match `phong_exponent_to_roughness` at every value, not just the ends.
-4. **`$phongfresnelranges`.** Collapsed to the middle value. A Layer Weight → Map Range piecewise curve would reproduce the SDK's per-pixel Fresnel term.
-5. **`$basealphaenvmapmask` defaults to 1** in `VertexLitGeneric`, but the SDK default is 0. This only affects BVLG wiring, but it routes base alpha into the envmap mask for every material with an alpha channel.
-6. **Detail textures** are always marked Non-Color. Check each `$detailblendmode` against the SDK's sRGB-read setting for the detail sampler; some modes may sample in sRGB.
-7. **One-axis clamps** (`CLAMPS` xor `CLAMPT`) can't be expressed with a node's single extension setting. Clamping the UV on one axis (Separate XYZ → Clamp → Combine) would cover them.
-8. **`$vertexcolor` / `$vertexalpha`** aren't supported by VertexLitGeneric (UnlitGeneric and DecalModulate support them).
-9. **Global shader state.** `ShaderBase.use_bvlg_status` is a class attribute that BSP and VMT imports overwrite and never restore. Prop materials built later in the session inherit whatever the last import set. Passing the setting to the handler instead would remove that order dependence.
+1. **`$envmap` on models.** The Principled VLG path ignores `$envmap`, `$envmaptint` and `$envmapmask`. `LightmapGeneric._setup_envmap` already turns these into a specular strength and tint, and the same mapping (mask choice included: `$basealphaenvmapmask` or `$normalmapalphaenvmapmask`) could be shared with VLG.
+2. **Phong exponent texture curve.** The exponent texture is mapped to roughness linearly between its endpoints. Rebuilding `sqrt(2 / (1 + 149·r + 2))` from three Math nodes (multiply-add, divide, sqrt) would match `phong_exponent_to_roughness` at every value, not just the ends.
+3. **`$phongfresnelranges`.** Collapsed to the middle value. A Layer Weight → Map Range piecewise curve would reproduce the SDK's per-pixel Fresnel term.
+4. **Detail textures** are always marked Non-Color. Check each `$detailblendmode` against the SDK's sRGB-read setting for the detail sampler; some modes may sample in sRGB.
+5. **One-axis clamps** (`CLAMPS` xor `CLAMPT`) can't be expressed with a node's single extension setting. Clamping the UV on one axis (Separate XYZ → Clamp → Combine) would cover them.
+6. **`$vertexcolor` / `$vertexalpha`** aren't supported by VertexLitGeneric (UnlitGeneric and DecalModulate support them).
 
 ---
 
 ## 4. Other code-quality findings
 
-- `__init__.py` runs `warnings.simplefilter("always", DeprecationWarning)` at import time. That changes warning behaviour for **every** add-on and script in the user's Blender session. Scope it to SourceIO's own modules (`warnings.filterwarnings(..., module=r"SourceIO\..*")`) or remove it.
-- `pause_view_layer_update` monkeypatches the private `bpy.ops._BPyOpsSubModOp._view_layer_update`. It's fragile across Blender versions; keep it covered by the smoke test.
-- `models/mdl{36,44,49,52,2531}/import_mdl.py` use a bare `except:` around `mesh_obj['skin_groups'] = ...`, which also swallows `KeyboardInterrupt`. Use `except (TypeError, ValueError):`.
+- **Resolved:** the process-wide `DeprecationWarning` filter was removed.
+- **Resolved:** `pause_view_layer_update` now treats the missing private Blender hook as a no-op and restores the hook after normal and exceptional exits when it exists. Focused tests cover all three cases.
+- **Resolved:** the model skin-group fallbacks now catch only `TypeError` and `ValueError`.
 - Errors in decoders return sentinels inconsistently. `load_texture` returned `(None, 0, 0)` and `load_texture_tth` returned bare `None`, and callers reshaped without checking. The patch makes TTH return `(None, 0, 0)` and makes the VTF importers return `None`, which callers already handle.
-- `Material.use_nodes` is deprecated in 5.2 (removal planned for 6.0); `bpy` warns when it's read. `exporting/source2/authoring.py:164` still reads it; check `material.node_tree is None` alone instead.
+- **Resolved:** Source 2 material authoring checks `material.node_tree is None` without reading deprecated `Material.use_nodes`.

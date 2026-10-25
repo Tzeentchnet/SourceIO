@@ -9,7 +9,7 @@ from mathutils import Vector
 from ....material_loader.material_loader import ShaderRegistry
 from ....material_loader.shaders.source1_shaders.sky import Skybox
 from ...vtf import load_skybox_texture
-from ....utils.bpy_utils import add_material, get_or_create_material
+from ....utils.bpy_utils import add_material
 from .....library.source1.vmt import VMT
 from .....library.source1.vtf import SkyboxException
 from .....library.utils.math_utilities import ensure_length, lerp_vec, srgb_to_linear
@@ -749,13 +749,18 @@ class BaseEntityHandler(AbstractEntityHandler):
         material_name = strip_vmt_extension(start_entity.ropematerial)
         stripped_material_name = strip_patch_coordinates.sub("", material_name)
 
-        mat = get_or_create_material(TinyPath(stripped_material_name).name, stripped_material_name)
+        mat = self._get_or_create_source1_material(TinyPath(stripped_material_name).name, stripped_material_name)
         add_material(mat, curve_object)
         material_path = TinyPath("materials") / (material_name + ".vmt")
         material_file = self.content_manager.find_file(material_path)
         if material_file:
             vmt = VMT(material_file, material_path, self.content_manager)
-            ShaderRegistry.source1_create_nodes(self.content_manager, mat, vmt, {})
+            ShaderRegistry.source1_create_nodes(
+                self.content_manager,
+                mat,
+                vmt,
+                self._source1_material_parameters(),
+            )
         return curve_object
 
     def handle_path_track(self, entity: path_track, entity_raw: dict):
@@ -802,9 +807,14 @@ class BaseEntityHandler(AbstractEntityHandler):
         material_file = self.content_manager.find_file(material_path)
         if material_file:
             material_name = strip_patch_coordinates.sub("", material_name)
-            mat = get_or_create_material(path_stem(material_name), material_name)
+            mat = self._get_or_create_source1_material(path_stem(material_name), material_name)
             vmt = VMT(material_file, material_path, self.content_manager)
-            ShaderRegistry.source1_create_nodes(self.content_manager, mat, vmt, {})
+            ShaderRegistry.source1_create_nodes(
+                self.content_manager,
+                mat,
+                vmt,
+                self._source1_material_parameters(),
+            )
             tex_name = vmt.get('$basetexture', None)
             decal_scale_string = vmt.get('$decalscale', None)
             if decal_scale_string is not None:
@@ -857,7 +867,7 @@ class BaseEntityHandler(AbstractEntityHandler):
         # Assign UVs and material
         mesh_data.uv_layers.new()
         if not mat:
-            mat = get_or_create_material(path_stem(material_name), material_name)
+            mat = self._get_or_create_source1_material(path_stem(material_name), material_name)
         add_material(mat, obj)
         self._set_location_and_scale(obj, origin)
         self._set_entity_data(obj, {'entity': entity_raw})

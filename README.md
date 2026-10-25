@@ -41,6 +41,9 @@ In order to find the import tools you simply need to go to File>Import>Source En
 
 Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files, `.vsnd_c` sounds and `.dmx` cameras. Source 2 animation resources (`.vnmclip_c`, `.vanim_c` and `.vagrp_c`) can be dropped onto a selected armature.
 
+### Source 1 backface culling
+Principled Source 1 materials remain two-sided by default for compatibility. To apply Source-style backface culling to newly imported Principled VertexLitGeneric materials, open *Edit > Preferences > Add-ons*, expand SourceIO, and enable **Cull Principled VertexLitGeneric backfaces**. Materials with `$nocull 1` remain two-sided. BVLG materials keep their existing culling behavior regardless of this preference.
+
 ## Editing VTF textures and sprite sheets
 Particle textures (`SpriteCard` materials) pack many frames into one VTF, plus a *sprite sheet* that says which rectangle is which frame of which animation sequence. SourceIO reads the sheet, and the other metadata a VTF can carry, and can write the texture out for editing in Photoshop or any other image editor. SourceIO cannot write a sheet into a VTF itself, so the edited texture is rebuilt with `mksheet` and `vtex` from a game's `bin` folder (Team Fortress 2 and the Source SDK ship both).
 

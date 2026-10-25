@@ -37,6 +37,7 @@ from .operators.source2_export_operators import (
 )
 from .operators.source2_sound_operators import SOURCEIO_OT_VSNDImport
 from .operators.dragndrop import file_handler_classes
+from .preferences import SourceIOPreferences
 from .ui.export_nodes import register_nodes, unregister_nodes
 from . import cli
 
@@ -202,7 +203,7 @@ classes = [
     SOURCEIO_OT_VMAPImport,
 
     # Addon tools
-    # SourceIOPreferences,
+    SourceIOPreferences,
     SourceIO_MT_ImportMenu,
     SourceIO_MT_ExportMenu,
     SourceIOUtils_MT_Menu,

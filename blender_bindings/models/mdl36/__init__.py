@@ -37,7 +37,15 @@ def import_mdl36(model_path: TinyPath, buffer: Buffer,
             import traceback
             traceback.print_exc()
 
-    container = import_model(content_manager, mdl, vtx, options.scale, options.create_flex_drivers)
+    container = import_model(
+        content_manager,
+        mdl,
+        vtx,
+        options.scale,
+        options.create_flex_drivers,
+        options.load_refpose,
+        options.use_bvlg,
+    )
     if options.import_physics:
         phy_buffer = content_manager.find_file(model_path.with_suffix(".phy"))
         if phy_buffer is None:

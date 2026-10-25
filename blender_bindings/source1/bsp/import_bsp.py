@@ -27,8 +27,11 @@ from ....library.utils import Buffer, TinyPath, path_stem, strip_vmt_extension, 
 from ....library.utils.idtech3_shader_parser import parse_shader_materials
 from ....library.utils.math_utilities import convert_rotation_source1_to_blender
 from ....logger import SourceLogMan, SLogger
-from ...material_loader.material_loader import ShaderRegistry
-from ...material_loader.shaders.source1_shader_base import Source1ShaderBase
+from ...material_loader.material_loader import (
+    ShaderRegistry,
+    get_or_create_source1_material,
+    source1_material_parameters,
+)
 from ...utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material
 
 from .entities.base_entity_handler import BaseEntityHandler
@@ -188,7 +191,6 @@ def import_static_props(bsp: VBSPFile, settings: Source1BSPSettings, master_coll
 def import_materials(bsp: VBSPFile, content_manager: ContentManager, settings: Source1BSPSettings, logger: SLogger):
     if not settings.import_textures:
         return
-    Source1ShaderBase.use_bvlg(settings.use_bvlg)
 
     strings_lump: Optional[StringsLump] = bsp.get_lump('LUMP_TEXDATA_STRING_TABLE')
     texture_data_lump: Optional[TextureDataLump] = bsp.get_lump('LUMP_TEXDATA')
@@ -204,7 +206,7 @@ def import_materials(bsp: VBSPFile, content_manager: ContentManager, settings: S
             material_name = strip_vmt_extension(material_name.lstrip("/\\"))
             tmp = strip_patch_coordinates.sub("", material_name)
 
-            mat = get_or_create_material(path_stem(tmp), tmp)
+            mat = get_or_create_source1_material(path_stem(tmp), tmp, settings.use_bvlg)
 
             if mat.get('source1_loaded'):
                 logger.debug(
@@ -216,9 +218,13 @@ def import_materials(bsp: VBSPFile, content_manager: ContentManager, settings: S
 
             if material_file:
                 try:
-                    Source1ShaderBase.use_bvlg(settings.use_bvlg)
                     vmt = VMT(material_file, material_path, content_manager)
-                    ShaderRegistry.source1_create_nodes(content_manager, mat, vmt, {})
+                    ShaderRegistry.source1_create_nodes(
+                        content_manager,
+                        mat,
+                        vmt,
+                        source1_material_parameters(settings.use_bvlg),
+                    )
                 except Exception as e:
                     logger.exception("Failed to load material due to exception:", e)
             else:
@@ -380,7 +386,10 @@ def import_disp(bsp: VBSPFile, settings: Source1BSPSettings,
 
         material_name = strings_lump.strings[texture_data.name_id] or "NO_NAME"
         material_name = strip_patch_coordinates.sub("", material_name)
-        add_material(get_or_create_material(path_stem(material_name), material_name), mesh_obj)
+        add_material(
+            get_or_create_source1_material(path_stem(material_name), material_name, settings.use_bvlg),
+            mesh_obj,
+        )
         mesh_data.validate(clean_customdata=False)
 
 
@@ -423,7 +432,10 @@ def import_overlays(bsp: VBSPFile, settings: Source1BSPSettings,
         mesh_obj['render_order'] = overlay.render_order
         # A decal lifted a fraction of a unit off the wall would only shade the wall under it.
         mesh_obj.visible_shadow = False
-        add_material(get_or_create_material(path_stem(material_name), material_name), mesh_obj)
+        add_material(
+            get_or_create_source1_material(path_stem(material_name), material_name, settings.use_bvlg),
+            mesh_obj,
+        )
         parent_collection.objects.link(mesh_obj)
         created += 1
     logger.info(f'Imported {created}/{len(overlay_lump.overlays)} overlays')

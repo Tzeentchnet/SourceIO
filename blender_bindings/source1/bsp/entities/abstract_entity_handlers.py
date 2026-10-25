@@ -8,9 +8,13 @@ import numpy as np
 from mathutils import Euler
 
 from .base_entity_classes import *
+from ....material_loader.material_loader import (
+    get_or_create_source1_material,
+    source1_material_parameters,
+)
 from ...vtf import import_texture
 from ....operators.import_settings_base import Source1BSPSettings
-from ....utils.bpy_utils import add_material, get_or_create_collection, get_or_create_material
+from ....utils.bpy_utils import add_material, get_or_create_collection
 from .....library.shared.content_manager import ContentManager
 from .....library.source1.bsp.bsp_file import BSPFile
 from .....library.source1.bsp.datatypes.face import Face
@@ -234,6 +238,13 @@ class AbstractEntityHandler:
         #     self.resolve_parents(entity_data)
         pass
 
+    def _get_or_create_source1_material(self, name: str, material_path: str):
+        use_bvlg = bool(self.settings and self.settings.use_bvlg)
+        return get_or_create_source1_material(name, material_path, use_bvlg)
+
+    def _source1_material_parameters(self):
+        return source1_material_parameters(bool(self.settings and self.settings.use_bvlg))
+
     def handle_entity(self, entity_data: dict):
         entity_class = entity_data['classname']
         if hasattr(self, f'handle_{entity_class}') and entity_class in self.entity_lookup_table:
@@ -310,7 +321,7 @@ class AbstractEntityHandler:
                         vmt = VMT(material_file, material_name, self.content_manager)
                         if vmt.get_int("$abovewater", 1) == 0:
                             skippable_materials.add(texture_info_id)
-            material = get_or_create_material(path_stem(material_name), material_name)
+            material = self._get_or_create_source1_material(path_stem(material_name), material_name)
             material_lookup_table[texture_data.name_id] = add_material(material, mesh_obj)
 
         faces = []

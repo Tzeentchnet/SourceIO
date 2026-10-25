@@ -1,17 +1,23 @@
 """Material/texture lookup indexes, decode-time normal map conversion and the Principled VertexLitGeneric path."""
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import bpy
 import numpy as np
 
-from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
-from SourceIO.blender_bindings.material_loader.shader_base import ALPHA_CLIP_LABEL
+from SourceIO.blender_bindings.material_loader.material_loader import (
+    ShaderRegistry,
+    get_or_create_source1_material,
+)
+from SourceIO.blender_bindings.material_loader.shader_base import ALPHA_CLIP_LABEL, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders import source1_shader_base
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
+from SourceIO.blender_bindings.material_loader.shaders.source1_shaders.vertexlit_generic import VertexLitGeneric
+from SourceIO.blender_bindings.preferences import SourceIOPreferences
 from SourceIO.blender_bindings.source1 import vtf as blender_vtf
-from SourceIO.blender_bindings.utils import texture_utils
-from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material
+from SourceIO.blender_bindings.utils import bpy_utils, texture_utils
+from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_material, pause_view_layer_update
 from SourceIO.library.source1.vmt import VMT
 from SourceIO.library.utils import MemoryBuffer
 from SourceIO.library.utils.tiny_path import TinyPath
@@ -62,6 +68,16 @@ class MaterialIndexTests(_CleanFile):
         material.name = "b"
         material["full_path"] = "materials/b"
         self.assertIs(get_or_create_material("b", "materials/b"), material)
+
+    def test_source1_shader_modes_have_distinct_stable_identities(self):
+        principled = get_or_create_source1_material("wall", "materials/brick/wall")
+        bvlg = get_or_create_source1_material("wall", "materials/brick/wall", True)
+        self.assertIs(get_or_create_source1_material("wall", "materials/brick/wall"), principled)
+        self.assertIs(get_or_create_source1_material("wall", "materials/brick/wall", True), bvlg)
+        self.assertIsNot(principled, bvlg)
+        self.assertEqual(principled["full_path"], "materials/brick/wall")
+        self.assertEqual(bvlg["full_path"], "materials/brick/wall?sourceio-shader=bvlg")
+        self.assertEqual(bvlg.name, "wall [BVLG]")
 
 
 class TextureIndexTests(_CleanFile):
@@ -149,29 +165,66 @@ class DecodeTimeConversionTests(_CleanFile):
 class PrincipledVertexLitGenericTests(_CleanFile):
     def setUp(self):
         super().setUp()
-        self._bvlg = Source1ShaderBase.use_bvlg_status
-        Source1ShaderBase.use_bvlg(False)
         self._textures = {}
-
-    def tearDown(self):
-        Source1ShaderBase.use_bvlg(self._bvlg)
 
     def _fake_texture(self, name, flags=0):
         image = bpy.data.images.new(name, 4, 4, alpha=True)
         image["sourceio_vtf_flags"] = f"0x{flags:08x}"
         self._textures[name] = image
 
-    def _material(self, text):
+    def _material(self, text, use_bvlg=None, principled_culling=None):
         material = bpy.data.materials.new("test")
+        parameters = {}
+        if use_bvlg is not None:
+            parameters[ExtraMaterialParameters.USE_BVLG] = use_bvlg
+        if principled_culling is not None:
+            parameters[ExtraMaterialParameters.PRINCIPLED_BACKFACE_CULLING] = principled_culling
 
         def load_texture(shader, texture_name, texture_path=None, **kwargs):
             return self._textures.get(str(texture_name))
 
         with patch.object(source1_shader_base.Source1ShaderBase, "load_texture", load_texture):
-            ShaderRegistry.source1_create_nodes(_NoFiles(), material, _vmt(text), {})
+            ShaderRegistry.source1_create_nodes(_NoFiles(), material, _vmt(text), parameters)
         principled = next((node for node in material.node_tree.nodes
                            if node.bl_idname == 'ShaderNodeBsdfPrincipled'), None)
         return material, principled
+
+    def test_principled_is_default_and_culling_is_opt_in(self):
+        self.assertFalse(SourceIOPreferences.bl_rna.properties["principled_backface_culling"].default)
+        default, shader = self._material('"VertexLitGeneric" {}')
+        self.assertIsNotNone(shader)
+        self.assertFalse(default.use_backface_culling)
+
+        culled, _ = self._material('"VertexLitGeneric" {}', principled_culling=True)
+        self.assertTrue(culled.use_backface_culling)
+
+        two_sided, _ = self._material(
+            '"VertexLitGeneric" { "$nocull" "1" }',
+            principled_culling=True,
+        )
+        self.assertFalse(two_sided.use_backface_culling)
+
+    def test_shader_modes_do_not_leak_between_materials(self):
+        _, first = self._material('"VertexLitGeneric" {}', use_bvlg=False)
+        bvlg, middle = self._material('"VertexLitGeneric" {}', use_bvlg=True)
+        _, last = self._material('"VertexLitGeneric" {}', use_bvlg=False)
+        self.assertIsNotNone(first)
+        self.assertIsNone(middle)
+        self.assertTrue(any(node.bl_idname == 'ShaderNodeGroup' for node in bvlg.node_tree.nodes))
+        self.assertIsNotNone(last)
+
+    def test_bvlg_keeps_its_existing_culling_behavior(self):
+        culled, _ = self._material('"VertexLitGeneric" {}', use_bvlg=True)
+        two_sided, _ = self._material('"VertexLitGeneric" { "$nocull" "1" }', use_bvlg=True)
+        self.assertTrue(culled.use_backface_culling)
+        self.assertFalse(two_sided.use_backface_culling)
+
+    def test_basealphaenvmapmask_defaults_off(self):
+        for body, expected in (("", False), ('"$basealphaenvmapmask" "0"', False),
+                               ('"$basealphaenvmapmask" "1"', True)):
+            with self.subTest(body=body):
+                shader = VertexLitGeneric(_NoFiles(), _vmt(f'"VertexLitGeneric" {{ {body} }}'))
+                self.assertEqual(shader.basealphaenvmapmask, expected)
 
     def test_phong_mask_scales_specular_not_roughness(self):
         self._fake_texture("skin")
@@ -225,6 +278,38 @@ class PrincipledVertexLitGenericTests(_CleanFile):
         material, _ = self._material('"UnlitGeneric" { "$basetexture" "t/sprite" }')
         node = next(node for node in material.node_tree.nodes if node.bl_idname == 'ShaderNodeTexImage')
         self.assertEqual(node.extension, 'EXTEND')
+
+
+class PauseViewLayerUpdateTests(unittest.TestCase):
+    def test_restores_private_hook_after_normal_and_exceptional_exit(self):
+        class Owner:
+            @staticmethod
+            def _view_layer_update(context):
+                pass
+
+        owner = Owner
+        had_own_hook = "_view_layer_update" in vars(owner)
+        original = vars(owner).get("_view_layer_update")
+        with patch.object(bpy_utils, "_view_layer_update_owner", return_value=owner):
+            with pause_view_layer_update():
+                self.assertIn("_view_layer_update", vars(owner))
+                self.assertIsNot(vars(owner)["_view_layer_update"], original)
+            self.assertEqual("_view_layer_update" in vars(owner), had_own_hook)
+            if had_own_hook:
+                self.assertIs(vars(owner)["_view_layer_update"], original)
+
+            with self.assertRaisesRegex(RuntimeError, "test"):
+                with pause_view_layer_update():
+                    raise RuntimeError("test")
+        self.assertEqual("_view_layer_update" in vars(owner), had_own_hook)
+        if had_own_hook:
+            self.assertIs(vars(owner)["_view_layer_update"], original)
+
+    def test_missing_private_hook_is_a_noop(self):
+        owner = SimpleNamespace()
+        with patch.object(bpy_utils, "_view_layer_update_owner", return_value=owner):
+            with pause_view_layer_update():
+                self.assertFalse(hasattr(owner, "_view_layer_update"))
 
 
 if __name__ == '__main__':

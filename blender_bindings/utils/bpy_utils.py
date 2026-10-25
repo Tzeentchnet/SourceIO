@@ -12,17 +12,33 @@ from ...library.utils.tiny_path import TinyPath
 
 @contextlib.contextmanager
 def pause_view_layer_update():
-    from bpy.ops import _BPyOpsSubModOp
-    view_layer_update = _BPyOpsSubModOp._view_layer_update
+    owner = _view_layer_update_owner()
+    if owner is None:
+        yield
+        return
+    view_layer_update = getattr(owner, "_view_layer_update", None)
+    if view_layer_update is None:
+        yield
+        return
+    had_own_hook = "_view_layer_update" in vars(owner)
+    original = vars(owner).get("_view_layer_update")
 
     def dummy_view_layer_update(context):
         pass
 
-    _BPyOpsSubModOp._view_layer_update = dummy_view_layer_update
+    owner._view_layer_update = dummy_view_layer_update
     try:
         yield
     finally:
-        _BPyOpsSubModOp._view_layer_update = view_layer_update
+        if had_own_hook:
+            owner._view_layer_update = original
+        else:
+            del owner._view_layer_update
+
+
+def _view_layer_update_owner():
+    import importlib
+    return vars(importlib.import_module("bpy.ops")).get("_BPyOpsSubModOp")
 
 
 @contextlib.contextmanager

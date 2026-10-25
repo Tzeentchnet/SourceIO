@@ -18,9 +18,6 @@ bl_info = {
     "category": "Import-Export"
 }
 
-import warnings
-warnings.simplefilter("always", DeprecationWarning)
-
 if running_in_blender() and loaded_as_addon():
     from .blender_bindings.bindings import register, unregister
     if __name__ == "__main__":

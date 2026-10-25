@@ -91,11 +91,11 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 - **Exact phong exponent textures.** The red channel now follows `sqrt(2 / (3 + factor·r))` at every value, including custom and zero `$phongexponentfactor` values, instead of linearly interpolating roughness between the two endpoints.
 - **Per-pixel phong Fresnel.** `$phongfresnelranges` now follows the SDK's view-dependent piecewise curve from low through mid to high, uses the SDK default `[0 0.5 1]`, and composes with `$phongboost` and the phong alpha mask instead of collapsing to a constant.
 - **Detail-texture colorspaces.** VertexLitGeneric-family modes other than mod2x now use sRGB, while LightmappedGeneric uses sRGB only for mode 1, matching each SDK sampler state. Cached sRGB and data variants are separate image datablocks, so a VTF reused by different materials no longer changes colorspace underneath an existing graph.
+- **Independent VTF clamps.** `CLAMPS` and `CLAMPT` now clamp only the flagged UV axis to the first/last texel centre while the other axis keeps repeating. The full-resolution alpha-test taps inherit the same sampler behavior; textures clamped on both axes continue to use Blender's native Extend mode.
 
-### Recommended next
+### Confirmed non-goal
 
-1. **One-axis clamps** (`CLAMPS` xor `CLAMPT`) can't be expressed with a node's single extension setting. Clamping the UV on one axis (Separate XYZ → Clamp → Combine) would cover them.
-2. **`$vertexcolor` / `$vertexalpha`** aren't supported by VertexLitGeneric (UnlitGeneric and DecalModulate support them).
+- **`$vertexcolor` / `$vertexalpha`** aren't supported by Valve's VertexLitGeneric path (UnlitGeneric and DecalModulate support them), so they should not be added without branch-specific shader evidence.
 
 ---
 

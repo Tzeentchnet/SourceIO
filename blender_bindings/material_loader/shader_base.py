@@ -108,6 +108,7 @@ def unfilter_alpha_clips(material: bpy.types.Material):
             tap.extension = image_node.extension
             tap.hide = True
             links.new(taps.outputs[name], tap.inputs["Vector"])
+            _apply_vtf_sampler_flags_to_node(material, tap)
             alphas.append(tap.outputs["Alpha"])
 
         def lerp(a, b, factor):
@@ -129,28 +130,70 @@ VTF_FLAG_CLAMPS = 0x4
 VTF_FLAG_CLAMPT = 0x8
 
 
-def apply_vtf_sampler_flags(material: bpy.types.Material):
-    """Sample each imported VTF the way the game does: point sampled textures without filtering, and textures
-    clamped on both axes (sprites, decals, warp ramps) without wrapping round to the opposite edge.
+def _apply_vtf_sampler_flags_to_node(material: bpy.types.Material, node: bpy.types.ShaderNodeTexImage):
+    if node.image is None:
+        return
+    flags = node.image.get("sourceio_vtf_flags")
+    if not isinstance(flags, str):
+        return
+    try:
+        flags = int(flags, 16)
+    except ValueError:
+        return
 
-    Nodes a shader set up itself (another interpolation or extension) are left alone. Blender has one extension
-    for both axes, so a texture clamped on one axis only keeps repeating.
+    if flags & VTF_FLAG_POINTSAMPLE and node.interpolation == 'Linear':
+        node.interpolation = 'Closest'
+
+    clamp_s = bool(flags & VTF_FLAG_CLAMPS)
+    clamp_t = bool(flags & VTF_FLAG_CLAMPT)
+    if not clamp_s and not clamp_t:
+        return
+    if node.extension != 'REPEAT':
+        return
+    if clamp_s and clamp_t:
+        node.extension = 'EXTEND'
+        return
+    if node.projection != 'FLAT' or node.get('sourceio_vtf_axis_clamp'):
+        return
+
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    vector_links = node.inputs['Vector'].links
+    vector = vector_links[0].from_socket if vector_links else nodes.new(Nodes.ShaderNodeTexCoord).outputs['UV']
+
+    split = nodes.new(Nodes.ShaderNodeSeparateXYZ)
+    split.label = f'VTF clamp coordinates: {node.name}'
+    links.new(vector, split.inputs[0])
+    combine = nodes.new(Nodes.ShaderNodeCombineXYZ)
+    combine.label = f'VTF clamped UV: {node.name}'
+
+    for axis, should_clamp, size in (
+            ('X', clamp_s, node.image.size[0]),
+            ('Y', clamp_t, node.image.size[1])):
+        output = split.outputs[axis]
+        if should_clamp and size > 0:
+            clamp = nodes.new(Nodes.ShaderNodeClamp)
+            clamp.label = f'VTF clamp {"S" if axis == "X" else "T"}: {node.name}'
+            half_texel = 0.5 / size
+            clamp.inputs['Min'].default_value = half_texel
+            clamp.inputs['Max'].default_value = 1.0 - half_texel
+            links.new(output, clamp.inputs['Value'])
+            output = clamp.outputs[0]
+        links.new(output, combine.inputs[axis])
+    links.new(split.outputs['Z'], combine.inputs['Z'])
+    links.new(combine.outputs[0], node.inputs['Vector'])
+    node['sourceio_vtf_axis_clamp'] = 'S' if clamp_s else 'T'
+
+
+def apply_vtf_sampler_flags(material: bpy.types.Material):
+    """Apply point filtering and independent S/T clamp states from imported VTF metadata.
+
+    Nodes a shader configured with a non-default interpolation, extension, or
+    projection are left alone.
     """
-    for node in material.node_tree.nodes:
-        if node.bl_idname != Nodes.ShaderNodeTexImage or node.image is None:
-            continue
-        flags = node.image.get("sourceio_vtf_flags")
-        if not isinstance(flags, str):
-            continue
-        try:
-            flags = int(flags, 16)
-        except ValueError:
-            continue
-        if flags & VTF_FLAG_POINTSAMPLE and node.interpolation == 'Linear':
-            node.interpolation = 'Closest'
-        clamp_both = VTF_FLAG_CLAMPS | VTF_FLAG_CLAMPT
-        if flags & clamp_both == clamp_both and node.extension == 'REPEAT':
-            node.extension = 'EXTEND'
+    for node in list(material.node_tree.nodes):
+        if node.bl_idname == Nodes.ShaderNodeTexImage:
+            _apply_vtf_sampler_flags_to_node(material, node)
 
 
 class Nodes:

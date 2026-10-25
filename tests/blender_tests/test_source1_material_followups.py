@@ -10,7 +10,11 @@ from SourceIO.blender_bindings.material_loader.material_loader import (
     ShaderRegistry,
     get_or_create_source1_material,
 )
-from SourceIO.blender_bindings.material_loader.shader_base import ALPHA_CLIP_LABEL, ExtraMaterialParameters
+from SourceIO.blender_bindings.material_loader.shader_base import (
+    ALPHA_CLIP_LABEL,
+    ExtraMaterialParameters,
+    apply_vtf_sampler_flags,
+)
 from SourceIO.blender_bindings.material_loader.shaders import source1_shader_base
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
 from SourceIO.blender_bindings.material_loader.shaders.source1_shaders.lightmap_generic import LightmapGeneric
@@ -514,6 +518,63 @@ class PrincipledVertexLitGenericTests(_CleanFile):
         material, _ = self._material('"UnlitGeneric" { "$basetexture" "t/sprite" }')
         node = next(node for node in material.node_tree.nodes if node.bl_idname == 'ShaderNodeTexImage')
         self.assertEqual(node.extension, 'EXTEND')
+
+    def test_vtf_sampler_flags_clamp_one_axis(self):
+        for texture_name, flags, clamped_axis, repeated_axis in (
+                ('clamp_s', 0x4, 'X', 'Y'),
+                ('clamp_t', 0x8, 'Y', 'X')):
+            with self.subTest(texture_name=texture_name):
+                self._fake_texture(texture_name, flags=flags)
+                material, _ = self._material(
+                    f'"UnlitGeneric" {{ "$basetexture" "t/{texture_name}" }}'
+                )
+                texture = next(
+                    node for node in material.node_tree.nodes
+                    if node.bl_idname == 'ShaderNodeTexImage'
+                )
+                combine = texture.inputs['Vector'].links[0].from_node
+                clamp = combine.inputs[clamped_axis].links[0].from_node
+                split = clamp.inputs['Value'].links[0].from_node
+
+                self.assertEqual(texture.extension, 'REPEAT')
+                self.assertEqual(texture['sourceio_vtf_axis_clamp'], texture_name[-1].upper())
+                self.assertEqual(combine.bl_idname, 'ShaderNodeCombineXYZ')
+                self.assertEqual(split.bl_idname, 'ShaderNodeSeparateXYZ')
+                self.assertEqual(clamp.bl_idname, 'ShaderNodeClamp')
+                self.assertAlmostEqual(clamp.inputs['Min'].default_value, 0.125)
+                self.assertAlmostEqual(clamp.inputs['Max'].default_value, 0.875)
+                self.assertEqual(combine.inputs[repeated_axis].links[0].from_node, split)
+                self.assertTrue(split.inputs[0].is_linked)
+
+                clamp_count = sum(
+                    node.bl_idname == 'ShaderNodeClamp'
+                    for node in material.node_tree.nodes
+                )
+                apply_vtf_sampler_flags(material)
+                self.assertEqual(
+                    sum(node.bl_idname == 'ShaderNodeClamp'
+                        for node in material.node_tree.nodes),
+                    clamp_count,
+                )
+
+    def test_one_axis_clamp_propagates_to_full_resolution_alpha_taps(self):
+        self._fake_texture('fence_s', flags=0x4)
+        material, _ = self._material(
+            '"VertexLitGeneric" { "$basetexture" "t/fence_s" "$alphatest" "1" }'
+        )
+        image_nodes = [
+            node for node in material.node_tree.nodes
+            if node.bl_idname == 'ShaderNodeTexImage'
+            and node.image == self._textures['fence_s']
+        ]
+        self.assertEqual(len(image_nodes), 5)
+        self.assertEqual(sum(node.interpolation == 'Closest' for node in image_nodes), 4)
+        for node in image_nodes:
+            self.assertEqual(node['sourceio_vtf_axis_clamp'], 'S')
+            self.assertEqual(
+                node.inputs['Vector'].links[0].from_node.bl_idname,
+                'ShaderNodeCombineXYZ',
+            )
 
 
 class PauseViewLayerUpdateTests(unittest.TestCase):

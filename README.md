@@ -26,6 +26,30 @@ upstream project.
   1 toolchains.
 - Use the same workflows from Blender's UI, drag and drop, or the command line.
 
+## Improvements over upstream
+
+Compared with the upstream baseline this fork started from, it adds:
+
+- **Faster imports:** indexed material/texture caches, byte-preserving texture
+  paths, faster PNG staging, and batched Source 2 aggregate models. Measured
+  warm-cache gates improved TF2 `ctf_2fort` by 49% and fully loaded CS2
+  `de_dust2` by 24%.
+- **Broader Source 2 coverage:** animation groups and graph clips, more texture
+  formats and subresources, VSND audio, CS2 map lighting/skyboxes, and extensive
+  CS2 and Dota 2 shader support.
+- **More accurate materials:** corrected Source 1 phong, Fresnel, envmap, tint,
+  alpha, sampler, and normal-map behavior, plus richer CS2 character, world,
+  blend, decal, and unlit materials.
+- **Editable authoring workflows:** verified static-asset export, official
+  compiler integration, manifests, and recompile for CS2 Workshop Tools and
+  Source 1 toolchains.
+- **Blender 5.2-native packaging and testing:** split-platform extensions,
+  manylinux-compatible binaries, public sample tests, installed-game gates, and
+  official-tool round trips.
+
+See [Changes in this fork](docs/fork-changes.md) and the
+[validation baseline](plan.md) for details and measurements.
+
 ## Installation
 
 SourceIO requires **Blender 5.2 or newer**.

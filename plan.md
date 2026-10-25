@@ -1,179 +1,105 @@
-# SourceIO work plan
+# SourceIO validation baseline
 
-Target: **Blender 5.2.2 LTS only.** Blender 4.x compatibility is dropped.
-Branch: `master` (`dotafeatures` and `feature/flex-controller-modal` are merged).
+This file records current verification and performance evidence. It is not a
+roadmap: all open planned or desired work belongs in [TODO.md](TODO.md).
+Commands and developer setup belong in
+[Development and testing](docs/development.md).
 
-All API claims below were checked against Blender 5.2.2 running headless (`D:/Blender Foundation/Blender 5.2/blender.exe -b`).
+Target: **Blender 5.2.2 LTS only.** Blender 4.x compatibility is intentionally
+not maintained.
 
-## Current work
+Last reconciled: **2026-10-24**.
 
-Start here in a new session. Keep this section current: remove completed items, update the validation baseline, and add concrete follow-ups found along the way. Completed implementation history belongs in the local Git-ignored planning archive (`docs/modernization-history.md`, rounds 1–29) rather than this file; "round N" below refers to its sections.
+## Automated baseline
 
-**Focus.** The primary goal is reliable imports into Blender: correct, editable geometry, armatures, animation, flexes, materials and scene layout. The secondary goal is a straightforward export path (see [TODO.md](TODO.md)). Matching the game renderer one to one (animated surfaces, runtime shader constants, engine-specific fog, exposure and shadow behavior) is out of scope for now. That work, and anything else parked, lives in `docs/deferred-work.md`; move an item back only when it serves one of the two goals.
+| Gate | Current result |
+|---|---|
+| Renamed-module smoke | 635/635 modules; register/unregister/register passed |
+| Public sample imports | 87 pass, 6 known, 0 warn, 0 fail |
+| Non-Blender tests | 567 passed, 5 skipped |
+| Blender tests excluding skins | 276 passed, 2 skipped, 17 warnings, 51 subtests |
+| Blender skin tests | 8 passed |
+| Windows extension package | Built successfully |
 
-State (2026-10-24): [5.14.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/releases/tag/5.14.0-blender5.2) is the current release: 5.13.1 plus Source 1 VTF sprite sheets and metadata with *Export for External Editing* / `extract-vtf` (below). 5.13.1 was 5.13.0 (Dota 2 multiblend, crystal and water shaders, Dota world-layer collections, Source 1 include-model animations by default, CS2 world-node models named after their material) plus the Dota specular fix (round 29: `multiblend` and `global_lit_simple` read g_tSpecular's red as a highlight strength, not F0).
+The end-to-end runners are the primary import gate:
 
-`master` and `origin/master` are ahead of that release with the Source 1 import-speed/material-correctness audit, the manylinux-compatible native library, the widened CS2 static material contract, complete Source 1 static authoring/compiler integration, and deprecation of the legacy export-node prototype. Those changes have passed the baselines below but have not been tagged as a release. TF2 (`E:/SteamLibrary/steamapps/common/Team Fortress 2/tf`), CS2 (`E:/SteamLibrary/steamapps/common/Counter-Strike Global Offensive/game/csgo`; maps ship as `maps/<name>.vpk`), Dota 2 (`E:/SteamLibrary/steamapps/common/dota 2 beta/game/dota`), Dota 2 Workshop Tools, and CS2 Workshop Tools are installed. The Dota compatibility milestone and the first CS2 editable static-authoring/compiler vertical slice passed their installed-tools exit gates and shipped in 5.12.0.
+- `run_renamed_smoke.py` imports every shipped module through an alternate
+  package name and exercises registration lifecycle.
+- `run_sample_imports.py` runs the public hash-verified corpus through the real
+  operators and compares decoded texture pixels.
+- `run_game_imports.py` resolves and imports assets through an installed game's
+  actual search paths.
 
-Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
+Unit and Blender suites cover exact values, node wiring, safety boundaries, and
+formats without representative public samples.
 
-```
-blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 635/635 modules, register/unregister/register OK
-blender -b --factory-startup --python tests/e2e/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
-blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
-blender -b ... run_game_imports.py -- --game "<TF2>/tf" --load-placeholders                                  # 13 PASS; 2fort 2320/2320, badlands 1308/1308, harvest 673/673, upward 1332/1332 placeholders
-blender -b ... run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota --load-placeholders    # 7 PASS; dota 5311/5311 placeholders, 6 excluded collections (the two destruction layers), no unsupported shaders (~313 s alone, ~406 s alongside other runs)
-# Add --save-dir DIR to any run_game_imports.py run to keep one packed .blend per asset for visual review.
-blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<CS2>/game/csgo"            # 12 PASS / 0 WARN / 0 FAIL
-blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota  # 7 PASS / 0 WARN / 0 FAIL; app ID 570
-$env:SOURCEIO_DOTA2_WORKSHOP_ROOT="<Dota2>"; python -m pytest tests/source2_workshop/test_dota_workshop_roundtrip.py -q  # 1 pass; generated model/material/texture compile and re-import
-$env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; python -m pytest tests/source2_workshop/test_cs2_workshop_contract.py -q         # 3 pass; official ModelDoc/FBX/VMAT/TGA contract and re-import
-$env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; blender -b --factory-startup --python-expr "..."                                # 1 pass; Blender-authored color/normal/roughness/metalness/alpha-test compile/re-import
-$env:SOURCEIO_SOURCE1_TOOLCHAIN_ROOT="<TF2>"; python -m pytest tests/source1_toolchain/test_source1_toolchain_contract.py -q  # 1 pass; VTEX/StudioMDL compile, VTF/MDL re-import and manifest recompile
-$env:SOURCEIO_SOURCE1_TOOLCHAIN_ROOT="<TF2>"; blender -b --factory-startup --python-expr "..."                        # 1 pass; Blender-authored Source 1 compile/recompile and geometry/material/texture re-import
-blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s alone); nameless world-node models renamed after their material
-blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
-blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 567 pass, 5 skip (tests/archive left out; installed-tool gates opt out without their environment; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 276 pass, 2 skip, 17 warnings, 51 subtests
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_flex_controllers', argv=['x'], exit=False)"   # 19 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_skins', argv=['x'], exit=False)"   # 8 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_material_paths', argv=['x'], exit=False)"   # 7 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_custom_normals', argv=['x'], exit=False)"   # 3 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 61 pass; 46 shader follow-up tests in six adjacent modules, 107 total
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_source2_dota_materials.py', 'SourceIO/tests/blender_tests/test_source2_materials.py', '-q']))"  # 76 pass, 19 subtests
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 23 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 9 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 8 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_sounds', argv=['x'], exit=False)"   # 2 pass
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import unittest; unittest.main(module='SourceIO.tests.blender_tests.test_source2_exports', argv=['x'], exit=False)"   # 3 pass
-python tools/build_extension.py --blender "D:/Blender Foundation/Blender 5.2/blender.exe" --platform windows-x64       # built
-```
+## Installed-game evidence
 
-Shipped in 5.14.0 (2026-10-15): VTF metadata and sprite sheets. `library/source1/vtf/metadata.py` reads the header and 7.3+ resources (sheet, CRC, LOD, TS0, STR, KVD, Strata hotspot) in Python, since the native module exposes none of them; imported VTF images carry them as `sourceio_vtf_*` properties. *Image > Export for External Editing...* and `blender -c sourceio extract-vtf` (`library/source1/vtf/editable_export.py`) write TGA/PNG, the original `.sht`, per-frame images and a `mksheet` `.mks`. The sprite-sheet dataclasses moved to `library/shared/sprite_sheet.py`, shared with Source 2. Validated outside the suite against TF2's tools: all 273 TF2 sheet VTFs round-trip through `mksheet` with the same sequences, timing and frame pixels, and `vtex` on each exported atlas plus `.sht` reproduces the original sheet resource byte for byte and the pixels exactly (all 273) (`E:/.../Team Fortress 2/bin/mksheet.exe`, `vtex.exe -game <TF2>/tf -outdir ...`). Sheets packed with `packmode rgb+a` (overlapping frames; TF2 has one, `effects/workshop/vistasmokev1`) are flagged, since the sheet does not say which sequences are RGB or alpha; checked against Valve's Animated Particles wiki page and TF2's mksheet, which records no channel flag. Follow-up: TTH/TTZ textures (`import_texture_tth`) are not tagged yet.
+| Profile | Current gate |
+|---|---|
+| Team Fortress 2 | 13 representative model/map assets pass; all placeholders load on `ctf_2fort` (2,320), `cp_badlands` (1,308), `koth_harvest_final` (673), and `pl_upward` (1,332) |
+| Counter-Strike 2 | 12 representative model/map assets pass; `de_dust2` loads 698/698 placeholders and `de_nuke` loads 1,108/1,108; nine default models import all requested graph clips |
+| Dota 2 | 7 representative assets pass with app ID 570; the main world loads 5,311/5,311 placeholders with expected excluded destruction layers |
 
-### Import performance
+These results prove the tested corpora, not complete support for every asset in
+each game.
 
-Set `SOURCEIO_PERF_TRACE=1` before starting Blender to enable the bounded import
-trace. Timers retain aggregates for at most 256 static names rather than every
-sample; the console and the `run_game_imports.py --json` `performance` object
-contain at most the 100 highest-total rows. Timing remains absent from ordinary
-imports.
+## Official-tool gates
 
-Warm-cache installed-game baselines from 2026-10-24:
+| Toolchain | Current gate |
+|---|---|
+| Dota 2 Workshop Tools | Generated static model/material/texture fixture compiles and re-imports |
+| CS2 Workshop Tools | Three format/contract tests plus one Blender-authored base-color/normal/roughness/metalness/alpha-test round trip pass |
+| TF2 VTEX and StudioMDL | Source 1 toolchain contract and Blender-authored compile/recompile round trip pass; MDL/VVD/VTX/VTF outputs re-import |
+| TF2 `mksheet` and VTEX | All 273 shipped sprite-sheet VTFs preserve sequences, timing, frame pixels, and original-sheet bytes through the supported rebuild paths |
 
-- TF2 `ctf_2fort`: 21.72 s wall time. PNG encoding took 13.36 s for 212
-  images; material creation took 13.64 s, almost entirely overlapping that
-  encoding work.
-- CS2 `de_dust2 --load-placeholders`: 289.57 s wall time. Loading 3,803 model
-  instances took 267.69 s; PNG encoding took 97.84 s for 745 unique images.
-  The pass over unused Source 2 textures took 0.001 s across 295 unique
-  materials.
+Generated fixtures and reports may be committed only when redistributable.
+Proprietary game files, tool binaries, compiled outputs, and disposable addons
+remain local.
 
-The first measured optimization now writes temporary import PNGs through
-Blender 5.2's bundled Pillow at compression level 2. L/LA/RGB/RGBA and
-file-backed output round-trip pixel-exactly, and the representative compression
-test stays within 10% of the native encoder's output size. On the same maps:
+## Import performance evidence
 
-- TF2 encoding fell from 13.36 s to 3.46 s (3.9x); total import fell from
-  21.72 s to 11.02 s, 49.3% faster.
-- CS2 encoding fell from 97.84 s to 34.08 s (2.9x); the repeated total import
-  fell from 289.57 s to 268.02 s, 7.4% faster.
+Enable bounded aggregate timings with `SOURCEIO_PERF_TRACE=1`. The installed-game
+runner prints the report and includes it in JSON output. Ordinary imports do not
+capture timings.
 
-The next measured optimization reuses decoded Source 2 vertex/index buffers
-within one model import and loads all selected draw calls from an aggregate
-model together. Rigged aggregates and physics imports retain the previous
-per-draw-call path. On the same CS2 `de_dust2 --load-placeholders` gate:
+Warm-cache measurements from 2026-10-24:
 
-- Model-load calls fell from 3,803 to 672 and combined-buffer construction
-  fell to 629 calls.
-- The repeated total import fell from 268.02 s to 219.68 s, another 18.0%.
-- All 698 placeholders still loaded, with identical object, image, light,
-  collection, mesh and material counts.
+| Corpus | Stage | Wall time | Relevant measured work |
+|---|---|---:|---|
+| TF2 `ctf_2fort` | Initial baseline | 21.72 s | PNG encoding: 13.36 s for 212 images |
+| TF2 `ctf_2fort` | Fast PNG staging | 11.02 s | PNG encoding: 3.46 s; 49.3% total improvement |
+| CS2 `de_dust2 --load-placeholders` | Initial baseline | 289.57 s | PNG encoding: 97.84 s; 3,803 model loads |
+| CS2 `de_dust2 --load-placeholders` | Fast PNG staging | 268.02 s | PNG encoding: 34.08 s |
+| CS2 `de_dust2 --load-placeholders` | Aggregate model reuse | 219.68 s | 672 model loads; all output counts unchanged; another 18.0% improvement |
 
-Skipping unused Source 2 textures would not measurably help this corpus, and the
-Source 1 MDL flex loop is not exercised by a map import.
+The Source 2 unused-texture pass took 0.001 seconds on this `de_dust2` corpus.
+The Source 1 MDL flex loop was not exercised by the map benchmarks. Future
+performance work must start with a representative measurement rather than these
+unexercised hypotheses.
 
-### Import quality (primary)
+Timing regions are nested and must not be added together. Benchmark comparisons
+must retain the game build, import selection, cache state, output counts, and
+JSON report.
 
-1. **Unhandled CS2 entities**: `env_particle_glow`, `hostage_entity`, `point_perfcapture`, team intro points.
-2. **Clip follow-ups** (rounds 9 and 11):
-   - Event markers sit at the start frame only and have no length. The full events, durations included, are kept only as data in the action's `sourceio_events` JSON property (`animation_loader.py`); nothing in the timeline shows a duration or uses the other fields (attachments, sound positions, curves).
-   - Weapon viewmodel clips can't be found from any model: the viewmodel graph pulls them in at runtime through `m_externalGraphSlots` (per-weapon graphs such as `viewmodel_inspects.vnmgraph+ak47.vnmgraph`). The clip importer handles them once extracted; finding them automatically needs whatever ties a weapon to its graphs (item schema or weapon vdata, unverified).
-3. **Flex panel with the armature active** (round 13): the panel and its operators act on `context.object`, so it only shows with the face mesh active. Following an active armature to its flexed child mesh means giving the operators a target object.
+## Validation policy
 
-### Export (secondary)
+Run the smallest gate that directly exercises a change, then expand only where
+the affected surface requires it:
 
-The CS2 static-authoring slice is done (see [TODO.md](TODO.md)): editable
-FBX/VMDL/VMAT/TGA staging, preflight, manifests, File > Export and CLI, optional
-compile, recompile and compiled re-import. Base color, tangent-space normal maps,
-constant or image-driven roughness and metalness, alpha testing, and reuse of an
-existing VMAT use the official texture contracts and have passed the
-Blender-to-Workshop round trip. The Source 1 static-authoring slice now provides
-File > Export and CLI entry points over atomic dual-root
-SMD/QC/VMT/TGA/VTEX-setting staging, schema-v2 manifests, bounded compiler logs,
-verified outputs, and recompile. It preserves evaluated-scene state, uses Source
-1 units without producing an unnecessary FBX, reuses imported VMTs through a
-local Patch, and exposes explicit phong parameters without guessing from PBR
-values. The installed TF2 gate runs VTEX and StudioMDL and re-imports positions,
-UVs, winding, normals, material identity, and texture data. It also locks the
-`VPROJECT` requirement that resolved VTEX's earlier hang. File > Export and the
-CLI are now the one supported authoring path. The experimental export node tree
-is deprecated: its types remain registered so legacy `.blend` files load, but
-new-node discovery and its partial QC evaluator are disabled.
+| Change | Minimum evidence |
+|---|---|
+| Blender-free parser, serializer, or service | Focused tests plus the non-Blender suite |
+| Blender importer, material, animation, or UI integration | Focused Blender tests, full Blender suite, and renamed-module smoke |
+| Game-specific model, map, entity, or shader behavior | Relevant installed-game gate with machine-readable report |
+| Authoring or compiler integration | Focused tests plus the matching official-tool round trip and re-import |
+| Packaging or native-library change | Platform package build and applicable ABI/import checks |
+| Documentation only | Markdown link validation and `git diff --check` |
 
-Skeletal, animated, physics and map authoring are deferred (`docs/deferred-work.md`). Static ModelDoc/Hammer reconstruction stays a separate, explicitly lossy workflow.
+An end-to-end runner fails when import raises, emits an unexpected error, creates
+nothing, or decodes a texture incorrectly. It is not a substitute for focused
+assertions about exact values.
 
-### Needs a UI session
-
-Manual checks that can't run headless; do them in a Blender UI session, not in an agent run.
-
-- **Flex additive slider** (2026-10-12 review fixes): check that dragging a stereo slider commits on release and cancels on Esc/right-click; that a script setting several stereo `value`s in a row applies all of them (each commits the previous session early); and that undo still takes one step per drag (the 5.11.2-flex-controller.1 GUI smoke confirmed this before the review fixes; `reset_flex_deltas` on `undo_post` now also clears any leftover additive value).
-
-### Blocked on assets
-
-- **HL:A light directions** (round 20, no HL:A install): HL:A's `light_spot` and `light_ortho` still use the entity rotation as is, which points them along −Z where the entity points along +X (as the sun did; `_set_light_rotation` fixes that for the others), and `light_spot` takes `outerconeangle` as the full cone (`spot_size = radians(outerconeangle)`, where CS2's omni2 doubles its half angle).
-- **Bone collections for the other builders** (optional, no samples): `mdl36` and `mdl2531` read the same `Bone` struct, so `assign_bone_collections` would work there too, but their flags are unverified. GoldSrc and Source 2 have no USED_BY flags; they could get side colours only.
-- **GoldSrc v4/v6 animations** (suspected, no samples): `load_animations` keys each frame's parent-relative position and rotation straight onto the pose bones, whose rest pose already holds the bind transform, so the two would add up. v10 was made rest-relative in round 2; v4/v6 may need the same.
-- **External mesh morph atlas** (unverified, round 11): `load_external_mesh` resolves `m_pTextureAtlas` against the model resource, as before; it may belong to the mesh or morph set resource. No CS2 or sample model uses this path.
-- **v49 FRAMEANIM against a real model** (round 6): needs a v49 game (CS:GO, L4D2, Portal 2, SFM; CS2 ships only Source 2 content).
-
-Done in round 25, still untested against a real asset: legacy ANIM `MorphChannel` segments become shape-key drivers (`library/source2/animation/animation.py`; `test_source2_animations` covers a synthetic one), and clip float curves (`m_floatCurveIDs`) are decoded as `NmFloatCurve` channels and written as `sourceio:curve:*` properties; no CS2 model or clip has either.
-
-Not needed to import clips: bone masks (`m_maskDefinitions` in a `.vnmskel`) and pose-parameter blending are graph-evaluation features.
-
-## Verification
-
-The end-to-end runners in `tests/e2e/` are the main gate: `run_renamed_smoke.py` (every shipped Python file imported under another package name, then register → unregister → register), `run_sample_imports.py` (every fetched sample through the real operators) and `run_game_imports.py` (models and maps from an installed game). They fail when an import raises, logs an unexpected error, creates nothing or decodes a texture's top mip wrongly; they don't compare counts or values. Every change must pass the smoke test and the unit tests; run the sample, game and Blender suites when the change touches what they cover.
-
-Unit tests that an E2E run already covers move to `tests/archive/` (its README says why each one moved). A plain `pytest SourceIO/tests` leaves the archive out (`tests/conftest.py`); `pytest SourceIO/tests/archive` runs it (2 pass).
-
-Real-asset samples (hash-verified downloads into the git-ignored `samples/`):
-
-```
-"<blender>/5.2/python/bin/python.exe" -I tests/fetch_samples.py
-blender -b --factory-startup --python tests/e2e/run_sample_imports.py -- [--filter TEXT] [--json report.json]
-```
-
-Source 2 resource conformance (round 25; `tests/conformance` runs the same checks under pytest). The fixtures in `tests/fixtures/source2_generated/` are generated locally, not taken from games or VRF's corpus. Rebuild them with `tools/build_source2_fixtures.py` only when the format coverage changes, and update the snapshot with them. The VRF oracle is optional and runs only with an explicit CLI path (`SOURCEIO_VRF_CLI`, optionally pinned by `SOURCEIO_VRF_CLI_SHA256`):
-
-```
-"<blender>/5.2/python/bin/python.exe" tools/source2_conformance.py snapshot    # strict snapshot matched 7 fixtures
-"<blender>/5.2/python/bin/python.exe" tools/source2_conformance.py self-test   # passed: 7 valid, 23 malformed fixtures
-"<blender>/5.2/python/bin/python.exe" tools/vrf_oracle.py state                # unconfigured unless SOURCEIO_VRF_CLI is set
-```
-
-Shaders without a VRF port: `tools/shader_params.py` prints a shader's parameters and defaults; `tools/shader_disasm.py` disassembles its compiled DX11 programs per static/dynamic combo (`--list` first), naming the material constants. It needs the game's `bin/win64` (the zstd dictionary in `materialsystem2.dll`, `d3dcompiler_47.dll`) and runs on Windows only:
-
-```
-"<blender>/5.2/python/bin/python.exe" -I tools/shader_disasm.py --game "<Dota2>/game/dota" --shader crystal --list
-"<blender>/5.2/python/bin/python.exe" -I tools/shader_disasm.py --game "<Dota2>/game/dota" --shader crystal --static 496 --dynamic 35
-```
-
-Command line (`blender -c sourceio`, `blender_bindings/cli.py`): `import`,
-`extract-sound`, `extract-vtf`, the explicitly lossy static reconstructions
-`export-modeldoc` and `export-hammer`, and the supported authoring workflows
-`export-cs2`, `recompile-cs2`, `export-source1`, and `recompile-source1`.
+Update this file only after a gate actually passes. When expected counts change,
+record why in the implementing commit rather than preserving completed history
+here.

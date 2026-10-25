@@ -9,7 +9,8 @@ correctness follow-ups in subsequent `master` commits. The historical
 applied to current `master`. The measurement and PNG-compression items under
 **Recommended next** are now implemented, followed by measured Source 2
 aggregate-model reuse; the other five remain proposals rather than completed
-work.
+work. Their current priority is tracked in [TODO.md](TODO.md); this document
+retains the audit rationale and measurements.
 
 ## How this was checked
 
@@ -23,9 +24,9 @@ This container can't run the full add-on. The bundled Linux `pylib.abi3.so` need
 | Material graphs: 8 VMTs × (Principled, BVLG) built through `ShaderRegistry` | — | only the intended differences (below); BVLG graphs unchanged except sampler flags |
 | Decoded pixels (normal map, ssbump), old in-Blender conversion vs new decode-time conversion | — | bit-identical |
 
-\* The baseline failures are the same on both trees. They come from the stubbed native decoder and compressor, and from suites `plan.md` says to run separately (`test_skins`, flex controllers).
+\* The baseline failures are the same on both trees. They come from the stubbed native decoder and compressor, and from suites [the development guide](docs/development.md) runs separately (`test_skins`, flex controllers).
 
-**Not checked here:** real VTF/VPK decoding, the e2e runners (`tests/e2e/*`) and real game imports. Run the `plan.md` baseline commands on Windows before you merge.
+**Not checked here:** real VTF/VPK decoding, the e2e runners (`tests/e2e/*`) and real game imports. Run the applicable commands from [the development guide](docs/development.md) and compare their results with the [validation baseline](plan.md) before merging.
 
 ### Review follow-ups
 

@@ -26,9 +26,8 @@ the source revisions pinned in `tools/pylib_sources.json`.
 
 ## Test layers
 
-The current command inventory and expected counts are maintained in
-[`plan.md`](../plan.md). Avoid duplicating volatile baseline counts here.
-Run the examples below from the repository root.
+Current expected counts and installed-game evidence are maintained in
+[`plan.md`](../plan.md). Run the examples below from the repository root.
 
 ### Unit and Blender suites
 
@@ -159,10 +158,10 @@ Blender features:
   combinations with valid provenance pass serialization preflight, and writes
   are atomic.
 
-## Planning documents
+## Project documents
 
-- [`plan.md`](../plan.md) contains current priorities, validation baselines, and
-  installed-game evidence.
-- [`TODO.md`](../TODO.md) contains only open authoring work.
+- [`TODO.md`](../TODO.md) is the canonical improvement backlog.
+- [`plan.md`](../plan.md) contains validation baselines, installed-game
+  evidence, and performance measurements.
 - [`AUDIT.md`](../AUDIT.md) records the completed import-speed and
   material-correctness audit plus remaining proposals.

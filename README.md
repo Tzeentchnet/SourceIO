@@ -85,7 +85,7 @@ Import, extraction, authoring, and recompile commands are documented in the
   suites, installed-game gates, and experimental boundaries.
 - [Changes in this fork](docs/fork-changes.md) — modernization background,
   major additions, and notable fixes.
-- [Open authoring backlog](TODO.md) and [current project plan](plan.md).
+- [Improvement backlog](TODO.md) and [validation baseline](plan.md).
 
 ## Scope
 

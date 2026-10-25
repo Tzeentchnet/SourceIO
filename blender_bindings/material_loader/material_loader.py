@@ -50,6 +50,15 @@ def get_or_create_source1_material(name: str, material_path: str | TinyPath, use
     return get_or_create_material(material_name, source1_material_identity(material_path, use_bvlg))
 
 
+@timed
+def _load_unused_source2_textures(handler: Source2ShaderBase, material_resource: CompiledMaterialResource):
+    for unused_texture in handler.unused_textures.copy():
+        texture_path = material_resource.get_texture_property(unused_texture, None)
+        if texture_path is not None and texture_path not in handler.loaded_textures:
+            handler.logger.warn(f"Unused texture {unused_texture} {texture_path}")
+            handler._get_texture(unused_texture, (0, 0, 0, 0), False)
+
+
 def _collect_handlers(*bases) -> dict[str, Type[ShaderBase]]:
     """Map ``SHADER`` name -> handler class for every concrete shader subclass.
 
@@ -80,6 +89,7 @@ class ShaderRegistry:
     )
 
     @classmethod
+    @timed
     def source1_create_nodes(cls, content_manager: ContentManager,
                              material: bpy.types.Material,
                              vmt: VMT,
@@ -119,6 +129,7 @@ class ShaderRegistry:
         return material
 
     @classmethod
+    @timed
     def source2_create_nodes(cls, content_manager: ContentManager,
                              material: bpy.types.Material,
                              material_resource: CompiledMaterialResource,
@@ -143,11 +154,7 @@ class ShaderRegistry:
             logger.debug(f'Failed material: {material.name}')
         unfilter_alpha_clips(material)
         cls.align_nodes(material)
-        for unused_texture in handler.unused_textures.copy():
-            texture_path = material_resource.get_texture_property(unused_texture, None)
-            if texture_path is not None and texture_path not in handler.loaded_textures:
-                handler.logger.warn(f"Unused texture {unused_texture} {texture_path}")
-                handler._get_texture(unused_texture, (0, 0, 0, 0), False)
+        _load_unused_source2_textures(handler, material_resource)
 
     @classmethod
     def _initial_setup(cls, material: bpy.types.Material):

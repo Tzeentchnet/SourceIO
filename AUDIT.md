@@ -6,8 +6,8 @@ Scope: the Blender add-on at `21bf348` (5.14.0), focused on import speed and on 
 `f63bd403`, the review corrections as `b18ddcd8`, and the Linux/material
 correctness follow-ups in subsequent `master` commits. The historical
 `sourceio-audit.patch` review artifact is not distributed and must not be
-applied to current `master`. The seven items under **Recommended next** remain
-proposals rather than completed work.
+applied to current `master`. The measurement item under **Recommended next** is
+now implemented; the other six remain proposals rather than completed work.
 
 ## How this was checked
 
@@ -62,7 +62,7 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 4. **Displacements** (`import_bsp.import_disp`): one object per displacement face, each with up to 6 colour layers written through the legacy `mesh.vertex_colors` API. Merging displacements per material into one mesh, and writing `mesh.color_attributes.new(..., 'FLOAT_COLOR', 'CORNER')` in one `foreach_set` per layer, would cut object count and depsgraph cost on displacement-heavy maps (CS:GO, L4D2).
 5. **Repeated property evaluation in shaders.** VMT properties such as `self.bumpmap` and `self.basetexture` reload (now cheaply) on every access, and `create_nodes` reads them several times. Caching per handler instance (`functools.cached_property`, set up after proxies run) would remove the rest of that work.
 6. **MDL import loops** (`models/mdl49/import_mdl.py` and siblings): the flex loop recomputes `model_vertices = get_slice(...)[vtx_vertices] * scale` for every flex; it can be hoisted out. `mesh_data.update()` right after `from_pydata` repeats work `from_pydata` already did. `mesh.validate()` runs on every mesh even when the source data is well-formed.
-7. **Measure before going further.** `library/utils/perf_sampler.timed` exists. Wrapping `import_materials`, `nodes_iterate` (node arrangement on every material) and per-model mesh building in a map import would show where the remaining time goes.
+7. **Implemented 2026-10-24 — measure before going further.** `SOURCEIO_PERF_TRACE=1` now enables fixed-size aggregate timings for material creation, texture decode/encode, node arrangement, map phases and model mesh construction. The installed-game runner prints at most 100 rows and includes the same bounded data in its JSON report. Warm-cache baselines found PNG encoding, not unused Source 2 textures or Source 1 flex processing, to be the first actionable bottleneck: 13.36 s of 21.72 s for TF2 `ctf_2fort` (212 images), and 97.84 s of 289.57 s for CS2 `de_dust2` with all placeholders loaded (745 images). The unused-texture pass took 0.001 s on `de_dust2`.
 
 ---
 

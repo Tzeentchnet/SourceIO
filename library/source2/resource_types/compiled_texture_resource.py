@@ -12,6 +12,7 @@ from ..interfaces import Diagnostic, DiagnosticSeverity, Maturity, ResourceCapab
 from ...utils import Buffer, MemoryBuffer, TinyPath
 from ...utils.pylib.compression import lz4_decompress, zstd_decompress
 from ...utils.pylib.image import decode_texture
+from ...utils.perf_sampler import timed
 from ..blocks.texture_data import CompressedMip, TextureData, VTexExtraData, \
     VTexFlags, VTexFormat, VTexMipCompression, TextureArtifact, TextureImportSettings, \
     TextureMipLayout, TextureSubresource
@@ -424,6 +425,7 @@ class CompiledTextureResource(CompiledResource):
                     ))
         return tuple(indices), tuple(descriptions)
 
+    @timed
     def get_texture_artifact(
             self,
             settings: TextureImportSettings | None = None,

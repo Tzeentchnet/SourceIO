@@ -26,6 +26,7 @@ from ....library.source1.vmt import VMT
 from ....library.utils import Buffer, TinyPath, path_stem, strip_vmt_extension, SOURCE1_HAMMER_UNIT_TO_METERS
 from ....library.utils.idtech3_shader_parser import parse_shader_materials
 from ....library.utils.math_utilities import convert_rotation_source1_to_blender
+from ....library.utils.perf_sampler import timed
 from ....logger import SourceLogMan, SLogger
 from ...material_loader.material_loader import (
     ShaderRegistry,
@@ -55,6 +56,7 @@ def get_entity_name(entity_data: dict[str, Any]):
     return f'{entity_data.get("targetname", entity_data.get("hammerid", "missing_hammer_id"))}'
 
 
+@timed
 def import_bsp(map_path: TinyPath, buffer: Buffer, content_manager: ContentManager, settings: Source1BSPSettings,
                override_steamappid: Optional[SteamAppId] = None):
     logger = log_manager.get_logger(map_path.name)
@@ -77,6 +79,7 @@ def import_bsp(map_path: TinyPath, buffer: Buffer, content_manager: ContentManag
     import_overlays(bsp, settings, master_collection, logger)
 
 
+@timed
 def import_entities(bsp: VBSPFile, content_manager: ContentManager, settings: Source1BSPSettings,
                     master_collection: bpy.types.Collection, logger: SLogger):
     info = bsp.info
@@ -149,6 +152,7 @@ def import_cubemaps(bsp: VBSPFile, settings: Source1BSPSettings, master_collecti
         parent_collection.objects.link(obj)
 
 
+@timed
 def import_static_props(bsp: VBSPFile, settings: Source1BSPSettings, master_collection: bpy.types.Collection,
                         logger: SLogger):
     gamelump: Optional[GameLump] = bsp.get_lump('LUMP_GAME_LUMP')
@@ -188,6 +192,7 @@ def import_static_props(bsp: VBSPFile, settings: Source1BSPSettings, master_coll
                 parent_collection.objects.link(placeholder)
 
 
+@timed
 def import_materials(bsp: VBSPFile, content_manager: ContentManager, settings: Source1BSPSettings, logger: SLogger):
     if not settings.import_textures:
         return
@@ -304,6 +309,7 @@ def get_texture_data(tex_info: TextureInfo, bsp: VBSPFile) -> Optional[TextureDa
     return None
 
 
+@timed
 def import_disp(bsp: VBSPFile, settings: Source1BSPSettings,
                 master_collection: bpy.types.Collection, logger: SLogger):
     disp_info_lump: Optional[DispInfoLump] = bsp.get_lump('LUMP_DISPINFO')

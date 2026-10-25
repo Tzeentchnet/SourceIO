@@ -34,7 +34,7 @@ $env:SOURCEIO_SOURCE1_TOOLCHAIN_ROOT="<TF2>"; blender -b --factory-startup --pyt
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s alone); nameless world-node models renamed after their material
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 563 pass, 5 skip (tests/archive left out; installed-tool gates opt out without their environment; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 567 pass, 5 skip (tests/archive left out; installed-tool gates opt out without their environment; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 271 pass, 2 skip, 17 warnings, 47 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
@@ -54,6 +54,28 @@ python tools/build_extension.py --blender "D:/Blender Foundation/Blender 5.2/ble
 ```
 
 Shipped in 5.14.0 (2026-10-15): VTF metadata and sprite sheets. `library/source1/vtf/metadata.py` reads the header and 7.3+ resources (sheet, CRC, LOD, TS0, STR, KVD, Strata hotspot) in Python, since the native module exposes none of them; imported VTF images carry them as `sourceio_vtf_*` properties. *Image > Export for External Editing...* and `blender -c sourceio extract-vtf` (`library/source1/vtf/editable_export.py`) write TGA/PNG, the original `.sht`, per-frame images and a `mksheet` `.mks`. The sprite-sheet dataclasses moved to `library/shared/sprite_sheet.py`, shared with Source 2. Validated outside the suite against TF2's tools: all 273 TF2 sheet VTFs round-trip through `mksheet` with the same sequences, timing and frame pixels, and `vtex` on each exported atlas plus `.sht` reproduces the original sheet resource byte for byte and the pixels exactly (all 273) (`E:/.../Team Fortress 2/bin/mksheet.exe`, `vtex.exe -game <TF2>/tf -outdir ...`). Sheets packed with `packmode rgb+a` (overlapping frames; TF2 has one, `effects/workshop/vistasmokev1`) are flagged, since the sheet does not say which sequences are RGB or alpha; checked against Valve's Animated Particles wiki page and TF2's mksheet, which records no channel flag. Follow-up: TTH/TTZ textures (`import_texture_tth`) are not tagged yet.
+
+### Import performance
+
+Set `SOURCEIO_PERF_TRACE=1` before starting Blender to enable the bounded import
+trace. Timers retain aggregates for at most 256 static names rather than every
+sample; the console and the `run_game_imports.py --json` `performance` object
+contain at most the 100 highest-total rows. Timing remains absent from ordinary
+imports.
+
+Warm-cache installed-game baselines from 2026-10-24:
+
+- TF2 `ctf_2fort`: 21.72 s wall time. PNG encoding took 13.36 s for 212
+  images; material creation took 13.64 s, almost entirely overlapping that
+  encoding work.
+- CS2 `de_dust2 --load-placeholders`: 289.57 s wall time. Loading 3,803 model
+  instances took 267.69 s; PNG encoding took 97.84 s for 745 unique images.
+  The pass over unused Source 2 textures took 0.001 s across 295 unique
+  materials.
+
+These measurements select the PNG encoder's default compression work as the
+first optimization. Skipping unused Source 2 textures would not measurably help
+this corpus, and the Source 1 MDL flex loop is not exercised by a map import.
 
 ### Import quality (primary)
 

@@ -17,6 +17,7 @@ from ....library.source2.resource_types import CompiledManifestResource
 from ....library.source2.resource_types.compiled_world_resource import CompiledEntityLumpResource, \
     CompiledMapResource
 from ....library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
+from ....library.utils.perf_sampler import timed
 from ....library.utils.tiny_path import TinyPath
 from ....logger import SourceLogMan
 from ...exporting.source2.provenance import (
@@ -84,6 +85,7 @@ def get_entity_name(entity_data: dict[str, Any]):
     return f'{entity_data.get("targetname", entity_data.get("hammeruniqueid", "missing_hammer_id"))}'
 
 
+@timed
 def load_map(map_resource: CompiledMapResource, cm: ContentManager, scale: float = SOURCE2_HAMMER_UNIT_TO_METERS,
              texture_settings: TextureImportSettings | None = None, *, source_container=None):
     world_resource = find_world(map_resource, cm)
@@ -123,6 +125,7 @@ def cheap_path_check(resource_id: str | int, content_manager: ContentManager, re
     return resource.get_child_resource_path(resource_id)
 
 
+@timed
 def import_world(world_resource: CompiledWorldResource, map_resource: CompiledMapResource,
                  content_manager: ContentManager, scale=SOURCE2_HAMMER_UNIT_TO_METERS,
                  texture_settings: TextureImportSettings | None = None, *, source_container=None):
@@ -149,6 +152,7 @@ def import_world(world_resource: CompiledWorldResource, map_resource: CompiledMa
         load_skyboxes(world_resource, master_collection, scale, content_manager, texture_settings)
 
 
+@timed
 def load_world_nodes(world_resource: CompiledWorldResource, map_resource: CompiledMapResource,
                      content_manager: ContentManager, master_collection: bpy.types.Collection, scale: float):
     data_block = world_resource.data_block
@@ -352,6 +356,7 @@ def iter_entity_lumps(world_resource: CompiledWorldResource,
         yield from walk(world_resource.get_child_resource(entity_lump, cm, CompiledEntityLumpResource))
 
 
+@timed
 def load_entities(world_resource: CompiledWorldResource, collection: bpy.types.Collection,
                   scale: float, cm: ContentManager, skipped_classes: frozenset[str] = frozenset(),
                   texture_settings: TextureImportSettings | None = None):
@@ -376,6 +381,7 @@ def load_entities(world_resource: CompiledWorldResource, collection: bpy.types.C
     return diagnostics.to_dict()
 
 
+@timed
 def load_skyboxes(world_resource: CompiledWorldResource, collection: bpy.types.Collection,
                   scale: float, cm: ContentManager,
                   texture_settings: TextureImportSettings | None = None):

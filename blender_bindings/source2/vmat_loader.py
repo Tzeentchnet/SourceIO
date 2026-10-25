@@ -9,9 +9,10 @@ from ...library.source2.blocks.texture_data import TextureImportSettings
 from ...library.source2.compiled_shader import CompiledShaderMetadata
 from ...library.utils.tiny_path import TinyPath
 from ...library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
+from ...library.utils.perf_sampler import timed
 
 
-
+@timed
 def load_material(content_manager: ContentManager, material_resource: CompiledMaterialResource, material_path: TinyPath,
                   tinted: bool = False, texture_settings: TextureImportSettings | None = None,
                   shader_metadata: CompiledShaderMetadata | None = None,

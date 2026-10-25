@@ -27,6 +27,7 @@ from ...library.source2.keyvalues3.types import NullObject, Object
 from ...library.source2.exceptions import MissingBlock
 from ...library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from ...library.utils.path_utilities import path_stem
+from ...library.utils.perf_sampler import timed
 from ...library.source2.compiled_resource import DATA_BLOCK
 from ...library.utils.tiny_path import TinyPath
 from .animation_loader import import_animations
@@ -111,6 +112,7 @@ class ImportContext:
     texture_settings: TextureImportSettings = field(default_factory=TextureImportSettings)
 
 
+@timed
 def load_model(content_manager: ContentManager, resource: CompiledModelResource, import_contex: ImportContext):
     provenance_payload = build_resource_import_payload(
         resource,
@@ -195,6 +197,7 @@ def create_armature(content_manager: ContentManager, resource: CompiledModelReso
     return armature_obj
 
 
+@timed
 def create_meshes(content_manager: ContentManager, model_resource: CompiledModelResource, container: ModelContainer,
                   import_contex: ImportContext) -> list[bpy.types.Object]:
     lod_mask = unpack("Q", pack("q", import_contex.lod_mask))[0]
@@ -290,6 +293,7 @@ def _load_morph_texture(content_manager: ContentManager, model_resource: Compile
     return texture
 
 
+@timed
 def load_internal_mesh(content_manager: ContentManager, model_resource: CompiledModelResource,
                        container: ModelContainer, mesh_info: Object, import_context: ImportContext
                        ):
@@ -316,6 +320,7 @@ def load_internal_mesh(content_manager: ContentManager, model_resource: Compiled
     return None
 
 
+@timed
 def load_external_mesh(content_manager: ContentManager, model_resource: CompiledModelResource,
                        container: ModelContainer, mesh_id: int, mesh_resource: CompiledMeshResource,
                        import_context: ImportContext

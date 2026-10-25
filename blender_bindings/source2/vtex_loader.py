@@ -6,6 +6,7 @@ from ..utils.texture_utils import (
     create_texture_from_encoded_image,
 )
 from ...library.source2.blocks.texture_data import TextureImportSettings
+from ...library.utils.perf_sampler import timed
 from ...library.utils.tiny_path import TinyPath
 from ...library.source2.resource_types import CompiledTextureResource
 from ...logger import SourceLogMan
@@ -20,6 +21,7 @@ def texture_settings_from_scene(scene) -> TextureImportSettings:
     )
 
 
+@timed
 def import_texture(
         resource: CompiledTextureResource,
         texture_path: TinyPath,

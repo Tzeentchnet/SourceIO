@@ -23,9 +23,12 @@ creep model that has or references animations must import at least one action.
 matching Source 2 animation-graph clips and implies --include-animations; "*" can import thousands.
 --save keeps the scene the last import left. Results use the same basic PASS/WARN/FAIL rules as
 run_sample_imports.py plus profile-specific minimum assertions; exit code is 1 if anything failed.
+Set SOURCEIO_PERF_TRACE=1 before starting Blender to print bounded aggregate import timings and include
+them in the JSON report's optional ``performance`` object.
 """
 import argparse
 import hashlib
+import importlib
 import json
 import re
 import sys
@@ -516,6 +519,8 @@ def main() -> int:
         return 1
 
     samples.load_addon()
+    perf_sampler = importlib.import_module(f"{samples.REPO_ROOT.name}.library.utils.perf_sampler")
+    perf_sampler.reset_stats()
     profile, app_id = detect_profile(args.game)
     if args.expect_profile and (profile is None or profile.key != args.expect_profile):
         actual = profile.key if profile else f"unknown app ID {app_id}"
@@ -605,9 +610,12 @@ def main() -> int:
 
     summary = {status: sum(1 for r in results if r["status"] == status) for status in ("PASS", "WARN", "FAIL")}
     print(f"GAME SUMMARY {summary}")
+    performance = perf_sampler.snapshot_stats()
+    if performance["enabled"]:
+        perf_sampler.print_stats()
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps({
+        report_data = {
             "schema": "sourceio.game-import-report",
             "schema_version": 1,
             "installation": installation_report(args.game, profile, app_id),
@@ -622,7 +630,10 @@ def main() -> int:
             },
             "summary": summary,
             "results": results,
-        }, indent=2))
+        }
+        if performance["enabled"]:
+            report_data["performance"] = performance
+        args.json.write_text(json.dumps(report_data, indent=2))
     if args.save:
         bpy.ops.wm.save_as_mainfile(filepath=str(args.save.resolve()))
     return 1 if summary["FAIL"] else 0

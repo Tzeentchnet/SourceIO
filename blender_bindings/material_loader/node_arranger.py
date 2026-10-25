@@ -1,6 +1,9 @@
 from collections import OrderedDict
 from itertools import repeat
 
+from ...library.utils.perf_sampler import timed
+
+
 class values:
     average_y = 0
     x_last = 0
@@ -26,6 +29,7 @@ def outputnode_search(ntree):  # return node/None
 
 
 ###############################################################
+@timed
 def nodes_iterate(ntree, arrange=True):
     nodeoutput = outputnode_search(ntree)
     if nodeoutput is None:

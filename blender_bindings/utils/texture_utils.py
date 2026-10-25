@@ -7,6 +7,7 @@ import bpy
 import numpy as np
 
 from ...library.utils.pylib.image import save_exr, save_png, encode_exr, encode_png
+from ...library.utils.perf_sampler import timed, timed_region
 from .id_index import id_collection_state, id_collection_state_after_add
 from ...library.utils.tiny_path import TinyPath
 from ...logger import SourceLogMan
@@ -292,6 +293,7 @@ def setup_image_sequence_node(texture_node: bpy.types.Node, frame_count: int, fr
         texture_node['source_frame_rate'] = frame_rate
 
 
+@timed
 def create_texture_from_encoded_image(
         texture_path: TinyPath,
         data: bytes,
@@ -312,7 +314,8 @@ def create_texture_from_encoded_image(
         logger.info(f"Save {texture_path.as_posix()!r} texture to disc: {save_path}")
     else:
         image = bpy.data.images.new(_variant_image_name(texture_path, cache_identity), width=1, height=1)
-        image.pack(data=data, data_len=len(data))
+        with timed_region("texture.pack_encoded"):
+            image.pack(data=data, data_len=len(data))
         image.source = 'FILE'
         logger.info(f"Save {texture_path.as_posix()!r} texture to memory")
     image.alpha_mode = 'CHANNEL_PACKED'
@@ -322,6 +325,7 @@ def create_texture_from_encoded_image(
     return image
 
 
+@timed
 def create_and_cache_texture(
         texture_path: TinyPath,
         data: np.ndarray,
@@ -366,16 +370,19 @@ def create_and_cache_texture(
         logger.info(f"Save {texture_path.as_posix()!r} texture to disc: {save_path}")
     else:
         if is_hdr:
-            image_data = encode_exr(data.tobytes(), width, height, channels)
+            with timed_region("texture.encode_exr"):
+                image_data = encode_exr(data.tobytes(), width, height, channels)
         else:
-            image_data = encode_png(byte_data.tobytes(), width, height, channels)
+            with timed_region("texture.encode_png"):
+                image_data = encode_png(byte_data.tobytes(), width, height, channels)
         image = bpy.data.images.new(
             _variant_image_name(texture_path, cache_identity),
             width=1,
             height=1,
             float_buffer=is_hdr,
         )
-        image.pack(data=image_data, data_len=len(image_data))
+        with timed_region("texture.pack_encoded"):
+            image.pack(data=image_data, data_len=len(image_data))
         image.source = 'FILE'
         image.alpha_mode = 'CHANNEL_PACKED'
         logger.info(f"Save {texture_path.as_posix()!r} texture to memory")

@@ -154,6 +154,7 @@ class Source2ShaderBase(ShaderBase):
         return None
 
 
+    @timed
     def _get_texture(self, slot_name: str, default_color: tuple[float, float, float, float],
                      is_data=False,
                      invert_y: bool = False):
@@ -236,6 +237,7 @@ class Source2ShaderBase(ShaderBase):
         self.connect_nodes(translucent.outputs[0], add_shader.inputs[1])
         self.connect_nodes(add_shader.outputs[0], surface_input)
 
+    @timed
     def load_texture_or_default(self, name_or_id: Union[str, int], default_color: tuple = (1.0, 1.0, 1.0, 1.0),
                                 invert_y: bool = False):
         self.loaded_textures.add(name_or_id)
@@ -316,6 +318,7 @@ class Source2ShaderBase(ShaderBase):
         image['normalmap_converted'] = True
         return image, roughness_texture
 
+    @timed
     def load_texture(self, texture_resource: Optional[CompiledTextureResource], texture_path, invert_y: bool = False):
         if texture_resource is not None:
             settings = self.texture_import_settings.with_invert_y(

@@ -25,6 +25,7 @@ from ....library.shared.content_manager import ContentManager
 from ....library.shared.content_manager.provider import ContentProvider
 from ....library.utils.common import get_slice
 from ....library.utils.path_utilities import path_stem
+from ....library.utils.perf_sampler import timed
 from ....logger import SourceLogMan
 #from string import ascii_lowercase
 
@@ -33,6 +34,7 @@ logger = log_manager.get_logger('Source1::ModelLoader')
 
 
 
+@timed
 def import_model(content_manager: ContentManager, mdl: MdlV49, vtx: Vtx, vvd: Vvd,
                  options: ModelOptions):
     full_material_names = get_model_material_names(content_manager, mdl)

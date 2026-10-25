@@ -152,7 +152,7 @@ def test_cs2_static_authoring_golden_contract():
     }
 
     assert contract["schema"] == "sourceio.cs2-static-authoring-contract"
-    assert contract["schema_version"] == 2
+    assert contract["schema_version"] == 3
     assert contract["addon_layout"] == {
         "content": "content/csgo_addons/{addon}",
         "game": "game/csgo_addons/{addon}",
@@ -203,6 +203,10 @@ def test_cs2_static_authoring_golden_contract():
     )
     assert (
         f'TextureNormal "{paths["normal_source_texture"].as_posix()}"'
+        in material_text
+    )
+    assert (
+        f'TextureRoughness "{paths["roughness_source_texture"].as_posix()}"'
         in material_text
     )
     render_mesh_text = (_FIXTURE_DIRECTORY / "sourceio.fbx").read_text(
@@ -267,6 +271,9 @@ def test_cs2_workshop_static_contract_roundtrip():
         target.content_path(paths["normal_source_texture"]).write_bytes(
             _fixture_tga(((128, 128, 255, 255), (128, 128, 255, 255)))
         )
+        target.content_path(paths["roughness_source_texture"]).write_bytes(
+            _fixture_tga(((64, 64, 64, 255), (64, 64, 64, 255)))
+        )
 
         runner = ResourceCompilerRunner(
             target,
@@ -320,6 +327,15 @@ def test_cs2_workshop_static_contract_roundtrip():
             pixels, resolution = texture.get_texture_data(0)
             assert resolution == (4, 4)
             assert tuple(pixels.shape) == (4, 4, 4)
+            if parameter == "g_tNormal":
+                assert float(pixels[..., 3].min()) == pytest.approx(
+                    64 / 255,
+                    abs=0.03,
+                )
+                assert float(pixels[..., 3].max()) == pytest.approx(
+                    64 / 255,
+                    abs=0.03,
+                )
 
         model_path = paths["modeldoc"].compiled()
         model = CompiledModelResource.from_buffer(

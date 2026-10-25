@@ -182,14 +182,64 @@ def test_cs2_backend_authors_normal_texture(tmp_path):
     )
 
 
-def test_cs2_backend_keeps_roughness_texture_blocked(tmp_path):
+def test_cs2_backend_authors_roughness_texture(tmp_path):
     target = _target(tmp_path)
+    roughness_payload = solid_color_tga((0.25, 0.25, 0.25, 1.0))
     material = AuthoringMaterial(
         "painted",
         textures=(
             AuthoringTexture(
                 "painted_roughness",
                 TextureRole.ROUGHNESS,
+                roughness_payload,
+                extension=".tga",
+                srgb=False,
+            ),
+        ),
+    )
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+
+    files = {artifact.path.as_posix(): artifact.payload for artifact in output.artifacts}
+
+    assert not output.report.has_errors
+    assert files["materials/sourceio/textures/painted_roughness.tga"] == roughness_payload
+    assert (
+        'TextureRoughness "materials/sourceio/textures/painted_roughness.tga"'
+        in files["materials/sourceio/painted.vmat"]
+    )
+
+
+def test_cs2_backend_authors_constant_roughness_as_texture(tmp_path):
+    target = _target(tmp_path)
+    material = AuthoringMaterial("painted", roughness=0.25)
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+    files = {artifact.path.as_posix(): artifact.payload for artifact in output.artifacts}
+
+    assert not output.report.has_errors
+    roughness_path = "materials/sourceio/textures/painted_roughness.tga"
+    assert files[roughness_path][18:22] == bytes((64, 64, 64, 255))
+    assert (
+        f'TextureRoughness "{roughness_path}"'
+        in files["materials/sourceio/painted.vmat"]
+    )
+
+
+def test_cs2_backend_keeps_metalness_texture_blocked(tmp_path):
+    target = _target(tmp_path)
+    material = AuthoringMaterial(
+        "painted",
+        textures=(
+            AuthoringTexture(
+                "painted_metallic",
+                TextureRole.METALLIC,
                 solid_color_tga((0.5, 0.5, 0.5, 1.0)),
                 extension=".tga",
             ),

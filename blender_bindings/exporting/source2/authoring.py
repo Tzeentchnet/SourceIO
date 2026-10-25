@@ -142,7 +142,12 @@ def _normal_image(socket):
     return image if image is not None else False
 
 
-def _encode_image_tga(image, *, invert_green: bool = False) -> bytes:
+def _encode_image_tga(
+        image,
+        *,
+        srgb: bool = False,
+        invert_green: bool = False,
+) -> bytes:
     width, height = (int(value) for value in image.size)
     if width <= 0 or height <= 0:
         raise ValueError(f'Cannot author unloaded image "{image.name}"')
@@ -151,7 +156,7 @@ def _encode_image_tga(image, *, invert_green: bool = False) -> bytes:
     pixels = pixels.reshape(height, width, 4)
     if invert_green:
         pixels[..., 1] = 1.0 - pixels[..., 1]
-    elif not image.colorspace_settings.is_data:
+    if srgb:
         rgb = np.clip(pixels[..., :3], 0.0, None)
         pixels[..., :3] = np.where(
             rgb <= 0.0031308,
@@ -258,7 +263,10 @@ def _extract_principled_material(
         textures.append(AuthoringTexture(
             texture_name,
             role,
-            _encode_image_tga(image),
+            _encode_image_tga(
+                image,
+                srgb=role == TextureRole.BASE_COLOR,
+            ),
             extension=".tga",
             srgb=role == TextureRole.BASE_COLOR,
         ))
@@ -299,6 +307,7 @@ def _extract_principled_material(
                 TextureRole.NORMAL,
                 _encode_image_tga(
                     image,
+                    srgb=False,
                     invert_green=True,
                 ),
                 extension=".tga",

@@ -79,6 +79,7 @@ def serialize_vmat(
         color_texture: ContentRelativePath,
         *,
         normal_texture: ContentRelativePath | None = None,
+        roughness_texture: ContentRelativePath | None = None,
         shader: str = "csgo_complex.vfx",
 ) -> str:
     tint = " ".join(
@@ -94,6 +95,8 @@ def serialize_vmat(
     ]
     if normal_texture is not None:
         lines.append(f"    TextureNormal {_quoted(normal_texture.as_posix())}")
+    if roughness_texture is not None:
+        lines.append(f"    TextureRoughness {_quoted(roughness_texture.as_posix())}")
     lines.extend(("}", ""))
     return "\n".join(lines)
 
@@ -240,12 +243,16 @@ class CS2AuthoringBackend:
                 )
             unsupported_roles = sorted(
                 role.value for role in textures
-                if role not in {TextureRole.BASE_COLOR, TextureRole.NORMAL}
+                if role not in {
+                    TextureRole.BASE_COLOR,
+                    TextureRole.NORMAL,
+                    TextureRole.ROUGHNESS,
+                }
             )
             if unsupported_roles:
                 loss_report.record(
                     "authoring.cs2.material.texture_unsupported",
-                    "The validated CS2 slice currently authors base-color and normal textures.",
+                    "The validated CS2 slice currently authors base-color, normal, and roughness textures.",
                     severity=DiagnosticSeverity.ERROR,
                     loss_kind=LossKind.DEFERRED,
                     details={
@@ -253,10 +260,10 @@ class CS2AuthoringBackend:
                         "roles": unsupported_roles,
                     },
                 )
-            if material.metallic != 0.0 or material.roughness != 0.5:
+            if material.metallic != 0.0:
                 loss_report.record(
                     "authoring.cs2.material.scalar_pbr_unsupported",
-                    "Non-default metallic and roughness values are outside the validated CS2 slice.",
+                    "Non-default metallic values are outside the validated CS2 slice.",
                     severity=DiagnosticSeverity.ERROR,
                     loss_kind=LossKind.DEFERRED,
                     details={"material": material_name},
@@ -315,6 +322,26 @@ class CS2AuthoringBackend:
                 if normal_texture is not None
                 else None
             )
+            roughness_texture = textures.get(TextureRole.ROUGHNESS)
+            if roughness_texture is not None:
+                roughness_source_path = stage_texture(
+                    roughness_texture.name,
+                    roughness_texture.payload,
+                    roughness_texture.extension,
+                )
+            elif material.roughness != 0.5:
+                roughness_source_path = stage_texture(
+                    f"{material_name}_{TextureRole.ROUGHNESS.value}",
+                    solid_color_tga((
+                        material.roughness,
+                        material.roughness,
+                        material.roughness,
+                        1.0,
+                    )),
+                    contract.source_texture_suffix if contract is not None else ".tga",
+                )
+            else:
+                roughness_source_path = None
 
             if contract is not None and contract.source_texture_is_compiler_input:
                 loss_report.record(
@@ -334,6 +361,7 @@ class CS2AuthoringBackend:
                     material,
                     color_source_path,
                     normal_texture=normal_source_path,
+                    roughness_texture=roughness_source_path,
                     shader=contract.material_shader if contract is not None else "csgo_complex.vfx",
                 ),
             ))

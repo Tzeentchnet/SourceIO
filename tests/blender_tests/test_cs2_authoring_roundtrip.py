@@ -101,6 +101,18 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             normal_map.outputs["Normal"],
             principled.inputs["Normal"],
         )
+        roughness_image = bpy.data.images.new(
+            "sourceio_roughness",
+            width=4,
+            height=4,
+        )
+        roughness_image.pixels[:] = (0.25, 0.25, 0.25, 1.0) * 16
+        roughness_texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+        roughness_texture.image = roughness_image
+        material.node_tree.links.new(
+            roughness_texture.outputs["Color"],
+            principled.inputs["Roughness"],
+        )
         mesh.materials.append(material)
         obj = bpy.data.objects.new("sourceio_mesh", mesh)
         bpy.context.scene.collection.objects.link(obj)
@@ -169,6 +181,8 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             pixels, size = compiled_texture.get_texture_data()
             assert size == (4, 4)
             assert np.allclose(pixels[..., :3], expected_rgb, atol=0.03)
+            if parameter == "g_tNormal":
+                assert np.allclose(pixels[..., 3], 0.25, atol=0.03)
 
         compiled_model = _compiled_resource(CompiledModelResource, model_path)
         assert compiled_model.get_name().endswith(

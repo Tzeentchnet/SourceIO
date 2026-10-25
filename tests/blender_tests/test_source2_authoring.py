@@ -288,6 +288,35 @@ class Source2AuthoringAdapterTests(unittest.TestCase):
             {item.code for item in report},
         )
 
+    def test_principled_roughness_map_is_extracted_as_data(self):
+        obj = self.mesh_object()
+        material = self.principled_material()
+        principled = material.node_tree.nodes["Principled BSDF"]
+        image = bpy.data.images.new("roughness", width=1, height=1)
+        image.pixels[:] = (0.2, 0.2, 0.2, 1.0)
+        texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+        texture.image = image
+        material.node_tree.links.new(
+            texture.outputs["Color"],
+            principled.inputs["Roughness"],
+        )
+        obj.data.materials.append(material)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+
+        models, report = extract_authoring_models(
+            bpy.context,
+            self.request(),
+            fbx_exporter=lambda path: path.write_bytes(b"fbx"),
+        )
+
+        self.assertFalse(report.has_errors)
+        textures = models[0].materials[0].textures
+        self.assertEqual(len(textures), 1)
+        self.assertEqual(textures[0].role, TextureRole.ROUGHNESS)
+        self.assertFalse(textures[0].srgb)
+        self.assertEqual(textures[0].payload[18:22], bytes((51, 51, 51, 255)))
+
     def test_unsupported_procedural_graph_blocks_before_fbx_export(self):
         obj = self.mesh_object()
         material = self.principled_material()

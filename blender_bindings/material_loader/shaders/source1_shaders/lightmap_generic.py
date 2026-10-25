@@ -515,55 +515,14 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
             self.connect_nodes(alpha_output, invert.inputs['Color'])
             mask_output = invert.outputs['Color']
 
-        # $envmaptint / $envmapcontrast / $envmapsaturation all scale the
-        # reflection's *brightness and colour*, not its sharpness:
-        #
-        #   specularLighting *= g_EnvmapTint;
-        #   specularLighting  = lerp( spec, spec*spec, g_EnvmapContrast );
-        #   greyScale         = dot( spec, (0.299, 0.587, 0.114) );
-        #   specularLighting  = lerp( greyScale, spec, g_EnvmapSaturation );
-        #
-        # Since Principled has no cubemap input, collapse them into a single
-        # brightness scale on the specular strength plus a tint colour. Working in
-        # luminance keeps `lerp(c, c*c, contrast)` meaningful: squaring a value
-        # below 1 *darkens* it, so high contrast means a dimmer, punchier
-        # reflection -- not a glossier one.
-        tint = self.envmaptint or [1.0, 1.0, 1.0, 1.0]
-        luma = 0.299 * tint[0] + 0.587 * tint[1] + 0.114 * tint[2]
-
-        contrast = self.clamp_value(self.envmapcontrast)
-        if contrast:
-            # lerp( luma, luma^2, contrast )
-            luma = luma * (1.0 - contrast) + (luma * luma) * contrast
-
-        strength *= self.clamp_value(luma)
-        shader_tint = tint
-
-        saturation = self.envmapsaturation
-        if saturation != 1.0:
-            # lerp( greyScale, colour, saturation ) -- desaturate the tint toward
-            # its own luminance.
-            grey = 0.299 * tint[0] + 0.587 * tint[1] + 0.114 * tint[2]
-            shader_tint = [c * saturation + grey * (1.0 - saturation) for c in tint[:3]] + [1.0]
-
-        if mask_output is not None:
-            # specularFactor is a per-pixel multiplier on the reflection, so scale
-            # the constant strength by the mask: Mix(Fac=mask, A=0, B=strength).
-            mask_scale = self.create_node(Nodes.ShaderNodeMix, 'envmapmask')
-            mask_scale.data_type = 'FLOAT'
-            self.connect_nodes(mask_output, mask_scale.inputs['Factor'])
-            mask_scale.inputs['A'].default_value = 0.0
-            mask_scale.inputs['B'].default_value = self.clamp_value(strength)
-            self.connect_nodes(mask_scale.outputs[0], shader.inputs[spec_input])
-        else:
-            shader.inputs[spec_input].default_value = self.clamp_value(strength)
-
-        if 'Specular Tint' in shader.inputs and tuple(shader_tint[:3]) != (1.0, 1.0, 1.0):
-            # Normalise so the tint carries hue only; brightness already went into
-            # the strength above and would otherwise be applied twice.
-            peak = max(shader_tint[:3])
-            if peak > 0.0:
-                shader.inputs['Specular Tint'].default_value = [c / peak for c in shader_tint[:3]] + [1.0]
+        self._apply_principled_envmap(
+            shader,
+            mask_output,
+            strength,
+            self.envmaptint,
+            self.envmapcontrast,
+            self.envmapsaturation,
+        )
 
 
 class WorldVertexTransition(LightmapGeneric):

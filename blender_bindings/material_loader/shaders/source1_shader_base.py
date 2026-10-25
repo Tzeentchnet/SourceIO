@@ -1,7 +1,7 @@
 import bpy
 import numpy as np
 
-from ..shader_base import ShaderBase
+from ..shader_base import Nodes, ShaderBase
 from ...utils.texture_utils import check_texture_cache
 from ....library.shared.content_manager import ContentManager
 from ...source1.vtf import import_animated_texture, import_texture, import_texture_tth, tag_vtf_metadata
@@ -61,6 +61,43 @@ class Source1ShaderBase(ShaderBase):
             image.colorspace_settings.is_data = True
             image.colorspace_settings.name = 'Non-Color'
         return image
+
+    def _apply_principled_envmap(self, shader, mask_output, strength: float, tint,
+                                 contrast: float = 0.0, saturation: float = 1.0):
+        """Approximate a Source cubemap with the Principled specular lobe."""
+        strength = self.clamp_value(strength, 0.0, 1.0)
+        contrast = self.clamp_value(contrast, 0.0, 1.0)
+        tint = self.ensure_length(tint or (1.0, 1.0, 1.0), 4, 1.0)
+        tint_luma = tint[0] * 0.299 + tint[1] * 0.587 + tint[2] * 0.114
+        luma = tint_luma
+        if contrast:
+            luma = luma * (1.0 - contrast) + (luma * luma) * contrast
+        strength *= self.clamp_value(luma)
+
+        shader_tint = tint
+        if saturation != 1.0:
+            shader_tint = [
+                component * saturation + tint_luma * (1.0 - saturation)
+                for component in tint[:3]
+            ] + [1.0]
+
+        specular_input = shader.inputs['Specular IOR Level']
+        if mask_output is None:
+            specular_input.default_value = strength
+        else:
+            mask_mix = self.create_node(Nodes.ShaderNodeMix, 'envmapmask')
+            mask_mix.data_type = 'FLOAT'
+            mask_mix.inputs['A'].default_value = 0.0
+            mask_mix.inputs['B'].default_value = strength
+            self.connect_nodes(mask_output, mask_mix.inputs['Factor'])
+            self.connect_nodes(mask_mix.outputs[0], specular_input)
+
+        if 'Specular Tint' in shader.inputs and tuple(shader_tint[:3]) != (1.0, 1.0, 1.0):
+            peak = max(shader_tint[:3])
+            if peak > 0.0:
+                shader.inputs['Specular Tint'].default_value = [
+                    component / peak for component in shader_tint[:3]
+                ] + [1.0]
 
     def _bool_property(self, name: str, default: int = 0) -> bool:
         return self._vmt.get_int(name, default) == 1

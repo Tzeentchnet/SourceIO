@@ -161,6 +161,14 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         return self._color_property('$envmaptint', [1, 1, 1])
 
     @property
+    def envmapcontrast(self):
+        return self._vmt.get_float('$envmapcontrast', 0.0)
+
+    @property
+    def envmapsaturation(self):
+        return self._vmt.get_float('$envmapsaturation', 1.0)
+
+    @property
     def phongfresnelranges(self):
         return self._color_property('$phongfresnelranges', length=3, filler=0.1)
 
@@ -578,7 +586,9 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                         emission_output = self.insert_generic_tint(emission_output, tuple(tint))
                     self.connect_nodes(emission_output, shader.inputs['Emission Color'])
 
-            self._setup_phong(shader, self.get_node('$basetexture'))
+            basetexture_node = self.get_node('$basetexture')
+            self._setup_phong(shader, basetexture_node)
+            self._setup_envmap(shader, basetexture_node, self.get_node('$bumpmap'))
 
     def _diffuse_modulation(self):
         """$color times $color2 (the SDK's g_DiffuseModulation), or None when neither is set."""
@@ -628,6 +638,45 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             value.outputs[0].default_value = alpha
             return value.outputs[0]
         return self._scale_value(alpha_output, alpha, '$alpha')
+
+    def _setup_envmap(self, shader, basetexture_node, bumpmap_node):
+        """Approximate the non-Phong VertexLitGeneric cubemap reflection."""
+        # Source routes $phong through the skin shader, where these envmap
+        # parameters are not consumed.
+        if not self.envmap or self.phong:
+            return
+
+        specular_input = shader.inputs['Specular IOR Level']
+        mask_output = None
+        envmapmask_path = self._vmt.get_string('$envmapmask', None)
+
+        if bumpmap_node is not None:
+            if self.normalmapalphaenvmapmask:
+                mask_output = bumpmap_node.outputs['Alpha']
+            elif self.basealphaenvmapmask or envmapmask_path is not None:
+                # The SDK rejects both mask sources with a bump map and removes
+                # the envmap unless $normalmapalphaenvmapmask overrides them.
+                specular_input.default_value = 0.0
+                return
+        elif envmapmask_path is not None:
+            envmapmask = self.envmapmask
+            if envmapmask is not None:
+                envmapmask_node = self.create_node(Nodes.ShaderNodeTexImage, '$envmapmask')
+                envmapmask_node.image = envmapmask
+                mask_output = envmapmask_node.outputs['Color']
+        elif self.basealphaenvmapmask and basetexture_node is not None:
+            invert_node = self.create_node(Nodes.ShaderNodeInvert, 'basealphaenvmapmask')
+            self.connect_nodes(basetexture_node.outputs['Alpha'], invert_node.inputs['Color'])
+            mask_output = invert_node.outputs['Color']
+
+        self._apply_principled_envmap(
+            shader,
+            mask_output,
+            0.5,
+            self.envmaptint,
+            self.envmapcontrast,
+            self.envmapsaturation,
+        )
 
     def _scale_value(self, value_output, factor: float, name: str = None):
         multiply = self.create_node(Nodes.ShaderNodeMath, name)

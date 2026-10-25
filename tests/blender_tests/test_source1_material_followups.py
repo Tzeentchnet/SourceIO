@@ -226,6 +226,91 @@ class PrincipledVertexLitGenericTests(_CleanFile):
                 shader = VertexLitGeneric(_NoFiles(), _vmt(f'"VertexLitGeneric" {{ {body} }}'))
                 self.assertEqual(shader.basealphaenvmapmask, expected)
 
+    def test_envmap_controls_principled_specular_strength_and_tint(self):
+        _, diffuse_only = self._material('"VertexLitGeneric" {}')
+        self.assertEqual(diffuse_only.inputs['Specular IOR Level'].default_value, 0.0)
+
+        _, shader = self._material(
+            '"VertexLitGeneric" { "$envmap" "env_cubemap" "$envmaptint" "[0.2 0.4 0.8]" '
+            '"$envmapcontrast" "0.5" "$envmapsaturation" "0.5" }'
+        )
+        luma = 0.2 * 0.299 + 0.4 * 0.587 + 0.8 * 0.114
+        contrasted_luma = luma * 0.5 + luma * luma * 0.5
+        self.assertAlmostEqual(
+            shader.inputs['Specular IOR Level'].default_value,
+            0.5 * contrasted_luma,
+        )
+        saturated_tint = [component * 0.5 + luma * 0.5 for component in (0.2, 0.4, 0.8)]
+        peak = max(saturated_tint)
+        self.assertSequenceEqual(
+            tuple(round(component, 6) for component in shader.inputs['Specular Tint'].default_value),
+            tuple(round(component / peak, 6) for component in saturated_tint) + (1.0,),
+        )
+
+    def test_envmapmask_scales_principled_specular(self):
+        self._fake_texture("mask")
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$envmap" "env_cubemap" "$envmapmask" "t/mask" }'
+        )
+        mask_scale = material.node_tree.nodes['envmapmask']
+        self.assertEqual(shader.inputs['Specular IOR Level'].links[0].from_node, mask_scale)
+        self.assertEqual(mask_scale.inputs['Factor'].links[0].from_node.name, '$envmapmask')
+        self.assertEqual(mask_scale.inputs['Factor'].links[0].from_socket.name, 'Color')
+        self.assertAlmostEqual(mask_scale.inputs['B'].default_value, 0.5)
+
+    def test_basealphaenvmapmask_uses_inverted_base_alpha(self):
+        self._fake_texture("base")
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$basetexture" "t/base" "$envmap" "env_cubemap" '
+            '"$basealphaenvmapmask" "1" }'
+        )
+        invert = material.node_tree.nodes['basealphaenvmapmask']
+        mask_scale = material.node_tree.nodes['envmapmask']
+        self.assertEqual(invert.inputs['Color'].links[0].from_node.name, '$basetexture')
+        self.assertEqual(invert.inputs['Color'].links[0].from_socket.name, 'Alpha')
+        self.assertEqual(mask_scale.inputs['Factor'].links[0].from_node, invert)
+        self.assertEqual(shader.inputs['Specular IOR Level'].links[0].from_node, mask_scale)
+
+    def test_normalmapalphaenvmapmask_overrides_other_masks(self):
+        self._fake_texture("base")
+        self._fake_texture("normal")
+        self._fake_texture("mask")
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$basetexture" "t/base" "$bumpmap" "t/normal" '
+            '"$envmap" "env_cubemap" "$envmapmask" "t/mask" "$basealphaenvmapmask" "1" '
+            '"$normalmapalphaenvmapmask" "1" }'
+        )
+        mask_scale = material.node_tree.nodes['envmapmask']
+        self.assertNotIn('$envmapmask', material.node_tree.nodes)
+        self.assertEqual(mask_scale.inputs['Factor'].links[0].from_node.name, '$bumpmap')
+        self.assertEqual(mask_scale.inputs['Factor'].links[0].from_socket.name, 'Alpha')
+        self.assertEqual(shader.inputs['Specular IOR Level'].links[0].from_node, mask_scale)
+
+    def test_bumpmap_disables_unsupported_envmap_masks(self):
+        self._fake_texture("base")
+        self._fake_texture("normal")
+        self._fake_texture("mask")
+        for mask in ('"$basealphaenvmapmask" "1"', '"$envmapmask" "t/mask"'):
+            with self.subTest(mask=mask):
+                material, shader = self._material(
+                    f'"VertexLitGeneric" {{ "$basetexture" "t/base" "$bumpmap" "t/normal" '
+                    f'"$envmap" "env_cubemap" {mask} }}'
+                )
+                self.assertFalse(shader.inputs['Specular IOR Level'].is_linked)
+                self.assertEqual(shader.inputs['Specular IOR Level'].default_value, 0.0)
+                self.assertNotIn('envmapmask', material.node_tree.nodes)
+
+    def test_phong_path_does_not_apply_envmap_parameters(self):
+        self._fake_texture("base")
+        self._fake_texture("mask")
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$basetexture" "t/base" "$phong" "1" "$phongexponent" "20" '
+            '"$envmap" "env_cubemap" "$envmapmask" "t/mask" }'
+        )
+        self.assertNotIn('$envmapmask', material.node_tree.nodes)
+        self.assertNotIn('envmapmask', material.node_tree.nodes)
+        self.assertGreater(shader.inputs['Specular IOR Level'].default_value, 0.0)
+
     def test_phong_mask_scales_specular_not_roughness(self):
         self._fake_texture("skin")
         self._fake_texture("skin_n")

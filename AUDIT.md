@@ -87,15 +87,15 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 - **Deterministic shader mode.** BVLG selection is now an explicit material-build parameter instead of global class state. Principled and BVLG variants use distinct, stable material identities, and BSP, entity, VMT and model paths consistently resolve the selected variant.
 - **Opt-in Principled culling.** Principled VertexLitGeneric materials remain two-sided by default. An add-on preference enables Source-style culling for newly imported materials while preserving `$nocull 1`; BVLG behavior is unchanged.
 - **`$basealphaenvmapmask`.** The default is now 0, matching the SDK. Explicit 0 and 1 continue to override it.
+- **Model envmaps.** Principled VertexLitGeneric now maps `$envmap`, `$envmaptint`, `$envmapcontrast`, `$envmapsaturation` and all three mask sources to the Principled specular lobe. Base alpha is inverted, normal-map alpha overrides the other masks, and unsupported bump-map/mask combinations disable the reflection as the SDK does. `$phong` keeps its separate skin-shader behavior.
 
 ### Recommended next
 
-1. **`$envmap` on models.** The Principled VLG path ignores `$envmap`, `$envmaptint` and `$envmapmask`. `LightmapGeneric._setup_envmap` already turns these into a specular strength and tint, and the same mapping (mask choice included: `$basealphaenvmapmask` or `$normalmapalphaenvmapmask`) could be shared with VLG.
-2. **Phong exponent texture curve.** The exponent texture is mapped to roughness linearly between its endpoints. Rebuilding `sqrt(2 / (1 + 149·r + 2))` from three Math nodes (multiply-add, divide, sqrt) would match `phong_exponent_to_roughness` at every value, not just the ends.
-3. **`$phongfresnelranges`.** Collapsed to the middle value. A Layer Weight → Map Range piecewise curve would reproduce the SDK's per-pixel Fresnel term.
-4. **Detail textures** are always marked Non-Color. Check each `$detailblendmode` against the SDK's sRGB-read setting for the detail sampler; some modes may sample in sRGB.
-5. **One-axis clamps** (`CLAMPS` xor `CLAMPT`) can't be expressed with a node's single extension setting. Clamping the UV on one axis (Separate XYZ → Clamp → Combine) would cover them.
-6. **`$vertexcolor` / `$vertexalpha`** aren't supported by VertexLitGeneric (UnlitGeneric and DecalModulate support them).
+1. **Phong exponent texture curve.** The exponent texture is mapped to roughness linearly between its endpoints. Rebuilding `sqrt(2 / (1 + 149·r + 2))` from three Math nodes (multiply-add, divide, sqrt) would match `phong_exponent_to_roughness` at every value, not just the ends.
+2. **`$phongfresnelranges`.** Collapsed to the middle value. A Layer Weight → Map Range piecewise curve would reproduce the SDK's per-pixel Fresnel term.
+3. **Detail textures** are always marked Non-Color. Check each `$detailblendmode` against the SDK's sRGB-read setting for the detail sampler; some modes may sample in sRGB.
+4. **One-axis clamps** (`CLAMPS` xor `CLAMPT`) can't be expressed with a node's single extension setting. Clamping the UV on one axis (Separate XYZ → Clamp → Combine) would cover them.
+5. **`$vertexcolor` / `$vertexalpha`** aren't supported by VertexLitGeneric (UnlitGeneric and DecalModulate support them).
 
 ---
 

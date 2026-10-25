@@ -26,6 +26,9 @@ from .models import (
     Source1AuthoringArtifact,
     Source1AuthoringRequest,
     Source1BackendOutput,
+    Source1CompileOutput,
+    Source1CompileStep,
+    Source1CompilerKind,
 )
 
 
@@ -49,6 +52,10 @@ class Source1AuthoringBackend:
         artifacts: dict[
             tuple[Source1ArtifactRoot, ContentRelativePath],
             Source1AuthoringArtifact,
+        ] = {}
+        compile_steps: dict[
+            tuple[Source1CompilerKind, ContentRelativePath],
+            Source1CompileStep,
         ] = {}
         material_specs: dict[str, AuthoringMaterial] = {}
         model_paths = []
@@ -134,6 +141,28 @@ class Source1AuthoringBackend:
                     surface_property=request.surface_property,
                 ),
             ))
+            compiled_stem = compiled_model.as_posix()[:-len(".mdl")]
+            compile_steps[(Source1CompilerKind.STUDIOMDL, qc_path)] = (
+                Source1CompileStep(
+                    Source1CompilerKind.STUDIOMDL,
+                    Source1ArtifactRoot.CONTENT,
+                    qc_path,
+                    (
+                        Source1CompileOutput(
+                            Source1ArtifactRoot.GAME,
+                            compiled_model,
+                        ),
+                        Source1CompileOutput(
+                            Source1ArtifactRoot.GAME,
+                            f"{compiled_stem}.vvd",
+                        ),
+                        Source1CompileOutput(
+                            Source1ArtifactRoot.GAME,
+                            f"{compiled_stem}.dx90.vtx",
+                        ),
+                    ),
+                )
+            )
 
         for material_name, material in sorted(material_specs.items()):
             if not is_valid_asset_name(material_name):
@@ -251,6 +280,24 @@ class Source1AuthoringBackend:
                         alpha_mode=material.alpha_mode,
                     ),
                 ))
+                output_parts = ("materials", *source_path.parts[1:])
+                output_path = ContentRelativePath("/".join(output_parts))
+                output_path = ContentRelativePath(
+                    f"{output_path.as_posix()[:-len(extension)]}.vtf"
+                )
+                compile_steps[(Source1CompilerKind.VTEX, source_path)] = (
+                    Source1CompileStep(
+                        Source1CompilerKind.VTEX,
+                        Source1ArtifactRoot.CONTENT,
+                        source_path,
+                        (
+                            Source1CompileOutput(
+                                Source1ArtifactRoot.GAME,
+                                output_path,
+                            ),
+                        ),
+                    )
+                )
                 return source_path
 
             color_texture = textures.get(TextureRole.BASE_COLOR)
@@ -297,6 +344,13 @@ class Source1AuthoringBackend:
                 artifacts[key]
                 for key in sorted(
                     artifacts,
+                    key=lambda item: (item[0].value, item[1].as_posix()),
+                )
+            ),
+            (
+                compile_steps[key]
+                for key in sorted(
+                    compile_steps,
                     key=lambda item: (item[0].value, item[1].as_posix()),
                 )
             ),

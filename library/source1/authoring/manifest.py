@@ -10,6 +10,8 @@ from .models import (
     Source1ArtifactRoot,
     Source1AuthoringArtifact,
     Source1AuthoringRequest,
+    Source1CompileOutput,
+    Source1CompileStep,
 )
 from .target import Source1AuthoringTarget
 
@@ -55,13 +57,15 @@ class Source1AuthoringManifest:
     asset_name: str
     model_paths: tuple[ContentRelativePath, ...]
     artifacts: tuple[Source1ManifestArtifact, ...]
-    schema_version: int = 1
+    compile_steps: tuple[Source1CompileStep, ...]
+    schema_version: int = 2
 
     @classmethod
     def build(
             cls,
             request: Source1AuthoringRequest,
             artifacts: tuple[Source1AuthoringArtifact, ...],
+            compile_steps: tuple[Source1CompileStep, ...],
             model_paths: tuple[ContentRelativePath, ...],
     ) -> Source1AuthoringManifest:
         records = tuple(
@@ -83,6 +87,7 @@ class Source1AuthoringManifest:
             asset_name=request.asset_name,
             model_paths=tuple(sorted(model_paths, key=ContentRelativePath.as_posix)),
             artifacts=records,
+            compile_steps=tuple(compile_steps),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -98,6 +103,24 @@ class Source1AuthoringManifest:
                 "models": [path.as_posix() for path in self.model_paths],
             },
             "artifacts": [artifact.to_dict() for artifact in self.artifacts],
+            "compile": [
+                {
+                    "compiler": step.compiler.value,
+                    "source": {
+                        "root": step.source_root.value,
+                        "path": step.source.as_posix(),
+                    },
+                    "expected_outputs": [
+                        {
+                            "root": output.root.value,
+                            "path": output.path.as_posix(),
+                        }
+                        for output in step.expected_outputs
+                    ],
+                    "arguments": list(step.arguments),
+                }
+                for step in self.compile_steps
+            ],
         }
 
     def to_json(self) -> str:
@@ -123,7 +146,7 @@ class Source1AuthoringManifest:
             raise Source1AuthoringManifestError(
                 "Not a SourceIO Source 1 authoring manifest"
             )
-        if data.get("schema_version") != 1:
+        if data.get("schema_version") != 2:
             raise Source1AuthoringManifestError(
                 f"Unsupported Source 1 authoring manifest version: {data.get('schema_version')!r}"
             )
@@ -146,6 +169,22 @@ class Source1AuthoringManifest:
                         str(item["sha256"]),
                     )
                     for item in data["artifacts"]
+                ),
+                compile_steps=tuple(
+                    Source1CompileStep(
+                        item["compiler"],
+                        item["source"]["root"],
+                        item["source"]["path"],
+                        tuple(
+                            Source1CompileOutput(
+                                output["root"],
+                                output["path"],
+                            )
+                            for output in item["expected_outputs"]
+                        ),
+                        tuple(str(argument) for argument in item.get("arguments", ())),
+                    )
+                    for item in data["compile"]
                 ),
             )
         except (KeyError, TypeError, ValueError) as exc:

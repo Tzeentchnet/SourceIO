@@ -2,13 +2,14 @@
 
 **Status: the CS2 static-authoring vertical slice and its normal-map,
 roughness, metalness, and alpha-test extensions are implemented and have passed
-the installed Workshop Tools exit gate. The pure Source 1 backend now emits
+the installed Workshop Tools exit gate. The Source 1 backend now emits
 deterministic SMD, QC, VMT, TGA, VTEX settings, preflight, and manifest files;
-its generated model contract has passed the installed TF2 StudioMDL.** Export is
-SourceIO's secondary goal after import quality; the aim is one straightforward
+its bounded VTEX/StudioMDL integration, failure logs, output verification, and
+manifest-driven recompile have passed the installed TF2 toolchain gate.** Export
+is SourceIO's secondary goal after import quality; the aim is one straightforward
 path from a Blender scene to editable, optionally compiled static assets. Next:
-Source 1 compiler integration and the Blender vertical slice (implementation
-todos 11–12), followed by one settled export path (todo 13).
+the Source 1 Blender vertical slice (implementation todo 12), followed by one
+settled export path (todo 13).
 Skeletal, animated, physics, and map authoring, and game coverage beyond
 priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
 are tracked in [plan.md](plan.md).
@@ -454,9 +455,12 @@ exists.
     - Refactor only the reusable portions of the existing VTF path and preserve its
       current image-editor behavior.
 
-11. [ ] **Integrating Source 1 compilers**
+11. [x] **Integrating Source 1 compilers**
     - Add Source SDK 2013 profile discovery, VTEX and StudioMDL invocation, output
       verification, logs, recompile support, and opt-in compiler integration tests.
+    - The installed TF2 tools require `VPROJECT` in addition to `-game`; with that
+      environment set by the runner, the gate compiles and re-imports VTF/MDL
+      outputs and verifies an unchanged-source recompile.
 
 12. [ ] **Completing the Source 1 vertical slice**
     - Validate UI/CLI parity, state preservation, compiled re-import, geometry and

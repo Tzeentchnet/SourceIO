@@ -1,4 +1,17 @@
 from .backend import Source1AuthoringBackend
+from .compiler import (
+    Source1CompilerCaptureError,
+    Source1CompilerError,
+    Source1CompilerExitError,
+    Source1CompilerLaunchError,
+    Source1CompilerOutputMissingError,
+    Source1CompilerOutputStaleError,
+    Source1CompilerReportedError,
+    Source1CompilerRunResult,
+    Source1CompilerRunner,
+    Source1CompilerTimeoutError,
+    Source1CompilerToolchain,
+)
 from .formats import (
     serialize_qc,
     serialize_smd,
@@ -16,6 +29,9 @@ from .models import (
     Source1AuthoringArtifact,
     Source1AuthoringRequest,
     Source1BackendOutput,
+    Source1CompileOutput,
+    Source1CompileStep,
+    Source1CompilerKind,
 )
 from .service import (
     Source1AuthoringExecutionResult,
@@ -43,6 +59,20 @@ __all__ = [
     "Source1AuthoringTarget",
     "Source1AuthoringTargetError",
     "Source1BackendOutput",
+    "Source1CompileOutput",
+    "Source1CompileStep",
+    "Source1CompilerCaptureError",
+    "Source1CompilerError",
+    "Source1CompilerExitError",
+    "Source1CompilerKind",
+    "Source1CompilerLaunchError",
+    "Source1CompilerOutputMissingError",
+    "Source1CompilerOutputStaleError",
+    "Source1CompilerReportedError",
+    "Source1CompilerRunResult",
+    "Source1CompilerRunner",
+    "Source1CompilerTimeoutError",
+    "Source1CompilerToolchain",
     "Source1ManifestArtifact",
     "serialize_qc",
     "serialize_smd",

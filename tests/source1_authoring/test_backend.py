@@ -190,6 +190,34 @@ def test_backend_plans_dual_root_editable_bundle(tmp_path):
         ("content", "modelsrc/sourceio/crate/crate.smd"),
         ("game", "materials/models/sourceio/crate/crate.vmt"),
     ]
+    assert [
+        (
+            step.compiler.value,
+            step.source.as_posix(),
+            tuple(output.path.as_posix() for output in step.expected_outputs),
+        )
+        for step in output.compile_steps
+    ] == [
+        (
+            "studiomdl",
+            "modelsrc/sourceio/crate/crate.qc",
+            (
+                "models/sourceio/crate/crate.mdl",
+                "models/sourceio/crate/crate.vvd",
+                "models/sourceio/crate/crate.dx90.vtx",
+            ),
+        ),
+        (
+            "vtex",
+            "materialsrc/models/sourceio/crate/crate_base_color.tga",
+            ("materials/models/sourceio/crate/crate_base_color.vtf",),
+        ),
+        (
+            "vtex",
+            "materialsrc/models/sourceio/crate/crate_normal.tga",
+            ("materials/models/sourceio/crate/crate_normal.vtf",),
+        ),
+    ]
     assert all(
         "crate_alpha" not in artifact.path.as_posix()
         for artifact in output.artifacts
@@ -220,11 +248,13 @@ def test_service_writes_manifest_report_and_artifacts(tmp_path):
     manifest.validate_target(target)
     assert manifest.to_json() == plan.manifest.to_json()
     data = json.loads(manifest_text)
+    assert data["schema_version"] == 2
     assert data["target"] == {
         "content_directory": "tf_content",
         "game_directory": "tf",
     }
     assert len(data["artifacts"]) == 8
+    assert len(data["compile"]) == 3
 
 
 def test_preflight_errors_block_every_write(tmp_path):
@@ -260,6 +290,30 @@ def test_existing_artifacts_are_protected_without_overwrite(tmp_path):
     with pytest.raises(ExportBlockedError):
         plan.write()
     assert existing.read_text(encoding="utf-8") == "existing"
+
+
+def test_existing_compiled_outputs_are_protected_when_compiling(tmp_path):
+    target = _target(tmp_path)
+    existing = target.game_path(
+        "materials/models/sourceio/crate/crate_base_color.vtf"
+    )
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"existing")
+    request = Source1AuthoringRequest(
+        target,
+        "crate",
+        compile_after_export=True,
+    )
+    backend = Source1AuthoringBackend().build(request, (_model(),))
+
+    plan = Source1AuthoringService().plan(request, backend)
+
+    assert "authoring.output.exists" in {
+        diagnostic.code for diagnostic in plan.report
+    }
+    with pytest.raises(ExportBlockedError):
+        plan.write()
+    assert existing.read_bytes() == b"existing"
 
 
 def test_pbr_conversion_and_missing_uv_are_blocked(tmp_path):
@@ -358,6 +412,7 @@ def test_manifest_target_identity_is_validated(tmp_path):
     manifest = Source1AuthoringManifest.build(
         request,
         backend.artifacts,
+        backend.compile_steps,
         backend.model_paths,
     )
     second = _target(tmp_path, "hl2")

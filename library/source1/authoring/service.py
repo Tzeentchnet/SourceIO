@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,13 +16,21 @@ from ...source2.export import (
     LossReport,
 )
 from ...source2.workshop import ContentRelativePath
-from .manifest import Source1AuthoringManifest
+from .compiler import (
+    Source1CompilerError,
+    Source1CompilerRunner,
+)
+from .manifest import (
+    Source1AuthoringManifest,
+    Source1AuthoringManifestError,
+)
 from .models import (
     Source1ArtifactKind,
     Source1ArtifactRoot,
     Source1AuthoringArtifact,
     Source1AuthoringRequest,
     Source1BackendOutput,
+    Source1CompileStep,
 )
 from .staging import stage_source1_artifacts
 
@@ -38,6 +47,10 @@ def _preflight_report_path(request: Source1AuthoringRequest) -> ContentRelativeP
     )
 
 
+def _compile_log_path(asset_name: str) -> ContentRelativePath:
+    return ContentRelativePath(f"sourceio/logs/{asset_name}.compile.log")
+
+
 def _artifact_path(
         request: Source1AuthoringRequest,
         artifact: Source1AuthoringArtifact,
@@ -45,6 +58,16 @@ def _artifact_path(
     if artifact.root == Source1ArtifactRoot.CONTENT:
         return request.target.content_path(artifact.path)
     return request.target.game_path(artifact.path)
+
+
+def _rooted_path(
+        target,
+        root: Source1ArtifactRoot,
+        path: ContentRelativePath,
+) -> Path:
+    if root == Source1ArtifactRoot.CONTENT:
+        return target.content_path(path)
+    return target.game_path(path)
 
 
 def validate_source1_request(request: Source1AuthoringRequest) -> LossReport:
@@ -166,11 +189,73 @@ def _validate_output(
                     details={"path": str(path)},
                 )
 
+    artifact_keys = {
+        (artifact.root, artifact.path)
+        for artifact in artifacts
+    }
+    output_keys = set()
+    for step in backend.compile_steps:
+        source_key = (step.source_root, step.source)
+        if source_key not in artifact_keys:
+            report.record(
+                "authoring.compile.source_missing",
+                "Every compiler input must be an artifact in the same authoring plan.",
+                severity=DiagnosticSeverity.ERROR,
+                loss_kind=LossKind.SAFETY,
+                details={
+                    "root": step.source_root.value,
+                    "path": step.source.as_posix(),
+                },
+            )
+        for output in step.expected_outputs:
+            output_key = (output.root, output.path)
+            if output_key in artifact_keys:
+                report.record(
+                    "authoring.compile.output_collision",
+                    "A compiler output collides with an editable artifact.",
+                    severity=DiagnosticSeverity.ERROR,
+                    loss_kind=LossKind.SAFETY,
+                    details={
+                        "root": output.root.value,
+                        "path": output.path.as_posix(),
+                    },
+                )
+            if output_key in output_keys:
+                report.record(
+                    "authoring.compile.output_duplicate",
+                    "Two compiler steps expect the same output.",
+                    severity=DiagnosticSeverity.ERROR,
+                    loss_kind=LossKind.SAFETY,
+                    details={
+                        "root": output.root.value,
+                        "path": output.path.as_posix(),
+                    },
+                )
+            output_keys.add(output_key)
+            output_path = _rooted_path(
+                request.target,
+                output.root,
+                output.path,
+            )
+            if (
+                    request.compile_after_export
+                    and not request.overwrite
+                    and os.path.lexists(output_path)
+            ):
+                report.record(
+                    "authoring.output.exists",
+                    "A compiled output already exists and overwrite is disabled.",
+                    severity=DiagnosticSeverity.ERROR,
+                    loss_kind=LossKind.SAFETY,
+                    details={"path": str(output_path)},
+                )
+
 
 @dataclass(slots=True)
 class Source1AuthoringPlan:
     request: Source1AuthoringRequest
     artifacts: tuple[Source1AuthoringArtifact, ...]
+    compile_steps: tuple[Source1CompileStep, ...]
     manifest: Source1AuthoringManifest
     manifest_path: ContentRelativePath
     report: LossReport
@@ -205,6 +290,7 @@ class Source1AuthoringPlan:
 @dataclass(frozen=True, slots=True)
 class Source1AuthoringExecutionResult:
     written_paths: tuple[Path, ...]
+    compiler_results: tuple
     manifest_path: ContentRelativePath
 
 
@@ -227,6 +313,7 @@ class Source1AuthoringService:
         manifest = Source1AuthoringManifest.build(
             request,
             manifest_artifacts,
+            backend.compile_steps,
             backend.model_paths,
         )
         manifest_path = _manifest_path(request)
@@ -239,6 +326,7 @@ class Source1AuthoringService:
         return Source1AuthoringPlan(
             request,
             tuple(artifacts),
+            backend.compile_steps,
             manifest,
             manifest_path,
             report,
@@ -247,8 +335,108 @@ class Source1AuthoringService:
     def execute(
             self,
             plan: Source1AuthoringPlan,
+            *,
+            tool_root: str | os.PathLike[str] | None = None,
     ) -> Source1AuthoringExecutionResult:
+        written = plan.write()
+        results = ()
+        if plan.request.compile_after_export:
+            results = self.compile(plan, tool_root=tool_root)
         return Source1AuthoringExecutionResult(
-            plan.write(),
+            written,
+            results,
             plan.manifest_path,
         )
+
+    def compile(
+            self,
+            plan: Source1AuthoringPlan,
+            *,
+            tool_root: str | os.PathLike[str] | None = None,
+    ) -> tuple:
+        plan.raise_for_errors()
+        return self._compile_steps(
+            plan.request.target,
+            plan.request.asset_name,
+            plan.compile_steps,
+            tool_root=tool_root,
+        )
+
+    def recompile(
+            self,
+            target,
+            manifest_path: str | ContentRelativePath,
+            *,
+            tool_root: str | os.PathLike[str] | None = None,
+    ) -> tuple:
+        path = ContentRelativePath(manifest_path)
+        manifest_file = target.content_path(path)
+        if not manifest_file.is_file():
+            raise FileNotFoundError(
+                f"Source 1 authoring manifest is unavailable: {manifest_file}"
+            )
+        manifest = Source1AuthoringManifest.from_json(
+            manifest_file.read_text(encoding="utf-8")
+        )
+        manifest.validate_target(target)
+        for artifact in manifest.artifacts:
+            if artifact.root == Source1ArtifactRoot.CONTENT:
+                artifact_path = target.content_path(artifact.path)
+            else:
+                artifact_path = target.game_path(artifact.path)
+            if not artifact_path.is_file():
+                raise Source1AuthoringManifestError(
+                    f"Manifest artifact is unavailable: {artifact.path}"
+                )
+            payload = artifact_path.read_bytes()
+            if (
+                    len(payload) != artifact.size
+                    or hashlib.sha256(payload).hexdigest() != artifact.sha256
+            ):
+                raise Source1AuthoringManifestError(
+                    f"Manifest artifact changed since export: {artifact.path}"
+                )
+        return self._compile_steps(
+            target,
+            manifest.asset_name,
+            manifest.compile_steps,
+            tool_root=tool_root,
+        )
+
+    @staticmethod
+    def _compile_steps(
+            target,
+            asset_name: str,
+            steps: tuple[Source1CompileStep, ...],
+            *,
+            tool_root: str | os.PathLike[str] | None = None,
+    ) -> tuple:
+        results = []
+        try:
+            runner = Source1CompilerRunner(target, tool_root=tool_root)
+            for step in steps:
+                results.append(runner.compile(step))
+        except Source1CompilerError as exc:
+            log = (
+                exc.result.log
+                if exc.result is not None
+                else f"{type(exc).__name__}: {exc}\n"
+            )
+            try:
+                stage_source1_artifacts(
+                    target,
+                    (Source1AuthoringArtifact(
+                        Source1ArtifactRoot.CONTENT,
+                        _compile_log_path(asset_name),
+                        Source1ArtifactKind.LOG,
+                        log,
+                    ),),
+                    overwrite=True,
+                )
+            except OSError as log_error:
+                raise RuntimeError(
+                    "Source 1 compilation failed and its diagnostic log "
+                    "could not be saved"
+                ) from log_error
+            raise
+        return tuple(results)

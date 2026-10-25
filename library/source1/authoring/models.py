@@ -30,6 +30,11 @@ class Source1ArtifactKind(str, Enum):
     LOG = "log"
 
 
+class Source1CompilerKind(str, Enum):
+    VTEX = "vtex"
+    STUDIOMDL = "studiomdl"
+
+
 @dataclass(frozen=True, slots=True)
 class Source1AuthoringRequest:
     target: Source1AuthoringTarget
@@ -50,6 +55,7 @@ class Source1AuthoringRequest:
     scope: AuthoringScope = AuthoringScope.SELECTED
     grouping: AuthoringGrouping = AuthoringGrouping.COMBINED
     overwrite: bool = False
+    compile_after_export: bool = False
 
     def __post_init__(self):
         if not isinstance(self.target, Source1AuthoringTarget):
@@ -105,26 +111,86 @@ class Source1AuthoringArtifact:
         return hashlib.sha256(self.encoded()).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class Source1CompileOutput:
+    root: Source1ArtifactRoot
+    path: ContentRelativePath
+
+    def __post_init__(self):
+        if isinstance(self.root, str) and not isinstance(self.root, Source1ArtifactRoot):
+            object.__setattr__(self, "root", Source1ArtifactRoot(self.root))
+        object.__setattr__(self, "path", ContentRelativePath(self.path))
+
+
+@dataclass(frozen=True, slots=True)
+class Source1CompileStep:
+    compiler: Source1CompilerKind
+    source_root: Source1ArtifactRoot
+    source: ContentRelativePath
+    expected_outputs: tuple[Source1CompileOutput, ...]
+    arguments: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        if isinstance(self.compiler, str) and not isinstance(
+                self.compiler, Source1CompilerKind
+        ):
+            object.__setattr__(self, "compiler", Source1CompilerKind(self.compiler))
+        if isinstance(self.source_root, str) and not isinstance(
+                self.source_root, Source1ArtifactRoot
+        ):
+            object.__setattr__(
+                self,
+                "source_root",
+                Source1ArtifactRoot(self.source_root),
+            )
+        object.__setattr__(self, "source", ContentRelativePath(self.source))
+        object.__setattr__(
+            self,
+            "expected_outputs",
+            tuple(
+                output
+                if isinstance(output, Source1CompileOutput)
+                else Source1CompileOutput(*output)
+                for output in self.expected_outputs
+            ),
+        )
+        object.__setattr__(self, "arguments", tuple(self.arguments))
+        if not self.expected_outputs:
+            raise ValueError("Source 1 compile steps require expected outputs")
+        keys = {
+            (output.root, output.path)
+            for output in self.expected_outputs
+        }
+        if len(keys) != len(self.expected_outputs):
+            raise ValueError("Source 1 compile outputs must be unique")
+        if any(not isinstance(argument, str) for argument in self.arguments):
+            raise TypeError("Source 1 compiler arguments must be strings")
+
+
 @dataclass(slots=True)
 class Source1BackendOutput:
     artifacts: tuple[Source1AuthoringArtifact, ...]
+    compile_steps: tuple[Source1CompileStep, ...]
     model_paths: tuple[ContentRelativePath, ...]
     report: LossReport = field(default_factory=LossReport)
 
     def __post_init__(self):
         self.artifacts = tuple(self.artifacts)
+        self.compile_steps = tuple(self.compile_steps)
         self.model_paths = tuple(ContentRelativePath(path) for path in self.model_paths)
 
     @classmethod
     def create(
             cls,
             artifacts: Iterable[Source1AuthoringArtifact],
+            compile_steps: Iterable[Source1CompileStep],
             model_paths: Iterable[ContentRelativePath],
             *,
             report: LossReport | None = None,
     ) -> Source1BackendOutput:
         return cls(
             tuple(artifacts),
+            tuple(compile_steps),
             tuple(model_paths),
             report if report is not None else LossReport(),
         )

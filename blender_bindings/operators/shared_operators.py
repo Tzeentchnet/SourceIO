@@ -20,7 +20,7 @@ from ..models.prop_animations import pose_prop
 from ..shared.exceptions import RequiredFileNotFound
 from ..shared.model_container import ModelContainer
 from ..shared.skins import prop_skin, set_skin, set_model_skin
-from ..source2.vmdl_loader import load_model, ImportContext
+from ..source2.vmdl_loader import DRAW_CALL_INDEX_PROPERTY, load_model, ImportContext
 from ..source2.vmdl_loader import put_into_collections as s2_put_into_collections
 from ..source2.vtex_loader import texture_settings_from_scene
 from ..utils.bpy_utils import (get_or_create_collection, get_new_unique_collection, find_layer_collection,
@@ -68,6 +68,30 @@ def name_after_material(obj: bpy.types.Object, objects: Iterable[bpy.types.Objec
         return
     if name := single_material_name(objects):
         obj.name = name
+
+
+def _split_aggregate_container(container: ModelContainer, draw_calls: Iterable[int]) -> dict[int, ModelContainer]:
+    objects_by_draw_call = {draw_call: [] for draw_call in draw_calls}
+    for obj in container.objects:
+        draw_call = obj.get(DRAW_CALL_INDEX_PROPERTY)
+        if draw_call not in objects_by_draw_call:
+            raise ValueError(f"Loaded aggregate object has invalid draw call index {draw_call!r}")
+        objects_by_draw_call[draw_call].append(obj)
+        del obj[DRAW_CALL_INDEX_PROPERTY]
+
+    result = {}
+    for draw_call, objects in objects_by_draw_call.items():
+        object_ids = {id(obj) for obj in objects}
+        bodygroups = {
+            name: [obj for obj in grouped_objects if id(obj) in object_ids]
+            for name, grouped_objects in container.bodygroups.items()
+        }
+        result[draw_call] = ModelContainer(
+            objects,
+            {name: grouped_objects for name, grouped_objects in bodygroups.items() if grouped_objects},
+            default_bodygroups=container.default_bodygroups,
+        )
+    return result
 
 
 # noinspection PyPep8Naming
@@ -335,11 +359,25 @@ class SourceIO_OT_LoadEntity(Operator):
                 self.report({"WARNING"}, f"Failed to find VMDL_c file for prop {prop_path}")
                 return
 
-            def _preload_draw_calls(draw_calls: Iterable[int]):
+            def _load_draw_calls(draw_calls: Iterable[int]) -> dict[int, ModelContainer]:
+                draw_calls = tuple(draw_calls)
+                if not import_context.import_physics and not model_resource.get_bones():
+                    import_context.draw_call_indices = draw_calls
+                    container = load_model(content_manager, model_resource, import_context)
+                    set_model_skin(container, skin)
+                    return _split_aggregate_container(container, draw_calls)
+
+                containers = {}
                 for draw_call in draw_calls:
                     import_context.draw_call_index = draw_call
                     container = load_model(content_manager, model_resource, import_context)
                     set_model_skin(container, skin)
+                    containers[draw_call] = container
+                return containers
+
+            def _preload_draw_calls(draw_calls: Iterable[int], containers: dict[int, ModelContainer]):
+                for draw_call in draw_calls:
+                    container = containers[draw_call]
                     prop_collection = get_new_unique_collection(prop_path.stem + f"_{draw_call}",
                                                                master_instance_collection
                                                                )
@@ -350,7 +388,10 @@ class SourceIO_OT_LoadEntity(Operator):
             get_draw_call = operator.itemgetter("draw_call")
             draw_calls = {draw_call: [(Matrix(d["matrix"]) if "matrix" in d else Matrix(), list(d["tint_color"])) for d in matrices] for (draw_call, matrices) in
                           itertools.groupby(sorted(fragments, key=get_draw_call), key=get_draw_call)}
-            _preload_draw_calls([d for d, m in draw_calls.items() if len(m) > 1])
+            repeated_draw_calls = [draw_call for draw_call, matrices in draw_calls.items() if len(matrices) > 1]
+            singleton_draw_calls = [draw_call for draw_call, matrices in draw_calls.items() if len(matrices) == 1]
+            containers = _load_draw_calls([*repeated_draw_calls, *singleton_draw_calls])
+            _preload_draw_calls(repeated_draw_calls, containers)
             # The placeholder stands for the whole aggregate (it is unparented unless the user parented it);
             # every fragment is placed relative to it.
             base_matrix = obj.matrix_world.copy() if obj.parent else obj.matrix_basis.copy()
@@ -380,9 +421,7 @@ class SourceIO_OT_LoadEntity(Operator):
                         imported_collection.objects.link(instance)
                 else:
                     matrix, tint = matrices_tints[0]
-                    import_context.draw_call_index = draw_call
-                    container = load_model(content_manager, model_resource, import_context)
-                    set_model_skin(container, skin)
+                    container = containers[draw_call]
                     s2_put_into_collections(container, model_resource.name, imported_collection,
                                             bodygroup_grouping=False)
                     for ob in container.objects:

@@ -7,8 +7,9 @@ Scope: the Blender add-on at `21bf348` (5.14.0), focused on import speed and on 
 correctness follow-ups in subsequent `master` commits. The historical
 `sourceio-audit.patch` review artifact is not distributed and must not be
 applied to current `master`. The measurement and PNG-compression items under
-**Recommended next** are now implemented; the other five remain proposals
-rather than completed work.
+**Recommended next** are now implemented, followed by measured Source 2
+aggregate-model reuse; the other five remain proposals rather than completed
+work.
 
 ## How this was checked
 
@@ -64,6 +65,7 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 5. **Repeated property evaluation in shaders.** VMT properties such as `self.bumpmap` and `self.basetexture` reload (now cheaply) on every access, and `create_nodes` reads them several times. Caching per handler instance (`functools.cached_property`, set up after proxies run) would remove the rest of that work.
 6. **MDL import loops** (`models/mdl49/import_mdl.py` and siblings): the flex loop recomputes `model_vertices = get_slice(...)[vtx_vertices] * scale` for every flex; it can be hoisted out. `mesh_data.update()` right after `from_pydata` repeats work `from_pydata` already did. `mesh.validate()` runs on every mesh even when the source data is well-formed.
 7. **Implemented 2026-10-24 — measure before going further.** `SOURCEIO_PERF_TRACE=1` now enables fixed-size aggregate timings for material creation, texture decode/encode, node arrangement, map phases and model mesh construction. The installed-game runner prints at most 100 rows and includes the same bounded data in its JSON report. Warm-cache baselines found PNG encoding, not unused Source 2 textures or Source 1 flex processing, to be the first actionable bottleneck: 13.36 s of 21.72 s for TF2 `ctf_2fort` (212 images), and 97.84 s of 289.57 s for CS2 `de_dust2` with all placeholders loaded (745 images). The unused-texture pass took 0.001 s on `de_dust2`.
+8. **Implemented 2026-10-24 — Source 2 aggregate model reuse.** Aggregate placeholders now load their selected draw calls together and reuse decoded vertex/index buffers for that import. Rigged aggregates and physics imports retain individual loads. On the repeated CS2 `de_dust2 --load-placeholders` gate, model-load calls fell from 3,803 to 672 and total time fell from the fast-PNG baseline of 268.02 s to 219.68 s (18.0%) with identical output counts and all 698 placeholders loaded.
 
 ---
 

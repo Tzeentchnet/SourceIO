@@ -47,6 +47,8 @@ from ..exporting.source2.provenance import (
 
 logger = SourceLogMan().get_logger("Source2::Model")
 
+DRAW_CALL_INDEX_PROPERTY = "sourceio_draw_call_index"
+
 
 def put_into_collections(model_container, model_name, parent_collection=None, bodygroup_grouping=False):
     model_container: ModelContainer
@@ -106,6 +108,7 @@ class ImportContext:
     import_attachments: bool = False
     import_materials: bool = False
     draw_call_index: int | None = None
+    draw_call_indices: tuple[int, ...] | None = None
     lm_uv_scale: tuple[float, float] = (1, 1)
     import_animations: bool = False
     animation_clips: str = ''  # graph clip filter, see parse_clip_filter
@@ -467,37 +470,52 @@ def use_compressed_normals(draw_call: dict):
         return "MESH_DRAW_FLAGS_USE_COMPRESSED_NORMAL_TANGENT" in flags or "USE_COMPRESSED_NORMAL_TANGENT" in flags
 
 
+@timed
 def create_mesh(content_manager: ContentManager, model_resource: CompiledModelResource, container: ModelContainer,
                 data_block: KVBlock, index_buffers: list, vertex_buffers: list, extra_vertex_buffers: list,
                 morph_texture: np.ndarray | None, morph_block: MorphBlock | None,
                 mesh_id: int, mesh_resource: CompiledMeshResource, import_context: ImportContext,
                 mesh_name: Optional[str] = None) -> list[bpy.types.Object]:
     objects: list[bpy.types.Object] = []
-    g_vertex_offset = 0
     if import_context.import_attachments:
         load_attachments(data_block["m_attachments"], container, import_context.scale)
 
-    for scene_object in data_block['m_sceneObjects']:
-        g_vertex_offset = import_scene_object(content_manager, data_block, g_vertex_offset, import_context, index_buffers, mesh_id,
-                            mesh_name, mesh_resource, model_resource, morph_block, morph_texture, objects, scene_object,
-                            vertex_buffers, extra_vertex_buffers)
+    selected_draw_calls = (
+        import_context.draw_call_indices
+        if import_context.draw_call_indices is not None
+        else (None,)
+    )
+    for selected_draw_call in selected_draw_calls:
+        g_vertex_offset = 0
+        for scene_object in data_block['m_sceneObjects']:
+            g_vertex_offset = import_scene_object(
+                content_manager, data_block, g_vertex_offset, import_context, index_buffers, mesh_id, mesh_name,
+                mesh_resource, model_resource, morph_block, morph_texture, objects, scene_object, vertex_buffers,
+                extra_vertex_buffers, selected_draw_call,
+            )
     return objects
 
 
 def import_scene_object(content_manager: ContentManager, data_block, g_vertex_offset, import_context, index_buffers,
                         mesh_id, mesh_name,
                         mesh_resource, model_resource, morph_block, morph_texture, objects, scene_object,
-                        vertex_buffers, extra_vertex_buffers):
-    if import_context.draw_call_index is not None:
-        draw_calls = [scene_object["m_drawCalls"][import_context.draw_call_index]]
+                        vertex_buffers, extra_vertex_buffers, selected_draw_call=None):
+    scene_draw_calls = scene_object["m_drawCalls"]
+    if selected_draw_call is not None:
+        draw_calls = [(selected_draw_call, scene_draw_calls[selected_draw_call])]
+    elif import_context.draw_call_index is not None:
+        draw_calls = [(import_context.draw_call_index, scene_draw_calls[import_context.draw_call_index])]
     else:
-        draw_calls = scene_object["m_drawCalls"]
-    for draw_call in draw_calls:
-        g_vertex_offset = import_drawcall(content_manager, import_context, draw_call, mesh_id, mesh_name, mesh_resource, model_resource,
-                        data_block, g_vertex_offset, extra_vertex_buffers, morph_block, morph_texture, index_buffers,
-                        vertex_buffers, objects)
+        draw_calls = enumerate(scene_draw_calls)
+    for draw_call_index, draw_call in draw_calls:
+        g_vertex_offset = import_drawcall(
+            content_manager, import_context, draw_call, draw_call_index, mesh_id, mesh_name, mesh_resource,
+            model_resource, data_block, g_vertex_offset, extra_vertex_buffers, morph_block, morph_texture,
+            index_buffers, vertex_buffers, objects,
+        )
     return g_vertex_offset
 
+@timed
 def combine_vertex_buffers(vertex_buffers: list[VertexBuffer], mesh_resource: CompiledMeshResource):
     if not vertex_buffers:
         return np.array([])
@@ -530,11 +548,42 @@ def combine_vertex_buffers(vertex_buffers: list[VertexBuffer], mesh_resource: Co
     return combined_array, VertexBuffer(vertex_buffers[0].vertex_count, 0, MemoryBuffer(b""), all_attrs)
 
 
-def import_drawcall(content_manager: ContentManager, import_context: ImportContext, draw_call: dict, mesh_id: int,
-                    mesh_name: str, mesh_resource: CompiledMeshResource, model_resource: CompiledModelResource,
-                    data_block: KVBlock, g_vertex_offset: int, extra_vertex_buffers: list[VertexBuffer],
-                    morph_block: MorphBlock, morph_texture: np.ndarray, index_buffers: list[IndexBuffer],
-                    vertex_buffers: list[VertexBuffer], objects: list):
+def _get_combined_vertex_buffers(import_context: ImportContext, vertex_buffers: list[VertexBuffer],
+                                 mesh_resource: CompiledMeshResource):
+    cache = getattr(import_context, '_combined_vertex_buffers', None)
+    if cache is None:
+        cache = import_context._combined_vertex_buffers = {}
+    buffers = tuple(vertex_buffers)
+    key = (id(mesh_resource), tuple(map(id, buffers)))
+    entry = cache.get(key)
+    if (
+        entry is None
+        or entry[0] is not mesh_resource
+        or len(entry[1]) != len(buffers)
+        or any(cached is not current for cached, current in zip(entry[1], buffers))
+    ):
+        entry = cache[key] = (mesh_resource, buffers, combine_vertex_buffers(vertex_buffers, mesh_resource))
+    return entry[2]
+
+
+def _get_index_buffer(import_context: ImportContext, index_buffer: IndexBuffer,
+                      mesh_resource: CompiledMeshResource):
+    cache = getattr(import_context, '_decoded_index_buffers', None)
+    if cache is None:
+        cache = import_context._decoded_index_buffers = {}
+    key = (id(mesh_resource), id(index_buffer))
+    entry = cache.get(key)
+    if entry is None or entry[0] is not mesh_resource or entry[1] is not index_buffer:
+        entry = cache[key] = (mesh_resource, index_buffer, index_buffer.get_indices(mesh_resource))
+    return entry[2]
+
+
+@timed
+def import_drawcall(content_manager: ContentManager, import_context: ImportContext, draw_call: dict,
+                    draw_call_index: int, mesh_id: int, mesh_name: str, mesh_resource: CompiledMeshResource,
+                    model_resource: CompiledModelResource, data_block: KVBlock, g_vertex_offset: int,
+                    extra_vertex_buffers: list[VertexBuffer], morph_block: MorphBlock, morph_texture: np.ndarray,
+                    index_buffers: list[IndexBuffer], vertex_buffers: list[VertexBuffer], objects: list):
     assert draw_call['m_nPrimitiveType'] in [5, 'RENDER_PRIM_TRIANGLES']
     index_buffer_info = draw_call['m_indexBuffer']
 
@@ -585,12 +634,15 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     all_buffers = [vb for vb in all_buffers if vb.vertex_count > 0]
     base_vertex = draw_call['m_nBaseVertex']
     vertex_count = draw_call['m_nVertexCount']
-    vertices, vertex_buffer = combine_vertex_buffers(all_buffers, mesh_resource) if all_buffers else (None, None)
+    vertices, vertex_buffer = (
+        _get_combined_vertex_buffers(import_context, all_buffers, mesh_resource)
+        if all_buffers else (None, None)
+    )
     if vertices is None or 'POSITION' not in (vertices.dtype.names or ()):
         logger.warn(f'Skipping draw call of {mesh_resource.name} with material {material_name}: '
                     f'vertex buffer has no POSITION attribute')
         return g_vertex_offset + vertex_count
-    indices = index_buffer.get_indices(mesh_resource)
+    indices = _get_index_buffer(import_context, index_buffer, mesh_resource)
     tri_start = draw_call['m_nStartIndex'] // 3
     tri_count = draw_call['m_nIndexCount'] // 3
     part_indices = indices[tri_start:tri_start + tri_count]
@@ -602,6 +654,8 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     model_name = mesh_name or mesh_resource.name
     mesh = FastMesh.new(f'{model_name}_{material_stem}_mesh')
     mesh_obj = bpy.data.objects.new(f'{model_name}_{material_stem}', mesh)
+    if import_context.draw_call_indices is not None:
+        mesh_obj[DRAW_CALL_INDEX_PROPERTY] = draw_call_index
 
     if tint is not None:
         mesh_obj.color = list(tint) + [1.0]

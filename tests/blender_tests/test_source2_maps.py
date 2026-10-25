@@ -19,6 +19,7 @@ from mathutils import Matrix, Vector
 
 from SourceIO.blender_bindings.operators import shared_operators
 from SourceIO.blender_bindings.shared.model_container import ModelContainer
+from SourceIO.blender_bindings.source2 import vmdl_loader
 from SourceIO.blender_bindings.source2.vwrld import loader
 from SourceIO.blender_bindings.source2.vwrld.entities import abstract_entity_handlers
 from SourceIO.blender_bindings.utils.bpy_utils import get_or_create_child_collection
@@ -418,6 +419,58 @@ class LightBlockerTests(unittest.TestCase):
 class FakeModelResource:
     name = "aggregate"
 
+    @staticmethod
+    def get_bones():
+        return []
+
+
+class FakeRiggedModelResource(FakeModelResource):
+    @staticmethod
+    def get_bones():
+        return [object()]
+
+
+class ModelBufferCacheTests(unittest.TestCase):
+    def test_reuses_decoded_buffers_within_import_context(self):
+        import_context = vmdl_loader.ImportContext()
+        mesh_resource = object()
+        vertex_buffers = [object(), object()]
+        combined = (object(), object())
+        index_buffer = mock.Mock()
+        indices = object()
+        index_buffer.get_indices.return_value = indices
+
+        with mock.patch.object(vmdl_loader, "combine_vertex_buffers", return_value=combined) as combine:
+            self.assertIs(
+                vmdl_loader._get_combined_vertex_buffers(import_context, vertex_buffers, mesh_resource),
+                combined,
+            )
+            self.assertIs(
+                vmdl_loader._get_combined_vertex_buffers(import_context, vertex_buffers, mesh_resource),
+                combined,
+            )
+
+        combine.assert_called_once_with(vertex_buffers, mesh_resource)
+        self.assertIs(vmdl_loader._get_index_buffer(import_context, index_buffer, mesh_resource), indices)
+        self.assertIs(vmdl_loader._get_index_buffer(import_context, index_buffer, mesh_resource), indices)
+        index_buffer.get_indices.assert_called_once_with(mesh_resource)
+
+    def test_does_not_share_buffers_between_import_contexts(self):
+        mesh_resource = object()
+        vertex_buffers = [object()]
+
+        with mock.patch.object(vmdl_loader, "combine_vertex_buffers", side_effect=[(1, 2), (3, 4)]) as combine:
+            first = vmdl_loader._get_combined_vertex_buffers(
+                vmdl_loader.ImportContext(), vertex_buffers, mesh_resource
+            )
+            second = vmdl_loader._get_combined_vertex_buffers(
+                vmdl_loader.ImportContext(), vertex_buffers, mesh_resource
+            )
+
+        self.assertEqual(first, (1, 2))
+        self.assertEqual(second, (3, 4))
+        self.assertEqual(combine.call_count, 2)
+
 
 class AggregateLoadTests(unittest.TestCase):
     def setUp(self):
@@ -427,15 +480,24 @@ class AggregateLoadTests(unittest.TestCase):
         bpy.context.scene.import_materials = False
         bpy.context.scene.import_physics = False
         self.loaded = []
+        self.load_calls = []
 
     def load_model(self, cm, resource, import_context):
-        mesh = bpy.data.meshes.new(f"draw_call_{import_context.draw_call_index}")
-        mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
-        obj = bpy.data.objects.new(mesh.name, mesh)
-        self.loaded.append(import_context.draw_call_index)
-        return ModelContainer([obj], {"group": [obj]})
+        draw_calls = import_context.draw_call_indices or (import_context.draw_call_index,)
+        self.load_calls.append(draw_calls)
+        objects = []
+        for draw_call in draw_calls:
+            mesh = bpy.data.meshes.new(f"draw_call_{draw_call}")
+            mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+            obj = bpy.data.objects.new(mesh.name, mesh)
+            if import_context.draw_call_indices is not None:
+                obj[vmdl_loader.DRAW_CALL_INDEX_PROPERTY] = draw_call
+            self.loaded.append(draw_call)
+            objects.append(obj)
+        return ModelContainer(objects, {"group": objects})
 
-    def test_every_fragment_is_placed(self):
+    @staticmethod
+    def create_placeholder():
         map_collection = bpy.data.collections.new("map")
         bpy.context.scene.collection.children.link(map_collection)
         placeholder = bpy.data.objects.new("aggregate", None)
@@ -446,14 +508,19 @@ class AggregateLoadTests(unittest.TestCase):
                      {"draw_call": 1, "tint_color": [255, 255, 255], "matrix": list(Matrix.Translation((0, 5, 0)))}]
         placeholder["entity_data"] = {"prop_path": "maps/x/worldnodes/agg.vmdl_c", "type": "aggregate_static_prop",
                                       "scale": SCALE, "entity": {}, "fragments": fragments, "skin": "default"}
+        return placeholder
 
+    def load_placeholder(self, placeholder, model_resource=None):
         operator = SimpleNamespace(report=lambda *args: None)
         cm = SimpleNamespace(find_file=lambda path: b"vmdl")
         with mock.patch.object(shared_operators, "load_model", self.load_model), \
                 mock.patch.object(shared_operators.CompiledModelResource, "from_buffer",
-                                  return_value=FakeModelResource()):
+                                  return_value=model_resource or FakeModelResource()):
             shared_operators.SourceIO_OT_LoadEntity.load_vmdl(operator, cm, bpy.context, placeholder)
         bpy.context.view_layer.update()
+
+    def test_every_fragment_is_placed(self):
+        self.load_placeholder(self.create_placeholder())
 
         self.assertNotIn("aggregate", [obj.name for obj in bpy.data.objects if obj.type == 'EMPTY'
                                        and obj.instance_type != 'COLLECTION'])
@@ -470,6 +537,14 @@ class AggregateLoadTests(unittest.TestCase):
         self.assertEqual(len(single), 1)
         assert_vectors_equal(self, single[0].matrix_world.translation, (10, 5, 0))
         self.assertEqual(single[0].name, "aggregate")
+        self.assertEqual(sorted(self.loaded), [0, 1])
+        self.assertEqual(self.load_calls, [(0, 1)])
+        self.assertTrue(all(vmdl_loader.DRAW_CALL_INDEX_PROPERTY not in obj for obj in bpy.data.objects))
+
+    def test_rigged_aggregate_retains_individual_loads(self):
+        self.load_placeholder(self.create_placeholder(), FakeRiggedModelResource())
+
+        self.assertEqual(self.load_calls, [(0,), (1,)])
         self.assertEqual(sorted(self.loaded), [0, 1])
 
 

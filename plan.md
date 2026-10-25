@@ -35,7 +35,7 @@ blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 567 pass, 5 skip (tests/archive left out; installed-tool gates opt out without their environment; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 273 pass, 2 skip, 17 warnings, 51 subtests
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 276 pass, 2 skip, 17 warnings, 51 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass
@@ -45,7 +45,7 @@ cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_custom_normals', argv=['x'], exit=False)"   # 3 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_materials', argv=['x'], exit=False)"   # 61 pass; 46 shader follow-up tests in six adjacent modules, 107 total
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_source2_dota_materials.py', 'SourceIO/tests/blender_tests/test_source2_materials.py', '-q']))"  # 76 pass, 19 subtests
-cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 20 pass
+cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_maps', argv=['x'], exit=False)"   # 23 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_lights', argv=['x'], exit=False)"   # 9 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_animations', argv=['x'], exit=False)"   # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source2_sounds', argv=['x'], exit=False)"   # 2 pass
@@ -82,6 +82,17 @@ test stays within 10% of the native encoder's output size. On the same maps:
   21.72 s to 11.02 s, 49.3% faster.
 - CS2 encoding fell from 97.84 s to 34.08 s (2.9x); the repeated total import
   fell from 289.57 s to 268.02 s, 7.4% faster.
+
+The next measured optimization reuses decoded Source 2 vertex/index buffers
+within one model import and loads all selected draw calls from an aggregate
+model together. Rigged aggregates and physics imports retain the previous
+per-draw-call path. On the same CS2 `de_dust2 --load-placeholders` gate:
+
+- Model-load calls fell from 3,803 to 672 and combined-buffer construction
+  fell to 629 calls.
+- The repeated total import fell from 268.02 s to 219.68 s, another 18.0%.
+- All 698 placeholders still loaded, with identical object, image, light,
+  collection, mesh and material counts.
 
 Skipping unused Source 2 textures would not measurably help this corpus, and the
 Source 1 MDL flex loop is not exercised by a map import.

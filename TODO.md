@@ -2,14 +2,14 @@
 
 **Status: the CS2 static-authoring vertical slice and its normal-map,
 roughness, metalness, and alpha-test extensions are implemented and have passed
-the installed Workshop Tools exit gate. The Source 1 backend now emits
-deterministic SMD, QC, VMT, TGA, VTEX settings, preflight, and manifest files;
-its bounded VTEX/StudioMDL integration, failure logs, output verification, and
-manifest-driven recompile have passed the installed TF2 toolchain gate.** Export
-is SourceIO's secondary goal after import quality; the aim is one straightforward
-path from a Blender scene to editable, optionally compiled static assets. Next:
-the Source 1 Blender vertical slice (implementation todo 12), followed by one
-settled export path (todo 13).
+the installed Workshop Tools exit gate. The Source 1 static-authoring vertical
+slice now provides File > Export and CLI entry points, deterministic
+SMD/QC/VMT/TGA/VTEX-settings output, bounded compiler integration, and verified
+manifest recompile. Its installed TF2 gate compiles and re-imports Blender
+geometry, UVs, winding, normals, materials, and textures.** Export is SourceIO's
+secondary goal after import quality; the aim is one straightforward path from a
+Blender scene to editable, optionally compiled static assets. Next: settle on
+one export path (implementation todo 13).
 Skeletal, animated, physics, and map authoring, and game coverage beyond
 priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
 are tracked in [plan.md](plan.md).
@@ -462,9 +462,13 @@ exists.
       environment set by the runner, the gate compiles and re-imports VTF/MDL
       outputs and verifies an unchanged-source recompile.
 
-12. [ ] **Completing the Source 1 vertical slice**
+12. [x] **Completing the Source 1 vertical slice**
     - Validate UI/CLI parity, state preservation, compiled re-import, geometry and
       material tolerances, and regression coverage for direct VTF export.
+    - The installed TF2 gate corrected and now locks SMD axis conversion, UV
+      orientation, triangle winding, Source 1 units, VTF data, and material
+      identity. Imported VMT provenance and explicit phong parameters are
+      supported without converting Principled roughness or metalness.
 
 13. [ ] **Settling on one export path**
     - Move the experimental export node tree onto the shared service, or deprecate

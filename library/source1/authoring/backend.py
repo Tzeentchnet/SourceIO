@@ -14,10 +14,12 @@ from ...source2.export import (
     LossReport,
 )
 from ...source2.workshop import ContentRelativePath
+from .assets import Source1AuthoringMaterial
 from .formats import (
     serialize_qc,
     serialize_smd,
     serialize_vmt,
+    serialize_vmt_patch,
     serialize_vtex_settings,
 )
 from .models import (
@@ -181,6 +183,17 @@ class Source1AuthoringBackend:
                     loss_kind=LossKind.DEFERRED,
                     details={"material": material_name},
                 )
+            if (
+                    isinstance(material, Source1AuthoringMaterial)
+                    and material.existing_vmt is not None
+            ):
+                add_artifact(Source1AuthoringArtifact(
+                    Source1ArtifactRoot.GAME,
+                    asset_material_directory.joinpath(f"{material_name}.vmt"),
+                    Source1ArtifactKind.MATERIAL,
+                    serialize_vmt_patch(material.existing_vmt),
+                ))
+                continue
 
             textures = {texture.role: texture for texture in material.textures}
             if len(textures) != len(material.textures):
@@ -351,7 +364,10 @@ class Source1AuthoringBackend:
                 compile_steps[key]
                 for key in sorted(
                     compile_steps,
-                    key=lambda item: (item[0].value, item[1].as_posix()),
+                    key=lambda item: (
+                        0 if item[0] == Source1CompilerKind.VTEX else 1,
+                        item[1].as_posix(),
+                    ),
                 )
             ),
             sorted(model_paths, key=ContentRelativePath.as_posix),

@@ -403,6 +403,10 @@ def _extract_principled_material(
 def _extract_materials(
         objects: Iterable,
         report: LossReport,
+        material_extractor: Callable[
+            [object, str, LossReport],
+            AuthoringMaterial | None,
+        ],
 ) -> tuple[tuple[AuthoringMaterial, ...], dict[int, str]]:
     materials = []
     names_by_pointer = {}
@@ -429,18 +433,14 @@ def _extract_materials(
             if name != material.name:
                 report.record(
                     "authoring.material.name.normalized",
-                    "The material name is normalized for Source 2 output.",
+                    "The material name is normalized for authored output.",
                     severity=DiagnosticSeverity.WARNING,
                     loss_kind=LossKind.INFERRED,
                     path=("materials", material.name),
                     details={"output_name": name},
                 )
             names_by_pointer[material.as_pointer()] = name
-            resource_path = _material_resource_path(material, report)
-            if resource_path is not None:
-                materials.append(AuthoringMaterial(name, existing_resource=resource_path))
-                continue
-            extracted = _extract_principled_material(
+            extracted = material_extractor(
                 material,
                 name,
                 report,
@@ -448,6 +448,17 @@ def _extract_materials(
             if extracted is not None:
                 materials.append(extracted)
     return tuple(materials), names_by_pointer
+
+
+def _extract_source2_material(
+        material,
+        name: str,
+        report: LossReport,
+) -> AuthoringMaterial | None:
+    resource_path = _material_resource_path(material, report)
+    if resource_path is not None:
+        return AuthoringMaterial(name, existing_resource=resource_path)
+    return _extract_principled_material(material, name, report)
 
 
 @contextmanager
@@ -616,7 +627,8 @@ def _export_group(
         materials,
         material_names,
         report: LossReport,
-        fbx_exporter: Callable[[Path], None],
+        fbx_exporter: Callable[[Path], None] | None,
+        unit_scale: float | None,
 ) -> ExtractedAuthoringModel:
     with _evaluated_objects(context, objects, material_names) as evaluated:
         for obj in context.view_layer.objects:
@@ -627,21 +639,29 @@ def _export_group(
         document = model_document_from_blender(
             ModelContainer(list(evaluated), {}, master_collection=context.collection),
             name,
+            unit_scale=unit_scale,
             report=report,
         )
-        with tempfile.TemporaryDirectory(prefix="sourceio_cs2_fbx_") as directory:
-            output = Path(directory) / f"{name}.fbx"
-            fbx_exporter(output)
-            payload = output.read_bytes()
+        payload = b""
+        if fbx_exporter is not None:
+            with tempfile.TemporaryDirectory(prefix="sourceio_cs2_fbx_") as directory:
+                output = Path(directory) / f"{name}.fbx"
+                fbx_exporter(output)
+                payload = output.read_bytes()
     return ExtractedAuthoringModel(name, document, payload, materials)
 
 
-def extract_authoring_models(
+def extract_blender_authoring_models(
         context,
-        request: Source2AuthoringRequest,
+        request,
         *,
+        material_extractor: Callable[
+            [object, str, LossReport],
+            AuthoringMaterial | None,
+        ],
+        unit_scale: float | None,
+        fbx_exporter: Callable[[Path], None] | None,
         report: LossReport | None = None,
-        fbx_exporter: Callable[[Path], None] | None = None,
 ) -> tuple[tuple[ExtractedAuthoringModel, ...], LossReport]:
     loss_report = report if report is not None else LossReport()
     objects = resolve_authoring_objects(context, request.scope)
@@ -667,8 +687,11 @@ def extract_authoring_models(
                 loss_kind=LossKind.SAFETY,
             )
 
-    exporter = fbx_exporter or _default_fbx_exporter
-    materials, material_names = _extract_materials(objects, loss_report)
+    materials, material_names = _extract_materials(
+        objects,
+        loss_report,
+        material_extractor,
+    )
     if loss_report.has_errors:
         return (), loss_report
     models = []
@@ -681,6 +704,24 @@ def extract_authoring_models(
                 materials,
                 material_names,
                 loss_report,
-                exporter,
+                fbx_exporter,
+                unit_scale,
             ))
     return tuple(models), loss_report
+
+
+def extract_authoring_models(
+        context,
+        request: Source2AuthoringRequest,
+        *,
+        report: LossReport | None = None,
+        fbx_exporter: Callable[[Path], None] | None = None,
+) -> tuple[tuple[ExtractedAuthoringModel, ...], LossReport]:
+    return extract_blender_authoring_models(
+        context,
+        request,
+        material_extractor=_extract_source2_material,
+        unit_scale=None,
+        fbx_exporter=fbx_exporter or _default_fbx_exporter,
+        report=report,
+    )

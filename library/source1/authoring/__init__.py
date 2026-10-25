@@ -1,3 +1,7 @@
+from .assets import (
+    Source1AuthoringMaterial,
+    Source1PhongParameters,
+)
 from .backend import Source1AuthoringBackend
 from .compiler import (
     Source1CompilerCaptureError,
@@ -16,6 +20,7 @@ from .formats import (
     serialize_qc,
     serialize_smd,
     serialize_vmt,
+    serialize_vmt_patch,
     serialize_vtex_settings,
 )
 from .manifest import (
@@ -53,6 +58,7 @@ __all__ = [
     "Source1AuthoringExecutionResult",
     "Source1AuthoringManifest",
     "Source1AuthoringManifestError",
+    "Source1AuthoringMaterial",
     "Source1AuthoringPlan",
     "Source1AuthoringRequest",
     "Source1AuthoringService",
@@ -74,9 +80,11 @@ __all__ = [
     "Source1CompilerTimeoutError",
     "Source1CompilerToolchain",
     "Source1ManifestArtifact",
+    "Source1PhongParameters",
     "serialize_qc",
     "serialize_smd",
     "serialize_vmt",
+    "serialize_vmt_patch",
     "serialize_vtex_settings",
     "stage_source1_artifacts",
     "validate_source1_request",

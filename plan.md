@@ -16,7 +16,7 @@ State (2026-10-15): [5.14.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/
 Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
 
 ```
-blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 631/631 modules, register/unregister/register OK
+blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 635/635 modules, register/unregister/register OK
 blender -b --factory-startup --python tests/e2e/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 blender -b ... run_game_imports.py -- --game "<TF2>/tf" --load-placeholders                                  # 13 PASS; 2fort 2320/2320, badlands 1308/1308, harvest 673/673, upward 1332/1332 placeholders
@@ -28,11 +28,12 @@ $env:SOURCEIO_DOTA2_WORKSHOP_ROOT="<Dota2>"; python -m pytest tests/source2_work
 $env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; python -m pytest tests/source2_workshop/test_cs2_workshop_contract.py -q         # 3 pass; official ModelDoc/FBX/VMAT/TGA contract and re-import
 $env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; blender -b --factory-startup --python-expr "..."                                # 1 pass; Blender-authored color/normal/roughness/metalness/alpha-test compile/re-import
 $env:SOURCEIO_SOURCE1_TOOLCHAIN_ROOT="<TF2>"; python -m pytest tests/source1_toolchain/test_source1_toolchain_contract.py -q  # 1 pass; VTEX/StudioMDL compile, VTF/MDL re-import and manifest recompile
+$env:SOURCEIO_SOURCE1_TOOLCHAIN_ROOT="<TF2>"; blender -b --factory-startup --python-expr "..."                        # 1 pass; Blender-authored Source 1 compile/recompile and geometry/material/texture re-import
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s alone); nameless world-node models renamed after their material
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 561 pass, 5 skip (tests/archive left out; installed-tool gates opt out without their environment; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 266 pass, 1 skip, 13 warnings, 47 subtests
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 563 pass, 5 skip (tests/archive left out; installed-tool gates opt out without their environment; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 270 pass, 2 skip, 17 warnings, 47 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass
@@ -67,16 +68,17 @@ FBX/VMDL/VMAT/TGA staging, preflight, manifests, File > Export and CLI, optional
 compile, recompile and compiled re-import. Base color, tangent-space normal maps,
 constant or image-driven roughness and metalness, alpha testing, and reuse of an
 existing VMAT use the official texture contracts and have passed the
-Blender-to-Workshop round trip. The Source 1 backend now writes atomic,
-dual-root SMD/QC/VMT/TGA/VTEX-setting bundles with deterministic preflight,
-schema-v2 manifests, bounded compiler logs, verified outputs, and recompile
-support. The installed TF2 gate runs VTEX and StudioMDL, parses the resulting
-VTF and MDL, and recompiles from the verified manifest. VTEX's previous hang was
-caused by the missing `VPROJECT` environment variable; the runner now sets it
-alongside the explicit `-game` argument. Next, in order:
+Blender-to-Workshop round trip. The Source 1 static-authoring slice now provides
+File > Export and CLI entry points over atomic dual-root
+SMD/QC/VMT/TGA/VTEX-setting staging, schema-v2 manifests, bounded compiler logs,
+verified outputs, and recompile. It preserves evaluated-scene state, uses Source
+1 units without producing an unnecessary FBX, reuses imported VMTs through a
+local Patch, and exposes explicit phong parameters without guessing from PBR
+values. The installed TF2 gate runs VTEX and StudioMDL and re-imports positions,
+UVs, winding, normals, material identity, and texture data. It also locks the
+`VPROJECT` requirement that resolved VTEX's earlier hang. Next:
 
-1. **Complete the Source 1 vertical slice** (TODO.md item 12): reuse the Blender material/geometry extraction with Source 1 units, add File > Export and CLI entry points, and verify Blender-to-compiled re-import.
-2. **One export path** (TODO.md item 13): decide whether the experimental export node tree (`blender_bindings/ui/export_nodes`) moves onto the shared service or is deprecated, so users see one way to export.
+1. **One export path** (TODO.md item 13): decide whether the experimental export node tree (`blender_bindings/ui/export_nodes`) moves onto the shared service or is deprecated, so users see one way to export.
 
 Skeletal, animated, physics and map authoring are deferred (`docs/deferred-work.md`). Static ModelDoc/Hammer reconstruction stays a separate, explicitly lossy workflow.
 

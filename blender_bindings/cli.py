@@ -5,6 +5,8 @@
     blender -c sourceio extract-vtf [--output DIR] [--format tga|png] [--overwrite] FILE [FILE ...]
     blender -c sourceio export-cs2 --install-root ROOT --addon ADDON --asset NAME [--compile]
     blender -c sourceio recompile-cs2 --install-root ROOT --addon ADDON MANIFEST
+    blender -c sourceio export-source1 --game-root GAME --content-root CONTENT --asset NAME [--compile]
+    blender -c sourceio recompile-source1 --game-root GAME --content-root CONTENT MANIFEST
 
 Imports each file with the same operator the File > Import menu uses, picked by extension, then
 optionally saves the result as a .blend file.
@@ -17,6 +19,12 @@ from pathlib import Path
 import bpy
 
 from ..library.source1.vtf.editable_export import IMAGE_FORMATS, export_vtf_for_editing
+from ..library.source1.authoring import (
+    Source1AuthoringRequest,
+    Source1AuthoringTarget,
+    Source1AuthoringTargetError,
+    Source1CompilerError,
+)
 from ..library.source2.exceptions import Source2Error
 from ..library.source2.resource_types.compiled_sound_resource import CompiledSoundResource
 from ..library.source2.sound import SoundError
@@ -35,6 +43,10 @@ from ..library.source2.workshop import (
 )
 from ..library.utils import FileBuffer
 from .exporting.source2 import execute_cs2_authoring, recompile_cs2_manifest
+from .exporting.source1 import (
+    execute_source1_authoring,
+    recompile_source1_manifest,
+)
 
 # extension -> operator name under bpy.ops.sourceio
 OPERATORS = {
@@ -163,6 +175,11 @@ def _print_authoring_failure(exc: Exception):
     print(f"sourceio: CS2 authoring failed: {message}")
 
 
+def _print_source1_authoring_failure(exc: Exception):
+    message = str(exc).strip().splitlines()[-1] if str(exc).strip() else type(exc).__name__
+    print(f"sourceio: Source 1 authoring failed: {message}")
+
+
 def execute(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="blender -c sourceio",
@@ -255,6 +272,78 @@ def execute(argv: list[str]) -> int:
         type=ContentRelativePath,
         help="content-relative SourceIO authoring manifest",
     )
+    source1_parser = commands.add_parser(
+        "export-source1",
+        help="author an editable static Source 1 model/material/texture bundle",
+    )
+    source1_parser.add_argument(
+        "--game-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_SOURCE1_GAME_ROOT"),
+        help="Source 1 game/mod root (or set SOURCEIO_SOURCE1_GAME_ROOT)",
+    )
+    source1_parser.add_argument(
+        "--content-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_SOURCE1_CONTENT_ROOT"),
+        help="SDK content root (or set SOURCEIO_SOURCE1_CONTENT_ROOT)",
+    )
+    source1_parser.add_argument(
+        "--tool-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_SOURCE1_TOOL_ROOT"),
+        help="optional directory containing vtex.exe and studiomdl.exe",
+    )
+    source1_parser.add_argument("--asset", required=True, help="lowercase output asset name")
+    source1_parser.add_argument("--surface-property", default="default")
+    source1_parser.add_argument(
+        "--scope",
+        choices=[scope.value for scope in AuthoringScope],
+        default=AuthoringScope.SELECTED.value,
+    )
+    source1_parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="write one model per object instead of one combined model",
+    )
+    source1_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace all planned editable files",
+    )
+    source1_parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="run VTEX and StudioMDL after writing editable files",
+    )
+
+    source1_recompile_parser = commands.add_parser(
+        "recompile-source1",
+        help="revalidate and compile an existing Source 1 authoring manifest",
+    )
+    source1_recompile_parser.add_argument(
+        "--game-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_SOURCE1_GAME_ROOT"),
+        help="Source 1 game/mod root (or set SOURCEIO_SOURCE1_GAME_ROOT)",
+    )
+    source1_recompile_parser.add_argument(
+        "--content-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_SOURCE1_CONTENT_ROOT"),
+        help="SDK content root (or set SOURCEIO_SOURCE1_CONTENT_ROOT)",
+    )
+    source1_recompile_parser.add_argument(
+        "--tool-root",
+        type=Path,
+        default=os.environ.get("SOURCEIO_SOURCE1_TOOL_ROOT"),
+        help="optional directory containing vtex.exe and studiomdl.exe",
+    )
+    source1_recompile_parser.add_argument(
+        "manifest",
+        type=ContentRelativePath,
+        help="content-relative SourceIO authoring manifest",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "extract-sound":
@@ -331,6 +420,73 @@ def execute(argv: list[str]) -> int:
                 ValueError,
         ) as exc:
             _print_authoring_failure(exc)
+            return 1
+        print(f"sourceio: compiled {len(results)} resource(s)")
+        return 0
+    if args.command == "export-source1":
+        if args.game_root is None or args.content_root is None:
+            print(
+                "sourceio: --game-root/--content-root or the matching "
+                "SOURCEIO_SOURCE1_* environment variables are required"
+            )
+            return 2
+        try:
+            request = Source1AuthoringRequest(
+                Source1AuthoringTarget(args.game_root, args.content_root),
+                args.asset,
+                surface_property=args.surface_property,
+                scope=args.scope,
+                grouping=(
+                    AuthoringGrouping.BATCH
+                    if args.batch
+                    else AuthoringGrouping.COMBINED
+                ),
+                overwrite=args.overwrite,
+                compile_after_export=args.compile,
+            )
+            result = execute_source1_authoring(
+                bpy.context,
+                request,
+                tool_root=args.tool_root,
+            )
+        except (
+                ExportBlockedError,
+                Source1CompilerError,
+                Source1AuthoringTargetError,
+                OSError,
+                TypeError,
+                ValueError,
+        ) as exc:
+            _print_source1_authoring_failure(exc)
+            return 1
+        print(
+            f"sourceio: wrote {len(result.execution.written_paths)} editable file(s); "
+            f"manifest {result.execution.manifest_path}; "
+            f"compiled {len(result.execution.compiler_results)} resource(s)"
+        )
+        return 0
+    if args.command == "recompile-source1":
+        if args.game_root is None or args.content_root is None:
+            print(
+                "sourceio: --game-root/--content-root or the matching "
+                "SOURCEIO_SOURCE1_* environment variables are required"
+            )
+            return 2
+        try:
+            results = recompile_source1_manifest(
+                args.game_root,
+                args.content_root,
+                args.manifest,
+                tool_root=args.tool_root,
+            )
+        except (
+                Source1CompilerError,
+                Source1AuthoringTargetError,
+                OSError,
+                TypeError,
+                ValueError,
+        ) as exc:
+            _print_source1_authoring_failure(exc)
             return 1
         print(f"sourceio: compiled {len(results)} resource(s)")
         return 0

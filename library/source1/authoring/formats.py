@@ -6,6 +6,7 @@ import math
 from ...source2.authoring import AuthoringMaterial, MaterialAlphaMode, TextureRole
 from ...source2.export import ModelDocument
 from ...source2.workshop import ContentRelativePath
+from .assets import Source1AuthoringMaterial
 
 
 def _float(value: float) -> str:
@@ -31,6 +32,11 @@ def _texture_reference(path: ContentRelativePath) -> str:
         raise ValueError("Source texture paths must have a file extension")
     parts[-1] = parts[-1][:-len(suffix)]
     return "/".join(parts)
+
+
+def _smd_vector(value) -> tuple[float, float, float]:
+    x, y, z = value
+    return float(y), -float(x), float(z)
 
 
 def serialize_smd(
@@ -61,7 +67,7 @@ def serialize_smd(
             if any(ord(character) < 32 for character in face.material):
                 raise ValueError("Source 1 SMD material names cannot contain control characters")
             lines.append(face.material)
-            for vertex_index in reversed(face.vertices):
+            for vertex_index in face.vertices:
                 vertex = mesh.vertices[vertex_index]
                 normal = vertex.corner.normal
                 if normal is None:
@@ -73,9 +79,10 @@ def serialize_smd(
                         f"Source 1 SMD vertex has no UV map: {mesh.name}"
                     )
                 values = (
-                    *vertex.position,
-                    *normal,
-                    *vertex.corner.texcoords[0],
+                    *_smd_vector(vertex.position),
+                    *_smd_vector(normal),
+                    vertex.corner.texcoords[0][0],
+                    1.0 - vertex.corner.texcoords[0][1],
                 )
                 lines.append("  0 " + " ".join(_float(value) for value in values))
     lines.extend(("end", ""))
@@ -138,8 +145,51 @@ def serialize_vmt(
         lines.append(f"    {_quoted('$translucent')} {_quoted('1')}")
     if material.double_sided:
         lines.append(f"    {_quoted('$nocull')} {_quoted('1')}")
+    if (
+            isinstance(material, Source1AuthoringMaterial)
+            and material.phong is not None
+    ):
+        lines.append(f"    {_quoted('$phong')} {_quoted('1')}")
+        if material.phong.exponent is not None:
+            lines.append(
+                f"    {_quoted('$phongexponent')} "
+                f"{_quoted(_float(material.phong.exponent))}"
+            )
+        if material.phong.boost is not None:
+            lines.append(
+                f"    {_quoted('$phongboost')} "
+                f"{_quoted(_float(material.phong.boost))}"
+            )
+        if material.phong.tint is not None:
+            lines.append(
+                f"    {_quoted('$phongtint')} "
+                f"{_quoted('[' + ' '.join(_float(value) for value in material.phong.tint) + ']')}"
+            )
+        if material.phong.fresnel_ranges is not None:
+            lines.append(
+                f"    {_quoted('$phongfresnelranges')} "
+                f"{_quoted('[' + ' '.join(_float(value) for value in material.phong.fresnel_ranges) + ']')}"
+            )
     lines.extend(("}", ""))
     return "\n".join(lines)
+
+
+def serialize_vmt_patch(material_path: ContentRelativePath) -> str:
+    path = ContentRelativePath(material_path)
+    if (
+            path.suffix.casefold() != ".vmt"
+            or path.parts[0].casefold() == "materials"
+    ):
+        raise ValueError(
+            "Source 1 material patches require material-relative .vmt paths"
+        )
+    return "\n".join((
+        _quoted("Patch"),
+        "{",
+        f"    {_quoted('include')} {_quoted(path.as_posix())}",
+        "}",
+        "",
+    ))
 
 
 def serialize_vtex_settings(

@@ -12,13 +12,16 @@ from SourceIO.library.source1.authoring import (
     Source1AuthoringBackend,
     Source1AuthoringManifest,
     Source1AuthoringManifestError,
+    Source1AuthoringMaterial,
     Source1AuthoringRequest,
     Source1AuthoringService,
     Source1AuthoringTarget,
     Source1AuthoringTargetError,
+    Source1PhongParameters,
     serialize_qc,
     serialize_smd,
     serialize_vmt,
+    serialize_vmt_patch,
     serialize_vtex_settings,
     stage_source1_artifacts,
 )
@@ -168,6 +171,68 @@ def test_serializers_match_source1_golden_contract():
     ) == _fixture("sourceio_normal.txt")
 
 
+def test_source1_phong_and_existing_vmt_patch_are_explicit():
+    material = Source1AuthoringMaterial(
+        "crate",
+        phong=Source1PhongParameters(
+            exponent=16.0,
+            boost=2.0,
+            tint=(0.25, 0.5, 0.75),
+            fresnel_ranges=(0.0, 0.5, 1.0),
+        ),
+    )
+
+    vmt = serialize_vmt(
+        material,
+        ContentRelativePath(
+            "materialsrc/models/sourceio/crate/crate_base_color.tga"
+        ),
+    )
+
+    assert '"$phong" "1"' in vmt
+    assert '"$phongexponent" "16"' in vmt
+    assert '"$phongboost" "2"' in vmt
+    assert '"$phongtint" "[0.25 0.5 0.75]"' in vmt
+    assert '"$phongfresnelranges" "[0 0.5 1]"' in vmt
+    assert serialize_vmt_patch(
+        ContentRelativePath("models/props/imported.vmt")
+    ) == (
+        '"Patch"\n'
+        "{\n"
+        '    "include" "models/props/imported.vmt"\n'
+        "}\n"
+    )
+
+
+def test_backend_reuses_existing_vmt_through_local_patch(tmp_path):
+    target = _target(tmp_path)
+    request = Source1AuthoringRequest(target, "crate")
+    material = Source1AuthoringMaterial(
+        "crate",
+        existing_vmt=ContentRelativePath("models/props/imported.vmt"),
+    )
+
+    output = Source1AuthoringBackend().build(
+        request,
+        (_model(material=material),),
+    )
+
+    assert not output.report.has_errors
+    assert len(output.compile_steps) == 1
+    patch = next(
+        artifact for artifact in output.artifacts
+        if artifact.kind == Source1ArtifactKind.MATERIAL
+    )
+    assert patch.payload == serialize_vmt_patch(material.existing_vmt)
+    assert all(
+        artifact.kind not in {
+            Source1ArtifactKind.TEXTURE_SOURCE,
+            Source1ArtifactKind.TEXTURE_SETTINGS,
+        }
+        for artifact in output.artifacts
+    )
+
+
 def test_backend_plans_dual_root_editable_bundle(tmp_path):
     target = _target(tmp_path)
     request = Source1AuthoringRequest(target, "crate")
@@ -199,15 +264,6 @@ def test_backend_plans_dual_root_editable_bundle(tmp_path):
         for step in output.compile_steps
     ] == [
         (
-            "studiomdl",
-            "modelsrc/sourceio/crate/crate.qc",
-            (
-                "models/sourceio/crate/crate.mdl",
-                "models/sourceio/crate/crate.vvd",
-                "models/sourceio/crate/crate.dx90.vtx",
-            ),
-        ),
-        (
             "vtex",
             "materialsrc/models/sourceio/crate/crate_base_color.tga",
             ("materials/models/sourceio/crate/crate_base_color.vtf",),
@@ -216,6 +272,15 @@ def test_backend_plans_dual_root_editable_bundle(tmp_path):
             "vtex",
             "materialsrc/models/sourceio/crate/crate_normal.tga",
             ("materials/models/sourceio/crate/crate_normal.vtf",),
+        ),
+        (
+            "studiomdl",
+            "modelsrc/sourceio/crate/crate.qc",
+            (
+                "models/sourceio/crate/crate.mdl",
+                "models/sourceio/crate/crate.vvd",
+                "models/sourceio/crate/crate.dx90.vtx",
+            ),
         ),
     ]
     assert all(

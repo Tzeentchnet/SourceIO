@@ -31,11 +31,14 @@ blender -c sourceio export-modeldoc [--overwrite] OUTPUT.vmdl
 blender -c sourceio export-hammer [--overwrite] OUTPUT.vmap
 blender -c sourceio export-cs2 --install-root ROOT --addon ADDON --asset NAME [--scope selected|collection|scene] [--batch] [--overwrite] [--compile]
 blender -c sourceio recompile-cs2 --install-root ROOT --addon ADDON MANIFEST
+blender -c sourceio export-source1 --game-root GAME --content-root CONTENT --asset NAME [--scope selected|collection|scene] [--batch] [--overwrite] [--compile]
+blender -c sourceio recompile-source1 --game-root GAME --content-root CONTENT MANIFEST
 ```
 `--clips` imports a Source 2 model's animation graph clips that match the patterns (see below).
 `extract-vtf` writes textures for editing in an external image editor (see [Editing VTF textures and sprite sheets](#editing-vtf-textures-and-sprite-sheets)).
-`export-modeldoc` and `export-hammer` are static reconstruction tools. `export-cs2`
-is the separate editable CS2 Workshop authoring workflow described below.
+`export-modeldoc` and `export-hammer` are static reconstruction tools.
+`export-cs2` and `export-source1` are the separate editable static-authoring
+workflows described below.
 
 # Usage
 In order to find the import tools you simply need to go to File>Import>Source Engine Assets
@@ -161,6 +164,71 @@ If compilation is requested, verify that CS2 Workshop Tools installed
 match the manifest. This workflow is CS2-specific static authoring, not a Dota
 exporter, general Source 2 binary exporter, skeletal exporter, or map authoring
 tool.
+
+## Source 1 static authoring
+
+*File > Export > Source 1 static asset* writes an editable static-prop bundle
+using separate SDK content and game roots. It emits SMD, QC,
+`VertexLitGeneric` VMT, 32-bit TGA sources, VTEX settings, a deterministic
+manifest, and a preflight report. *Compile after export* optionally runs the
+official `vtex.exe` and `studiomdl.exe`; SourceIO does not write compiled VTF or
+MDL binaries itself.
+
+The target fields are:
+
+- **Game root**: the mod or game folder containing `gameinfo.txt`, such as
+  `<TF2>/tf`.
+- **SDK content root**: the root below which SourceIO may create `modelsrc`,
+  `materialsrc`, and `sourceio` metadata folders. For the TF2 SDK tools this is
+  the TF2 installation root.
+- **Compiler root**: an optional folder containing both `vtex.exe` and
+  `studiomdl.exe`. If omitted, SourceIO checks the usual `bin` folder beside the
+  game root, then `SOURCEIO_SOURCE1_TOOL_ROOT`.
+- **Asset name, scope, and grouping**: the same path-safe combined/batch
+  choices as CS2 authoring. The default outputs are below
+  `models/sourceio/<asset>` and `materials/models/sourceio/<asset>`.
+
+The adapter exports evaluated mesh modifiers without changing the scene and
+uses Source 1's unit scale. Meshes need geometry, normals, and a UV map. The
+installed TF2 round trip verifies positions, UVs, winding, normals, material
+identity, and texture data after StudioMDL/VTEX compilation and SourceIO
+re-import.
+
+The supported material subset is intentionally explicit:
+
+- an imported Source 1 VMT or
+  `sourceio_export_source1_material_path` is reused through a local Patch VMT;
+- otherwise, the supported direct Principled graph authors base color/tint,
+  alpha test or blending, a default-strength tangent-space normal map, and
+  two-sided state;
+- roughness and metalness are not guessed into Source 1 phong controls.
+  Explicit phong can be enabled with the material custom property
+  `sourceio_source1_phong`; optional properties are
+  `sourceio_source1_phong_exponent`, `sourceio_source1_phong_boost`,
+  `sourceio_source1_phong_tint`, and
+  `sourceio_source1_phong_fresnel_ranges`;
+- unsupported procedural graphs and PBR slots block export during preflight.
+
+Compilation uses bounded logs, validates VTF/MDL/VVD/DX90 VTX outputs, and sets
+the `VPROJECT` environment required by Valve's VTEX in addition to passing
+`-game`. Recompile verifies every authored artifact's size and SHA-256 first.
+Compiler failures leave editable files and
+`sourceio/logs/<asset>.compile.log` in the SDK content root.
+
+For command-line use, the three root options can be supplied through
+environment variables:
+
+```powershell
+$env:SOURCEIO_SOURCE1_GAME_ROOT = "<steam>\common\Team Fortress 2\tf"
+$env:SOURCEIO_SOURCE1_CONTENT_ROOT = "<steam>\common\Team Fortress 2"
+$env:SOURCEIO_SOURCE1_TOOL_ROOT = "<steam>\common\Team Fortress 2\bin"
+blender -c sourceio export-source1 --asset my_prop --compile
+blender -c sourceio recompile-source1 sourceio/manifests/my_prop.sourceio.json
+```
+
+This is a static-prop workflow. Skeletal models, animation, physics, LODs,
+bodygroups, skins, flexes, and map authoring remain outside this slice. The
+existing direct Image Editor VTF export remains available and unchanged.
 
 ## CS2 map import sizes
 

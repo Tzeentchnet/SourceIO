@@ -18,6 +18,10 @@ from .operators.source1_operators import (SOURCEIO_OT_SkyboxImport,
                                           SOURCEIO_OT_VTFExport,
                                           SOURCEIO_OT_VTFExportEditable,
                                           SOURCEIO_OT_VTFImport)
+from .operators.source1_authoring_operators import (
+    SOURCEIO_OT_Source1AuthoringExport,
+    SOURCEIO_OT_Source1AuthoringRecompile,
+)
 from .operators.source2_operators import (SOURCEIO_OT_VMAPImport,
                                           SOURCEIO_OT_VMATImport,
                                           SOURCEIO_OT_VMDLImport,
@@ -129,6 +133,14 @@ class SourceIO_MT_ExportMenu(bpy.types.Menu):
             SOURCEIO_OT_CS2AuthoringRecompile.bl_idname,
             text="Recompile CS2 authoring manifest",
         )
+        layout.operator(
+            SOURCEIO_OT_Source1AuthoringExport.bl_idname,
+            text="Source 1 static asset",
+        )
+        layout.operator(
+            SOURCEIO_OT_Source1AuthoringRecompile.bl_idname,
+            text="Recompile Source 1 authoring manifest",
+        )
         layout.separator()
         layout.operator(
             SOURCEIO_OT_Source2ModelDocExport.bl_idname,
@@ -185,6 +197,8 @@ classes = [
     # Source1 stuff
     SOURCEIO_OT_MDLImport,
     SOURCEIO_OT_BSPImport,
+    SOURCEIO_OT_Source1AuthoringExport,
+    SOURCEIO_OT_Source1AuthoringRecompile,
 
     # Source2 stuff
     SOURCEIO_OT_DMXCameraImport,

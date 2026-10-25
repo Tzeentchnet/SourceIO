@@ -703,7 +703,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         Blender has no Phong lobe and its specular inputs are 0..1 factors, so:
 
         * exponent -> Roughness via :func:`phong_exponent_to_roughness`
-        * mask x fresnel x boost -> Specular IOR Level / Roughness modulation
+        * mask x fresnel x boost -> Specular IOR Level
         * tint -> Specular Tint (same lerp as the SDK)
         """
         spec_input = 'Specular IOR Level'
@@ -746,19 +746,25 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             split_node.mode = "RGB"
             self.connect_nodes(exponent_node.outputs['Color'], split_node.inputs[0])
 
-            # The SDK decodes the red channel as `fSpecExp = 1.0 + factor * r`
-            # (factor is 149.0 unless $phongexponentfactor overrides it), so r=0
-            # is a very broad highlight and r=1 is tight. Map Range is linear in
-            # `r`, which cannot reproduce the sqrt() curve exactly, but matching
-            # both endpoints keeps the highlight size right at the extremes.
-            exponent_factor = self._vmt.get_float('$phongexponentfactor', None) or 149.0
-            remap = self.create_node(Nodes.ShaderNodeMapRange, 'phongexponent -> roughness')
-            remap.inputs['From Min'].default_value = 0.0
-            remap.inputs['From Max'].default_value = 1.0
-            remap.inputs['To Min'].default_value = phong_exponent_to_roughness(1.0)
-            remap.inputs['To Max'].default_value = phong_exponent_to_roughness(1.0 + exponent_factor)
-            self.connect_nodes(split_node.outputs[0], remap.inputs['Value'])
-            roughness_output = remap.outputs[0]
+            # exponent = 1 + factor*r, then roughness = sqrt(2/(exponent+2)).
+            exponent_factor = self._vmt.get_float('$phongexponentfactor', None)
+            if exponent_factor is None:
+                exponent_factor = 149.0
+            denominator = self.create_node(Nodes.ShaderNodeMath, 'phongexponent denominator')
+            denominator.operation = 'MULTIPLY_ADD'
+            denominator.inputs[1].default_value = exponent_factor
+            denominator.inputs[2].default_value = 3.0
+            self.connect_nodes(split_node.outputs[0], denominator.inputs[0])
+
+            reciprocal = self.create_node(Nodes.ShaderNodeMath, 'phongexponent reciprocal')
+            reciprocal.operation = 'DIVIDE'
+            reciprocal.inputs[0].default_value = 2.0
+            self.connect_nodes(denominator.outputs[0], reciprocal.inputs[1])
+
+            roughness = self.create_node(Nodes.ShaderNodeMath, 'phongexponent -> roughness')
+            roughness.operation = 'SQRT'
+            self.connect_nodes(reciprocal.outputs[0], roughness.inputs[0])
+            roughness_output = roughness.outputs[0]
 
             # G is the per-pixel $phongalbedotint amount -- NOT metalness, which is
             # what this used to be wired to.

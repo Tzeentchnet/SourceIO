@@ -13,7 +13,10 @@ from SourceIO.blender_bindings.material_loader.material_loader import (
 from SourceIO.blender_bindings.material_loader.shader_base import ALPHA_CLIP_LABEL, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders import source1_shader_base
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
-from SourceIO.blender_bindings.material_loader.shaders.source1_shaders.vertexlit_generic import VertexLitGeneric
+from SourceIO.blender_bindings.material_loader.shaders.source1_shaders.vertexlit_generic import (
+    VertexLitGeneric,
+    phong_exponent_to_roughness,
+)
 from SourceIO.blender_bindings.preferences import SourceIOPreferences
 from SourceIO.blender_bindings.source1 import vtf as blender_vtf
 from SourceIO.blender_bindings.utils import bpy_utils, texture_utils
@@ -318,6 +321,44 @@ class PrincipledVertexLitGenericTests(_CleanFile):
                                    '"$phong" "1" "$phongexponent" "20" }')
         self.assertTrue(shader.inputs['Specular IOR Level'].is_linked)
         self.assertFalse(shader.inputs['Roughness'].is_linked)
+
+    def test_phong_exponent_texture_uses_exact_roughness_curve(self):
+        self._fake_texture("exponent")
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$phong" "1" "$phongexponenttexture" "t/exponent" '
+            '"$normalmapalphaphongmask" "0" }'
+        )
+        roughness = shader.inputs['Roughness'].links[0].from_node
+        reciprocal = roughness.inputs[0].links[0].from_node
+        denominator = reciprocal.inputs[1].links[0].from_node
+        split = denominator.inputs[0].links[0].from_node
+
+        self.assertEqual(roughness.operation, 'SQRT')
+        self.assertEqual(reciprocal.operation, 'DIVIDE')
+        self.assertEqual(reciprocal.inputs[0].default_value, 2.0)
+        self.assertEqual(denominator.operation, 'MULTIPLY_ADD')
+        self.assertEqual(denominator.inputs[1].default_value, 149.0)
+        self.assertEqual(denominator.inputs[2].default_value, 3.0)
+        self.assertEqual(split.name, 'phongexponent split')
+        self.assertEqual(denominator.inputs[0].links[0].from_socket.name, 'Red')
+
+        red = 0.5
+        node_curve = (reciprocal.inputs[0].default_value
+                      / (red * denominator.inputs[1].default_value
+                         + denominator.inputs[2].default_value)) ** 0.5
+        self.assertAlmostEqual(node_curve, phong_exponent_to_roughness(1.0 + 149.0 * red))
+        self.assertIn('phongexponent -> roughness', material.node_tree.nodes)
+
+    def test_phong_exponent_factor_override_including_zero(self):
+        self._fake_texture("exponent")
+        for factor in (10.0, 0.0):
+            with self.subTest(factor=factor):
+                material, _ = self._material(
+                    f'"VertexLitGeneric" {{ "$phong" "1" "$phongexponenttexture" "t/exponent" '
+                    f'"$phongexponentfactor" "{factor}" }}'
+                )
+                denominator = material.node_tree.nodes['phongexponent denominator']
+                self.assertEqual(denominator.inputs[1].default_value, factor)
 
     def test_blend_tint_by_base_alpha_masks_the_tint(self):
         self._fake_texture("skin")

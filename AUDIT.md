@@ -88,14 +88,14 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 - **Opt-in Principled culling.** Principled VertexLitGeneric materials remain two-sided by default. An add-on preference enables Source-style culling for newly imported materials while preserving `$nocull 1`; BVLG behavior is unchanged.
 - **`$basealphaenvmapmask`.** The default is now 0, matching the SDK. Explicit 0 and 1 continue to override it.
 - **Model envmaps.** Principled VertexLitGeneric now maps `$envmap`, `$envmaptint`, `$envmapcontrast`, `$envmapsaturation` and all three mask sources to the Principled specular lobe. Base alpha is inverted, normal-map alpha overrides the other masks, and unsupported bump-map/mask combinations disable the reflection as the SDK does. `$phong` keeps its separate skin-shader behavior.
+- **Exact phong exponent textures.** The red channel now follows `sqrt(2 / (3 + factor·r))` at every value, including custom and zero `$phongexponentfactor` values, instead of linearly interpolating roughness between the two endpoints.
 
 ### Recommended next
 
-1. **Phong exponent texture curve.** The exponent texture is mapped to roughness linearly between its endpoints. Rebuilding `sqrt(2 / (1 + 149·r + 2))` from three Math nodes (multiply-add, divide, sqrt) would match `phong_exponent_to_roughness` at every value, not just the ends.
-2. **`$phongfresnelranges`.** Collapsed to the middle value. A Layer Weight → Map Range piecewise curve would reproduce the SDK's per-pixel Fresnel term.
-3. **Detail textures** are always marked Non-Color. Check each `$detailblendmode` against the SDK's sRGB-read setting for the detail sampler; some modes may sample in sRGB.
-4. **One-axis clamps** (`CLAMPS` xor `CLAMPT`) can't be expressed with a node's single extension setting. Clamping the UV on one axis (Separate XYZ → Clamp → Combine) would cover them.
-5. **`$vertexcolor` / `$vertexalpha`** aren't supported by VertexLitGeneric (UnlitGeneric and DecalModulate support them).
+1. **`$phongfresnelranges`.** Collapsed to the middle value. A Layer Weight → Map Range piecewise curve would reproduce the SDK's per-pixel Fresnel term.
+2. **Detail textures** are always marked Non-Color. Check each `$detailblendmode` against the SDK's sRGB-read setting for the detail sampler; some modes may sample in sRGB.
+3. **One-axis clamps** (`CLAMPS` xor `CLAMPT`) can't be expressed with a node's single extension setting. Clamping the UV on one axis (Separate XYZ → Clamp → Combine) would cover them.
+4. **`$vertexcolor` / `$vertexalpha`** aren't supported by VertexLitGeneric (UnlitGeneric and DecalModulate support them).
 
 ---
 

@@ -5,9 +5,11 @@ from pathlib import Path
 
 from SourceIO.library.source2.authoring import (
     AuthoringMaterial,
+    AuthoringTexture,
     CS2AuthoringBackend,
     ExtractedAuthoringModel,
     Source2AuthoringRequest,
+    TextureRole,
     solid_color_tga,
 )
 from SourceIO.library.source2.export import (
@@ -148,6 +150,61 @@ def test_existing_material_is_remapped_without_reauthoring(tmp_path):
         if artifact.path.suffix == ".vmdl"
     )
     assert "materials/props/existing.vmat" in modeldoc
+
+
+def test_cs2_backend_authors_normal_texture(tmp_path):
+    target = _target(tmp_path)
+    normal_payload = solid_color_tga((0.5, 0.5, 1.0, 1.0))
+    material = AuthoringMaterial(
+        "painted",
+        textures=(
+            AuthoringTexture(
+                "painted_normal",
+                TextureRole.NORMAL,
+                normal_payload,
+                extension=".tga",
+                srgb=False,
+            ),
+        ),
+    )
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+    files = {artifact.path.as_posix(): artifact.payload for artifact in output.artifacts}
+
+    assert not output.report.has_errors
+    assert files["materials/sourceio/textures/painted_normal.tga"] == normal_payload
+    assert (
+        'TextureNormal "materials/sourceio/textures/painted_normal.tga"'
+        in files["materials/sourceio/painted.vmat"]
+    )
+
+
+def test_cs2_backend_keeps_roughness_texture_blocked(tmp_path):
+    target = _target(tmp_path)
+    material = AuthoringMaterial(
+        "painted",
+        textures=(
+            AuthoringTexture(
+                "painted_roughness",
+                TextureRole.ROUGHNESS,
+                solid_color_tga((0.5, 0.5, 0.5, 1.0)),
+                extension=".tga",
+            ),
+        ),
+    )
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+
+    assert output.report.has_errors
+    assert "authoring.cs2.material.texture_unsupported" in {
+        diagnostic.code for diagnostic in output.report
+    }
 
 
 def test_solid_color_tga_is_deterministic():

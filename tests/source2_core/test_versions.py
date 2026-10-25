@@ -17,6 +17,9 @@ from SourceIO.library.source2.exceptions import (
     UnsupportedResourceVersionError,
 )
 from SourceIO.library.source2.keyvalues3.binary_keyvalues import (
+    KV3Buffers,
+    KV3Context,
+    _read_value_legacy,
     read_valve_keyvalue3,
     write_valve_keyvalue3,
 )
@@ -24,8 +27,10 @@ from SourceIO.library.source2.keyvalues3.enums import (
     KV3CompressionMethod,
     KV3Format,
     KV3Signature,
+    KV3Type,
+    Specifier,
 )
-from SourceIO.library.source2.keyvalues3.types import Object, String
+from SourceIO.library.source2.keyvalues3.types import Object, String, UInt32
 from SourceIO.library.source2.utils.ntro_reader import NTROBuffer
 from SourceIO.library.utils import MemoryBuffer, WritableMemoryBuffer
 
@@ -53,6 +58,44 @@ def test_kv3_versions_zero_through_five_round_trip(signature: KV3Signature):
     parsed = read_valve_keyvalue3(MemoryBuffer(output.data))
 
     assert parsed["value"] == "test"
+
+
+@pytest.mark.parametrize(
+    ("value_type", "expected"),
+    (
+        (KV3Type.UINT32_ZERO, 0),
+        (KV3Type.UINT32_ONE, 1),
+    ),
+)
+def test_kv3_uint32_constants_use_no_payload(
+        value_type: KV3Type,
+        expected: int,
+):
+    empty = MemoryBuffer(b"")
+    buffers = KV3Buffers(empty, empty, empty, empty)
+    context = KV3Context(
+        strings=[],
+        buffer0=buffers,
+        buffer1=buffers,
+        types_buffer=[(value_type, Specifier.UNSPECIFIED)],
+        object_member_count_buffer=empty,
+        binary_blob_sizes=None,
+        binary_blob_buffer=None,
+        read_type=lambda current: current.types_buffer.pop(),
+        read_value=_read_value_legacy,
+        active_buffer=buffers,
+    )
+
+    value = context.read_value(context)
+
+    assert type(value) is UInt32
+    assert value == expected
+    assert all(buffer.tell() == 0 for buffer in (
+        buffers.byte_buffer,
+        buffers.short_buffer,
+        buffers.int_buffer,
+        buffers.double_buffer,
+    ))
 
 
 def test_future_kv3_version_raises_typed_error():

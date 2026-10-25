@@ -48,7 +48,7 @@ def _child(node: dict, class_name: str) -> dict:
     )
 
 
-def _fixture_tga() -> bytes:
+def _fixture_tga(colors=((36, 91, 214, 255), (230, 126, 34, 255))) -> bytes:
     width = height = 4
     header = struct.pack(
         "<BBBHHBHHHHBB",
@@ -66,7 +66,6 @@ def _fixture_tga() -> bytes:
         0x28,
     )
     pixels = bytearray()
-    colors = ((36, 91, 214, 255), (230, 126, 34, 255))
     for y in range(height):
         for x in range(width):
             red, green, blue, alpha = colors[(x + y) % 2]
@@ -153,7 +152,7 @@ def test_cs2_static_authoring_golden_contract():
     }
 
     assert contract["schema"] == "sourceio.cs2-static-authoring-contract"
-    assert contract["schema_version"] == 1
+    assert contract["schema_version"] == 2
     assert contract["addon_layout"] == {
         "content": "content/csgo_addons/{addon}",
         "game": "game/csgo_addons/{addon}",
@@ -200,6 +199,10 @@ def test_cs2_static_authoring_golden_contract():
     assert 'shader "csgo_complex.vfx"' in material_text
     assert (
         f'TextureColor "{paths["source_texture"].as_posix()}"'
+        in material_text
+    )
+    assert (
+        f'TextureNormal "{paths["normal_source_texture"].as_posix()}"'
         in material_text
     )
     render_mesh_text = (_FIXTURE_DIRECTORY / "sourceio.fbx").read_text(
@@ -261,6 +264,9 @@ def test_cs2_workshop_static_contract_roundtrip():
             ).read_text(encoding="utf-8"),
         })
         target.content_path(paths["source_texture"]).write_bytes(_fixture_tga())
+        target.content_path(paths["normal_source_texture"]).write_bytes(
+            _fixture_tga(((128, 128, 255, 255), (128, 128, 255, 255)))
+        )
 
         runner = ResourceCompilerRunner(
             target,
@@ -293,26 +299,27 @@ def test_cs2_workshop_static_contract_roundtrip():
             material_path.as_posix(),
         )
         used_textures = material.get_used_textures()
-        texture_reference = str(
-            used_textures[fixture_contract["associated_texture_parameter"]]
-        )
-        referenced_texture = PurePosixPath(texture_reference)
-        source_texture = paths["source_texture"].path
-        assert referenced_texture.parent == source_texture.parent
-        assert referenced_texture.name.startswith(
-            f"{source_texture.stem}_tga_"
-        )
-        assert referenced_texture.suffix == ".vtex"
+        for parameter, source_path_name in fixture_contract[
+                "associated_texture_parameters"
+        ].items():
+            texture_reference = str(used_textures[parameter])
+            referenced_texture = PurePosixPath(texture_reference)
+            source_texture = paths[source_path_name].path
+            assert referenced_texture.parent == source_texture.parent
+            assert referenced_texture.name.startswith(
+                f"{source_texture.stem}_tga_"
+            )
+            assert referenced_texture.suffix == ".vtex"
 
-        compiled_texture_path = ContentRelativePath(f"{texture_reference}_c")
-        assert compiled_texture_path.suffix == authoring.compiled_texture_suffix
-        texture = CompiledTextureResource.from_buffer(
-            target.game_path(compiled_texture_path).read_bytes(),
-            compiled_texture_path.as_posix(),
-        )
-        pixels, resolution = texture.get_texture_data(0)
-        assert resolution == (4, 4)
-        assert tuple(pixels.shape) == (4, 4, 4)
+            compiled_texture_path = ContentRelativePath(f"{texture_reference}_c")
+            assert compiled_texture_path.suffix == authoring.compiled_texture_suffix
+            texture = CompiledTextureResource.from_buffer(
+                target.game_path(compiled_texture_path).read_bytes(),
+                compiled_texture_path.as_posix(),
+            )
+            pixels, resolution = texture.get_texture_data(0)
+            assert resolution == (4, 4)
+            assert tuple(pixels.shape) == (4, 4, 4)
 
         model_path = paths["modeldoc"].compiled()
         model = CompiledModelResource.from_buffer(

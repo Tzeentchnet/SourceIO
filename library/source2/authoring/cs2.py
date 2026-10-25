@@ -78,21 +78,24 @@ def serialize_vmat(
         material: AuthoringMaterial,
         color_texture: ContentRelativePath,
         *,
+        normal_texture: ContentRelativePath | None = None,
         shader: str = "csgo_complex.vfx",
 ) -> str:
     tint = " ".join(
         f"{float(value):.6f}"
         for value in (*material.base_color[:3], 0.0)
     )
-    return "\n".join((
+    lines = [
         "Layer0",
         "{",
         f"    shader {_quoted(shader)}",
         f'    g_vColorTint "[{tint}]"',
         f"    TextureColor {_quoted(color_texture.as_posix())}",
-        "}",
-        "",
-    ))
+    ]
+    if normal_texture is not None:
+        lines.append(f"    TextureNormal {_quoted(normal_texture.as_posix())}")
+    lines.extend(("}", ""))
+    return "\n".join(lines)
 
 
 def _modeldoc(
@@ -237,12 +240,12 @@ class CS2AuthoringBackend:
                 )
             unsupported_roles = sorted(
                 role.value for role in textures
-                if role != TextureRole.BASE_COLOR
+                if role not in {TextureRole.BASE_COLOR, TextureRole.NORMAL}
             )
             if unsupported_roles:
                 loss_report.record(
                     "authoring.cs2.material.texture_unsupported",
-                    "The validated CS2 slice currently authors only a base-color texture.",
+                    "The validated CS2 slice currently authors base-color and normal textures.",
                     severity=DiagnosticSeverity.ERROR,
                     loss_kind=LossKind.DEFERRED,
                     details={
@@ -276,25 +279,42 @@ class CS2AuthoringBackend:
                 texture_name = color_texture.name
                 texture_payload = color_texture.payload
                 texture_extension = color_texture.extension
-            if contract is not None and texture_extension != contract.source_texture_suffix:
-                loss_report.record(
-                    "authoring.cs2.texture.format_invalid",
-                    f"The validated CS2 contract requires {contract.source_texture_suffix} source textures.",
-                    severity=DiagnosticSeverity.ERROR,
-                    loss_kind=LossKind.SAFETY,
-                    details={
-                        "material": material_name,
-                        "extension": texture_extension,
-                    },
-                )
-            source_path = request.texture_directory.joinpath(
-                f"{texture_name}{texture_extension}"
-            )
-            add_artifact(AuthoringArtifact(
-                source_path,
-                AuthoringArtifactKind.TEXTURE_SOURCE,
+
+            def stage_texture(name: str, payload: bytes, extension: str) -> ContentRelativePath:
+                if contract is not None and extension != contract.source_texture_suffix:
+                    loss_report.record(
+                        "authoring.cs2.texture.format_invalid",
+                        f"The validated CS2 contract requires {contract.source_texture_suffix} source textures.",
+                        severity=DiagnosticSeverity.ERROR,
+                        loss_kind=LossKind.SAFETY,
+                        details={
+                            "material": material_name,
+                            "extension": extension,
+                        },
+                    )
+                path = request.texture_directory.joinpath(f"{name}{extension}")
+                add_artifact(AuthoringArtifact(
+                    path,
+                    AuthoringArtifactKind.TEXTURE_SOURCE,
+                    payload,
+                ))
+                return path
+
+            color_source_path = stage_texture(
+                texture_name,
                 texture_payload,
-            ))
+                texture_extension,
+            )
+            normal_texture = textures.get(TextureRole.NORMAL)
+            normal_source_path = (
+                stage_texture(
+                    normal_texture.name,
+                    normal_texture.payload,
+                    normal_texture.extension,
+                )
+                if normal_texture is not None
+                else None
+            )
 
             if contract is not None and contract.source_texture_is_compiler_input:
                 loss_report.record(
@@ -312,7 +332,8 @@ class CS2AuthoringBackend:
                 AuthoringArtifactKind.MATERIAL,
                 serialize_vmat(
                     material,
-                    source_path,
+                    color_source_path,
+                    normal_texture=normal_source_path,
                     shader=contract.material_shader if contract is not None else "csgo_complex.vfx",
                 ),
             ))

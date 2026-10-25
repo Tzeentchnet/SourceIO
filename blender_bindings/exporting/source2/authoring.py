@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import datetime
+import struct
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from typing import Callable, Iterable
 
 import bpy
 import bmesh
+import numpy as np
 
 from ....library.source2.authoring import (
     AuthoringGrouping,
@@ -108,8 +110,15 @@ def _linked_node(socket):
 
 
 def _image_texture(socket):
-    node = _linked_node(socket)
-    if node is None or node.bl_idname != "ShaderNodeTexImage" or node.image is None:
+    if socket is None or not socket.is_linked or len(socket.links) != 1:
+        return None
+    link = socket.links[0]
+    node = link.from_node
+    if (
+            node.bl_idname != "ShaderNodeTexImage"
+            or node.image is None
+            or link.from_socket.name != "Color"
+    ):
         return None
     return node.image
 
@@ -120,29 +129,52 @@ def _normal_image(socket):
         return None
     if normal.bl_idname != "ShaderNodeNormalMap":
         return False
+    strength = normal.inputs.get("Strength")
+    if (
+            strength is None
+            or strength.is_linked
+            or float(strength.default_value) != 1.0
+            or normal.space != "TANGENT"
+            or normal.uv_map
+    ):
+        return False
     image = _image_texture(normal.inputs.get("Color"))
     return image if image is not None else False
 
 
-def _save_image_tga(image, directory: Path, name: str) -> bytes:
-    destination = directory / f"{name}.tga"
-    copy = image.copy()
-    settings = bpy.context.scene.render.image_settings
-    previous = (
-        settings.file_format,
-        settings.color_mode,
-        settings.color_depth,
+def _encode_image_tga(image, *, invert_green: bool = False) -> bytes:
+    width, height = (int(value) for value in image.size)
+    if width <= 0 or height <= 0:
+        raise ValueError(f'Cannot author unloaded image "{image.name}"')
+    pixels = np.empty(len(image.pixels), dtype=np.float32)
+    image.pixels.foreach_get(pixels)
+    pixels = pixels.reshape(height, width, 4)
+    if invert_green:
+        pixels[..., 1] = 1.0 - pixels[..., 1]
+    elif not image.colorspace_settings.is_data:
+        rgb = np.clip(pixels[..., :3], 0.0, None)
+        pixels[..., :3] = np.where(
+            rgb <= 0.0031308,
+            rgb * 12.92,
+            1.055 * np.power(rgb, 1.0 / 2.4) - 0.055,
+        )
+    rgba = np.rint(np.clip(pixels[::-1], 0.0, 1.0) * 255.0).astype(np.uint8)
+    header = struct.pack(
+        "<BBBHHBHHHHBB",
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        width,
+        height,
+        32,
+        0x28,
     )
-    try:
-        copy.filepath_raw = str(destination)
-        settings.file_format = "TARGA_RAW"
-        settings.color_mode = "RGBA"
-        settings.color_depth = "8"
-        copy.save_render(str(destination), scene=bpy.context.scene)
-        return destination.read_bytes()
-    finally:
-        settings.file_format, settings.color_mode, settings.color_depth = previous
-        bpy.data.images.remove(copy)
+    return header + rgba[..., (2, 1, 0, 3)].tobytes()
 
 
 def _alpha_mode(material, principled) -> MaterialAlphaMode:
@@ -159,7 +191,6 @@ def _extract_principled_material(
         material,
         name: str,
         report: LossReport,
-        texture_directory: Path,
 ) -> AuthoringMaterial | None:
     if material.node_tree is None:
         report.record(
@@ -227,7 +258,7 @@ def _extract_principled_material(
         textures.append(AuthoringTexture(
             texture_name,
             role,
-            _save_image_tga(image, texture_directory, texture_name),
+            _encode_image_tga(image),
             extension=".tga",
             srgb=role == TextureRole.BASE_COLOR,
         ))
@@ -256,7 +287,7 @@ def _extract_principled_material(
         if image is False or image is None:
             report.record(
                 "authoring.material.normal.unsupported",
-                "Normal must be unlinked or use Image Texture -> Normal Map -> Principled BSDF.",
+                "Normal must use a default-strength tangent-space Image Texture -> Normal Map -> Principled BSDF graph.",
                 severity=DiagnosticSeverity.ERROR,
                 loss_kind=LossKind.DEFERRED,
                 path=("materials", material.name, "Normal"),
@@ -266,7 +297,10 @@ def _extract_principled_material(
             textures.append(AuthoringTexture(
                 texture_name,
                 TextureRole.NORMAL,
-                _save_image_tga(image, texture_directory, texture_name),
+                _encode_image_tga(
+                    image,
+                    invert_green=True,
+                ),
                 extension=".tga",
                 srgb=False,
             ))
@@ -303,7 +337,6 @@ def _extract_principled_material(
 def _extract_materials(
         objects: Iterable,
         report: LossReport,
-        texture_directory: Path,
 ) -> tuple[tuple[AuthoringMaterial, ...], dict[int, str]]:
     materials = []
     names_by_pointer = {}
@@ -345,7 +378,6 @@ def _extract_materials(
                 material,
                 name,
                 report,
-                texture_directory,
             )
             if extracted is not None:
                 materials.append(extracted)
@@ -570,24 +602,19 @@ def extract_authoring_models(
             )
 
     exporter = fbx_exporter or _default_fbx_exporter
-    with tempfile.TemporaryDirectory(prefix="sourceio_cs2_textures_") as texture_directory:
-        materials, material_names = _extract_materials(
-            objects,
-            loss_report,
-            Path(texture_directory),
-        )
-        if loss_report.has_errors:
-            return (), loss_report
-        models = []
-        with _preserve_context(context):
-            for name, group in groups:
-                models.append(_export_group(
-                    context,
-                    group,
-                    name,
-                    materials,
-                    material_names,
-                    loss_report,
-                    exporter,
-                ))
+    materials, material_names = _extract_materials(objects, loss_report)
+    if loss_report.has_errors:
+        return (), loss_report
+    models = []
+    with _preserve_context(context):
+        for name, group in groups:
+            models.append(_export_group(
+                context,
+                group,
+                name,
+                materials,
+                material_names,
+                loss_report,
+                exporter,
+            ))
     return tuple(models), loss_report

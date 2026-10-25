@@ -81,6 +81,26 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
         principled.inputs["Base Color"].default_value = (0.25, 0.5, 0.75, 1.0)
         principled.inputs["Metallic"].default_value = 0.0
         principled.inputs["Roughness"].default_value = 0.5
+        normal_image = bpy.data.images.new(
+            "sourceio_normal",
+            width=4,
+            height=4,
+            alpha=True,
+        )
+        normal_image.colorspace_settings.is_data = True
+        normal_image.colorspace_settings.name = "Non-Color"
+        normal_image.pixels[:] = (0.25, 0.2, 1.0, 1.0) * 16
+        normal_texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+        normal_texture.image = normal_image
+        normal_map = material.node_tree.nodes.new("ShaderNodeNormalMap")
+        material.node_tree.links.new(
+            normal_texture.outputs["Color"],
+            normal_map.inputs["Color"],
+        )
+        material.node_tree.links.new(
+            normal_map.outputs["Normal"],
+            principled.inputs["Normal"],
+        )
         mesh.materials.append(material)
         obj = bpy.data.objects.new("sourceio_mesh", mesh)
         bpy.context.scene.collection.objects.link(obj)
@@ -123,20 +143,32 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             (0.25, 0.5, 0.75, 0.0),
             atol=1e-6,
         )
-        texture_reference = compiled_material.get_texture_property("g_tColor", None)
-        assert texture_reference
-        texture_asset = ContentRelativePath(str(texture_reference))
-        if not texture_asset.name.endswith("_c"):
-            texture_asset = texture_asset.compiled()
-        texture_path = target.game_path(texture_asset)
-        assert texture_path.is_file()
-        compiled_texture = _compiled_resource(
-            CompiledTextureResource,
-            texture_path,
-        )
-        pixels, size = compiled_texture.get_texture_data()
-        assert size == (4, 4)
-        assert np.allclose(pixels[..., :3], 1.0, atol=0.08)
+        source_normal = np.array((0.25, 0.8, 1.0))
+        signed_normal = source_normal * 2.0 - 1.0
+        compiled_normal = (
+            signed_normal / np.linalg.norm(signed_normal) + 1.0
+        ) / 2.0
+        for parameter, expected_rgb in (
+            ("g_tColor", (1.0, 1.0, 1.0)),
+            ("g_tNormal", compiled_normal),
+        ):
+            texture_reference = compiled_material.get_texture_property(
+                parameter,
+                None,
+            )
+            assert texture_reference
+            texture_asset = ContentRelativePath(str(texture_reference))
+            if not texture_asset.name.endswith("_c"):
+                texture_asset = texture_asset.compiled()
+            texture_path = target.game_path(texture_asset)
+            assert texture_path.is_file()
+            compiled_texture = _compiled_resource(
+                CompiledTextureResource,
+                texture_path,
+            )
+            pixels, size = compiled_texture.get_texture_data()
+            assert size == (4, 4)
+            assert np.allclose(pixels[..., :3], expected_rgb, atol=0.03)
 
         compiled_model = _compiled_resource(CompiledModelResource, model_path)
         assert compiled_model.get_name().endswith(

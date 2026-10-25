@@ -18,6 +18,7 @@ from SourceIO.library.source2.authoring import (
     AuthoringGrouping,
     AuthoringScope,
     Source2AuthoringRequest,
+    TextureRole,
 )
 from SourceIO.library.source2.workshop import (
     CS2_WORKSHOP_LAYOUT,
@@ -199,6 +200,7 @@ class Source2AuthoringAdapterTests(unittest.TestCase):
         self.assertEqual(len(authored.textures), 1)
         self.assertEqual(authored.textures[0].extension, ".tga")
         self.assertEqual(authored.textures[0].payload[2], 2)
+        self.assertEqual(authored.textures[0].payload[18:22], bytes((203, 170, 124, 255)))
         self.assertIn(
             "authoring.material.name.normalized",
             {item.code for item in report},
@@ -224,6 +226,67 @@ class Source2AuthoringAdapterTests(unittest.TestCase):
             "materials/props/existing.vmat",
         )
         self.assertEqual(models[0].materials[0].textures, ())
+
+    def test_principled_normal_map_is_extracted_with_source_handedness(self):
+        obj = self.mesh_object()
+        material = self.principled_material()
+        principled = material.node_tree.nodes["Principled BSDF"]
+        image = bpy.data.images.new("normal", width=1, height=1, alpha=True)
+        image.colorspace_settings.is_data = True
+        image.colorspace_settings.name = "Non-Color"
+        image.pixels[:] = (0.25, 0.2, 1.0, 1.0)
+        texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+        texture.image = image
+        normal_map = material.node_tree.nodes.new("ShaderNodeNormalMap")
+        material.node_tree.links.new(texture.outputs["Color"], normal_map.inputs["Color"])
+        material.node_tree.links.new(normal_map.outputs["Normal"], principled.inputs["Normal"])
+        obj.data.materials.append(material)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+
+        models, report = extract_authoring_models(
+            bpy.context,
+            self.request(),
+            fbx_exporter=lambda path: path.write_bytes(b"fbx"),
+        )
+
+        self.assertFalse(report.has_errors)
+        textures = models[0].materials[0].textures
+        self.assertEqual(len(textures), 1)
+        self.assertEqual(textures[0].role, TextureRole.NORMAL)
+        self.assertFalse(textures[0].srgb)
+        self.assertEqual(textures[0].payload[18:22], bytes((255, 204, 64, 255)))
+        self.assertAlmostEqual(image.pixels[1], 0.2)
+
+    def test_nondefault_normal_map_strength_is_blocked(self):
+        obj = self.mesh_object()
+        material = self.principled_material()
+        nodes = material.node_tree.nodes
+        image = bpy.data.images.new("normal", width=1, height=1)
+        texture = nodes.new("ShaderNodeTexImage")
+        texture.image = image
+        normal_map = nodes.new("ShaderNodeNormalMap")
+        normal_map.inputs["Strength"].default_value = 0.5
+        material.node_tree.links.new(texture.outputs["Color"], normal_map.inputs["Color"])
+        material.node_tree.links.new(
+            normal_map.outputs["Normal"],
+            nodes["Principled BSDF"].inputs["Normal"],
+        )
+        obj.data.materials.append(material)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+
+        models, report = extract_authoring_models(
+            bpy.context,
+            self.request(),
+            fbx_exporter=lambda path: path.write_bytes(b"fbx"),
+        )
+
+        self.assertEqual(models, ())
+        self.assertIn(
+            "authoring.material.normal.unsupported",
+            {item.code for item in report},
+        )
 
     def test_unsupported_procedural_graph_blocks_before_fbx_export(self):
         obj = self.mesh_object()

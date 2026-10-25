@@ -1,10 +1,11 @@
 # SourceIO Source Export Capability Plan
 
-**Status: the first CS2 static-authoring vertical slice is implemented and has
-passed the installed Workshop Tools exit gate.** Export is SourceIO's secondary
-goal after import quality; the aim is one straightforward path from a Blender
-scene to editable, optionally compiled static assets. Next: widen the CS2
-material contract, then the Source 1 static backend (implementation todos 9–13).
+**Status: the first CS2 static-authoring vertical slice and its normal-map
+extension are implemented and have passed the installed Workshop Tools exit
+gate.** Export is SourceIO's secondary goal after import quality; the aim is one
+straightforward path from a Blender scene to editable, optionally compiled
+static assets. Next: add CS2 roughness, metalness, and alpha-test mappings, then
+the Source 1 static backend (implementation todos 9–13).
 Skeletal, animated, physics, and map authoring, and game coverage beyond
 priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
 are tracked in [plan.md](plan.md).
@@ -320,9 +321,10 @@ Implemented contract details:
   Workshop Tools output.
 - Wrap Blender's FBX exporter with a context snapshot/restore guard and a temporary
   export selection. Check that the FBX operator exists and report its absence.
-- Support the verified opaque base-color/tint subset. Normal, non-default
-  roughness/metalness, AO, non-base texture roles, alpha blend/test, emission,
-  and procedural graphs remain blocked until each mapping is contract-backed.
+- Support the verified opaque base-color/tint and tangent-space normal-map
+  subset. Non-default roughness/metalness, AO, other texture roles, alpha
+  blend/test, emission, and procedural graphs remain blocked until each mapping
+  is contract-backed.
 - Omit or explicitly configure physics surface data; never guess it from material
   names.
 - Generate deterministic material remaps from FBX material names to VMAT paths.
@@ -428,6 +430,12 @@ exists.
      roughness, metalness, then alpha test, in that order.
    - Capture an official Workshop Tools VMAT per mapping before serializing it;
      keep emission, blend modes, and procedural graphs blocked.
+   - [x] Normal map: serialize the Workshop-verified `TextureNormal` contract,
+     invert Blender's green channel for Source 2 handedness, and compile/re-import
+     both `g_tColor` and `g_tNormal`.
+   - [ ] Roughness.
+   - [ ] Metalness.
+   - [ ] Alpha test.
    - Extend the installed-tools gate to compile and re-import each new slot.
 
 10. [ ] **Implementing the Source 1 authoring backend**

@@ -1,0 +1,135 @@
+name: Build Linux pylib
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/build_linux_pylib.yml"
+      - "tools/check_linux_pylib.py"
+      - "tools/pylib_sources.json"
+      - "library/utils/pylib/linux/pylib.abi3.so"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+
+    steps:
+      - name: Check out SourceIO
+        uses: actions/checkout@v4
+
+      - name: Read pinned source revisions
+        id: sources
+        shell: bash
+        run: |
+          /opt/python/cp311-cp311/bin/python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sources = json.loads(Path("tools/pylib_sources.json").read_text(encoding="utf-8"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              for name, source in sources.items():
+                  print(f"{name}_repository={source['repository']}", file=output)
+                  print(f"{name}_revision={source['revision']}", file=output)
+          PY
+
+      - name: Check out pylib
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.sources.outputs.pylib_repository }}
+          ref: ${{ steps.sources.outputs.pylib_revision }}
+          path: pylib-src
+          persist-credentials: false
+
+      - name: Check out VTFLib
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.sources.outputs.vtflib_repository }}
+          ref: ${{ steps.sources.outputs.vtflib_revision }}
+          path: vtflib-src
+          persist-credentials: false
+
+      - name: Check out Compressonator
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.sources.outputs.compressonator_repository }}
+          ref: ${{ steps.sources.outputs.compressonator_revision }}
+          path: compressonator-src
+          persist-credentials: false
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          dnf install -y \
+            git \
+            libjpeg-turbo-devel \
+            libpng-devel \
+            libtiff-devel \
+            zlib-devel
+          /opt/python/cp311-cp311/bin/python -m pip install \
+            --disable-pip-version-check \
+            "cmake==3.27.9" \
+            "ninja==1.11.1.1"
+
+      - name: Configure
+        shell: bash
+        run: |
+          export PATH="/opt/python/cp311-cp311/bin:$PATH"
+          cmake -S pylib-src -B pylib-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc -Wl,--hash-style=both" \
+            -DPython3_ROOT_DIR=/opt/python/cp311-cp311 \
+            -DFETCHCONTENT_SOURCE_DIR_VTFEDIT="$GITHUB_WORKSPACE/vtflib-src" \
+            -DFETCHCONTENT_SOURCE_DIR_COMPRESSONATOR="$GITHUB_WORKSPACE/compressonator-src" \
+            -DUSE_LIBTXC_DXTN=ON \
+            -DBUILD_SHARED_LIBS=OFF
+
+      - name: Build
+        shell: bash
+        run: |
+          export PATH="/opt/python/cp311-cp311/bin:$PATH"
+          cmake --build pylib-build --target pylib --parallel 2
+
+      - name: Verify ABI and imports
+        shell: bash
+        run: |
+          /opt/python/cp311-cp311/bin/python tools/check_linux_pylib.py pylib-build/pylib.abi3.so
+
+          unexpected="$(
+            readelf -d pylib-build/pylib.abi3.so |
+              sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' |
+              grep -Ev '^(libc|libdl|libm|libpthread|librt|libutil)\.so\.|^ld-linux-x86-64\.so\.' || true
+          )"
+          if [[ -n "$unexpected" ]]; then
+            echo "Unexpected dynamic dependencies:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+          for python in /opt/python/cp311-cp311/bin/python /opt/python/cp313-cp313/bin/python; do
+            (
+              cd pylib-build
+              "$python" -c "import pylib; assert all(hasattr(pylib, name) for name in ('VPKFile', 'compression', 'image', 'mesh', 'vtf'))"
+            )
+          done
+
+          {
+            sha256sum pylib-build/pylib.abi3.so
+            readelf --version-info pylib-build/pylib.abi3.so
+            readelf -d pylib-build/pylib.abi3.so
+          } > pylib-build/abi-report.txt
+
+      - name: Upload Linux pylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-pylib-manylinux_2_28
+          path: |
+            pylib-build/pylib.abi3.so
+            pylib-build/abi-report.txt
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,14 @@
+{
+  "pylib": {
+    "repository": "REDxEYE/pylib",
+    "revision": "ddbebd86ce7680d034d7e84aa1f45ea7a76b7c02"
+  },
+  "vtflib": {
+    "repository": "REDxEYE/VTFLib",
+    "revision": "74e2388960cbb3c66301b815f0ca1de4f34e6019"
+  },
+  "compressonator": {
+    "repository": "REDxEYE/compressonator",
+    "revision": "b50eb65769c461f19d03f9e4be4617eebe29731d"
+  }
+}

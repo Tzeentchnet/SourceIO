@@ -38,14 +38,52 @@ def tag_vtf_metadata(image, vtf_data: bytes):
     image["sourceio_vtf_metadata"] = json.dumps(metadata.to_dict())
 
 
-def import_texture(texture_path: TinyPath, file_object, update=False):
+#: Source's self-shadowed bump basis (``bumpvectors.h``), one row per basis vector in tangent space.
+SSBUMP_BASIS = np.array([
+    [0.81649661064147949, 0.0, 0.57735025882720947],
+    [-0.40824833512306213, 0.70710676908493042, 0.57735025882720947],
+    [-0.40824833512306213, -0.7071068286895752, 0.57735025882720947],
+], dtype=np.float32)
+
+
+def ssbump_to_normal(rgba: np.ndarray) -> np.ndarray:
+    """A self-shadowed bump map as an ordinary tangent-space normal map, still in Source's (DirectX) convention.
+
+    Each channel is the light reaching the texel from one basis direction, so the normal is their weighted sum
+    (https://github.com/rob5300/ssbumpToNormal-Win). Returns float32 0..1, alpha kept.
+    """
+    pixels = rgba.astype(np.float32)
+    if rgba.dtype == np.uint8:
+        pixels /= 255
+    normal = pixels.copy()
+    normal[..., :3] = pixels[..., :3] @ SSBUMP_BASIS * 0.5 + 0.5
+    return normal
+
+
+def import_texture(texture_path: TinyPath, file_object, update=False, *, invert_y: bool = False,
+                   ssbump: bool = False, cache_identity: str = ""):
+    """Decode a VTF into an image, keeping 8-bit textures 8-bit throughout.
+
+    ``ssbump`` converts a self-shadowed bump map to a normal map and ``invert_y`` flips green (Source to Blender
+    normal maps), both before the image is encoded, so the image is never read back from Blender to change it.
+    Give such variants their own ``cache_identity``: the plain texture may be in the cache as well.
+    """
     logger.info(f'Loading "{texture_path.name}" texture')
     vtf_data = file_object.read()
-    rgba_data, image_height, image_width = load_texture(MemoryBuffer(vtf_data))
+    rgba_data, image_height, image_width = load_texture(MemoryBuffer(vtf_data), normalized=False)
+    if rgba_data is None:
+        return None
     rgba_data = rgba_data.reshape(image_height, image_width, -1)
+    if ssbump and rgba_data.dtype == np.uint8:
+        rgba_data = np.clip(np.rint(ssbump_to_normal(rgba_data) * 255), 0, 255).astype(np.uint8)
 
-    image = create_and_cache_texture(texture_path, rgba_data, False, False)
+    image = create_and_cache_texture(texture_path, rgba_data, False, invert_y, cache_identity,
+                                     image_name=texture_path.stem if cache_identity else None)
     tag_vtf_metadata(image, vtf_data)
+    if ssbump and rgba_data.dtype == np.uint8:
+        image['ssbump_converted'] = True
+    if invert_y and rgba_data.dtype == np.uint8:
+        image['normalmap_converted'] = True
     return image
 
 
@@ -97,7 +135,9 @@ def import_animated_texture(texture_path: TinyPath, file_object, content_manager
 
 def import_texture_tth(texture_path: TinyPath, header_file: Buffer, data_file: Buffer, update=False):
     logger.info(f'Loading "{texture_path.name}" texture')
-    rgba_data, image_height, image_width = load_texture_tth(header_file, data_file)
+    rgba_data, image_height, image_width = load_texture_tth(header_file, data_file, normalized=False)
+    if rgba_data is None:
+        return None
     rgba_data = rgba_data.reshape(image_height, image_width, -1)
     return create_and_cache_texture(texture_path, rgba_data, False, False)
 

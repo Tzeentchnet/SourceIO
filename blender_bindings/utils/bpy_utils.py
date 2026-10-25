@@ -5,6 +5,7 @@ from typing import Iterable
 
 import bpy
 
+from .id_index import id_collection_state, id_collection_state_after_add
 from ...library.utils.perf_sampler import timed
 from ...library.utils.tiny_path import TinyPath
 
@@ -141,16 +142,53 @@ def add_material(material, model_ob):
 
 
 
-def get_or_create_material(name: str, full_path: str):
-    full_path = full_path.lstrip('/').casefold()
+def _material_path_key(full_path: str) -> str:
+    """The form two material paths compare equal in: TinyPath's normalisation of the casefolded path."""
+    return str(TinyPath(full_path.casefold()))
+
+
+#: Material path key -> material name, so lookups don't scan every material (quadratic over a map import).
+#: Entries are checked against the material before use, and the index is rebuilt when a key is missing and
+#: materials were added or removed outside get_or_create_material.
+_material_index: dict[str, str] = {}
+_material_index_state: tuple[int, int, int] | None = None
+
+
+def _lookup_indexed_material(key: str) -> bpy.types.Material | None:
+    name = _material_index.get(key)
+    if name is None:
+        return None
+    mat = bpy.data.materials.get(name)
+    if mat is not None and _material_path_key(mat.get('full_path', '')) == key:
+        return mat
+    return None
+
+
+def _rebuild_material_index():
+    global _material_index_state
+    _material_index.clear()
     for mat in bpy.data.materials:
-        #if (fp := mat.get('full_path', None)) is None:
-        #    continue
-        if TinyPath(mat.get('full_path', '').casefold()) == TinyPath(full_path):
-            return mat
+        # The first material in name order wins, as the scan this replaced returned.
+        _material_index.setdefault(_material_path_key(mat.get('full_path', '')), mat.name)
+    _material_index_state = id_collection_state(bpy.data.materials)
+
+
+def get_or_create_material(name: str, full_path: str):
+    global _material_index_state
+    key = _material_path_key(full_path.lstrip('/'))
+    mat = _lookup_indexed_material(key)
+    if mat is None:
+        if key in _material_index or _material_index_state != id_collection_state(bpy.data.materials):
+            # Materials changed behind the index's back (another add-on, undo, a renamed or deleted material).
+            _rebuild_material_index()
+            mat = _lookup_indexed_material(key)
+    if mat is not None:
+        return mat
     mat = bpy.data.materials.new(name)
-    mat["full_path"] = full_path
+    mat["full_path"] = full_path.lstrip('/').casefold()
     mat.diffuse_color = [random.uniform(.4, 1) for _ in range(3)] + [1.0]
+    _material_index[key] = mat.name
+    _material_index_state = id_collection_state_after_add(_material_index_state, bpy.data.materials, mat)
     return mat
 
 

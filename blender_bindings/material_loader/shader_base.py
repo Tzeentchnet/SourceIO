@@ -108,6 +108,36 @@ def unfilter_alpha_clips(material: bpy.types.Material):
         links.new(lerp(bottom, top, weights.outputs["Y"]), clip.inputs[0])
 
 
+#: VTF texture flags that are sampler states (``TEXTUREFLAGS_*`` in the SDK's ``imageformat``/``vtf.h``).
+VTF_FLAG_POINTSAMPLE = 0x1
+VTF_FLAG_CLAMPS = 0x4
+VTF_FLAG_CLAMPT = 0x8
+
+
+def apply_vtf_sampler_flags(material: bpy.types.Material):
+    """Sample each imported VTF the way the game does: point sampled textures without filtering, and textures
+    clamped on both axes (sprites, decals, warp ramps) without wrapping round to the opposite edge.
+
+    Nodes a shader set up itself (another interpolation or extension) are left alone. Blender has one extension
+    for both axes, so a texture clamped on one axis only keeps repeating.
+    """
+    for node in material.node_tree.nodes:
+        if node.bl_idname != Nodes.ShaderNodeTexImage or node.image is None:
+            continue
+        flags = node.image.get("sourceio_vtf_flags")
+        if not isinstance(flags, str):
+            continue
+        try:
+            flags = int(flags, 16)
+        except ValueError:
+            continue
+        if flags & VTF_FLAG_POINTSAMPLE and node.interpolation == 'Linear':
+            node.interpolation = 'Closest'
+        clamp_both = VTF_FLAG_CLAMPS | VTF_FLAG_CLAMPT
+        if flags & clamp_both == clamp_both and node.extension == 'REPEAT':
+            node.extension = 'EXTEND'
+
+
 class Nodes:
     ShaderNodeAddShader = 'ShaderNodeAddShader'
     ShaderNodeAmbientOcclusion = 'ShaderNodeAmbientOcclusion'

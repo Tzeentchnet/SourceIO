@@ -53,7 +53,7 @@ class Source1ShaderBase(ShaderBase):
         texture_path = self._vmt.get_string(name, None)
         if texture_path is None:
             return None
-        image = self.load_texture_or_default(texture_path, default_color)
+        image = self.load_texture_or_default(texture_path, default_color, invert_y=normal_map, ssbump=ssbump)
         if ssbump:
             image = self.convert_ssbump(image)
         if normal_map:
@@ -101,20 +101,41 @@ class Source1ShaderBase(ShaderBase):
             image.colorspace_settings.name = 'Non-Color'
         return image, frame_count
 
-    def load_texture(self, texture_name: TinyPath, texture_path: TinyPath | None = None):
+    def load_texture_or_default(self, file: str, default_color: tuple = (1.0, 1.0, 1.0, 1.0), *,
+                                invert_y: bool = False, ssbump: bool = False):
+        """``invert_y``/``ssbump`` ask for a normal map converted while decoding; see :meth:`load_texture`."""
+        # Some VMT's in VtMB have a basetexture path starting with a /
+        file = TinyPath(file.removeprefix("/"))
+        parent = None if len(file.parts) == 1 else file.parent
+        texture = self.load_texture(file.stem, parent, invert_y=invert_y, ssbump=ssbump)
+        return texture or self.get_missing_texture(f'missing_{file.stem}', default_color)
+
+    def load_texture(self, texture_name: TinyPath, texture_path: TinyPath | None = None, *,
+                     invert_y: bool = False, ssbump: bool = False):
+        """Find or decode a VTF. With ``ssbump``/``invert_y`` the normal map is decoded already converted
+        (ssbump to normal, green flipped) and cached apart from the plain texture. When only the plain image is
+        loaded, that is returned instead, and ``convert_ssbump``/``convert_normalmap`` convert it in Blender as
+        before; both skip an image that is converted already."""
         if texture_path is None or texture_path == texture_name:
             full_path = texture_name
         else:
             full_path = texture_path / texture_name
-        image = check_texture_cache(full_path)
+        identity = "+".join(name for name, flag in (("ssbump", ssbump), ("invert_y", invert_y)) if flag)
+        image = check_texture_cache(full_path, identity)
         if image is not None:
+            if identity:
+                # Also true when the image came back from the on-disk texture cache, which drops custom properties.
+                image['ssbump_converted'] = image.get('ssbump_converted', False) or ssbump
+                image['normalmap_converted'] = image.get('normalmap_converted', False) or invert_y
+            return image
+        if identity and (image := check_texture_cache(full_path)) is not None:
             return image
         if texture_path is not None and texture_path.is_absolute():  # Absolute paths shouldn't even be here! This path is invalid
             return None
         texture_file = self.content_manager.find_file("materials" / (full_path + ".vtf"))
 
         if texture_file is not None:
-            return import_texture(full_path, texture_file)
+            return import_texture(full_path, texture_file, invert_y=invert_y, ssbump=ssbump, cache_identity=identity)
 
         texture_header_file = self.content_manager.find_file("materials"  / (full_path + ".tth"))
         texture_data_file = self.content_manager.find_file("materials" /  (full_path + ".ttz"))

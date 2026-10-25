@@ -22,31 +22,23 @@ def phong_exponent_to_roughness(exponent: float) -> float:
 class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
     SHADER: str = 'vertexlitgeneric'
 
-    @property
-    def bumpmap(self):
-        texture_path = self._vmt.get_string('$bumpmap', None)
-        if texture_path is not None:
-            image = self.load_texture_or_default(texture_path, (0.5, 0.5, 1.0, 1.0))
-            if image == self.basetexture:
-                return image
-            image = self.convert_normalmap(image)
-            image.colorspace_settings.is_data = True
-            image.colorspace_settings.name = 'Non-Color'
+    def _normal_map_property(self, name: str):
+        """A VMT normal map, green flipped for Blender; returned as is when it is the base texture itself."""
+        texture_path = self._vmt.get_string(name, None)
+        if texture_path is None:
+            return None
+        basetexture = self.basetexture  # loaded first, so a shared path stays the plain colour texture
+        image = self.load_texture_or_default(texture_path, (0.5, 0.5, 1.0, 1.0), invert_y=True)
+        if image == basetexture:
             return image
-        return None
+        image = self.convert_normalmap(image)
+        image.colorspace_settings.is_data = True
+        image.colorspace_settings.name = 'Non-Color'
+        return image
 
     @property
-    def compress(self):
-        texture_path = self._vmt.get_string('$compress', None)
-        if texture_path is not None:
-            image = self.load_texture_or_default(texture_path, (0.5, 0.5, 1.0, 1.0))
-            if image == self.basetexture:
-                return image
-            image = self.convert_normalmap(image)
-            image.colorspace_settings.is_data = True
-            image.colorspace_settings.name = 'Non-Color'
-            return image
-        return None
+    def bumpmap(self):
+        return self._normal_map_property('$bumpmap')
 
     @property
     def compress(self):
@@ -64,42 +56,11 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
     
     @property
     def bumpcompress(self):
-        texture_path = self._vmt.get_string('$bumpcompress', None)
-        if texture_path is not None:
-            image = self.load_texture_or_default(texture_path, (0.5, 0.5, 1.0, 1.0))
-            if image == self.basetexture:
-                return image
-            image = self.convert_normalmap(image)
-            image.colorspace_settings.is_data = True
-            image.colorspace_settings.name = 'Non-Color'
-            return image
-        return None
+        return self._normal_map_property('$bumpcompress')
     
     @property
     def bumpstretch(self):
-        texture_path = self._vmt.get_string('$bumpstretch', None)
-        if texture_path is not None:
-            image = self.load_texture_or_default(texture_path, (0.5, 0.5, 1.0, 1.0))
-            if image == self.basetexture:
-                return image
-            image = self.convert_normalmap(image)
-            image.colorspace_settings.is_data = True
-            image.colorspace_settings.name = 'Non-Color'
-            return image
-        return None
-
-    @property
-    def lightwarptexture(self):
-        texture_path = self._vmt.get_string('$lightwarptexture', None)
-        if texture_path is not None:
-            image = self.load_texture_or_default(texture_path, (0.5, 0.5, 1.0, 1.0))
-            if image == self.basetexture:
-                return image
-            image = self.convert_normalmap(image)
-            image.colorspace_settings.is_data = True
-            image.colorspace_settings.name = 'Non-Color'
-            return image
-        return None
+        return self._normal_map_property('$bumpstretch')
 
     @property
     def basetexture(self):
@@ -241,6 +202,10 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         return self._vmt.get_float('$blendtintcoloroverbase', 0)
 
     @property
+    def alpha(self):
+        return self._vmt.get_float('$alpha', 1.0)
+
+    @property
     def nocull(self):
         return self._vmt.get_int('$nocull', 0) == 1
 
@@ -374,6 +339,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                 if self.bumpcompress and self.bumpstretch:
                     if not tension:
                         attr = self.create_node(Nodes.ShaderNodeAttribute)
+                        attr.attribute_name = 'tension'
                         tension = self.create_node(Nodes.ShaderNodeSeparateXYZ)
                         self.connect_nodes(attr.outputs[1], tension.inputs[0])
                     compress = self.create_texture_node(self.bumpcompress)
@@ -541,37 +507,38 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             shader = self.create_node(Nodes.ShaderNodeBsdfPrincipled, self.SHADER)
             self.connect_nodes(shader.outputs['BSDF'], material_output.inputs['Surface'])
 
-            basetexture = basetexture
+            albedo_output = None
             if basetexture:
                 basetexture_node = self.create_node(Nodes.ShaderNodeTexImage, '$basetexture')
                 basetexture_node.image = basetexture
                 basetexture_node.id_data.nodes.active = basetexture_node
 
-                if self.color or self.color2:
-                    color_mix = self.create_mix_color('MULTIPLY')
-                    self.connect_nodes(basetexture_node.outputs['Color'], color_mix.inputs[MIX_A])
-                    color_mix.inputs[MIX_B].default_value = (self.color or self.color2)
-                    color_mix.inputs[MIX_FACTOR].default_value = 1.0
-                    self.connect_nodes(color_mix.outputs[MIX_RESULT], shader.inputs['Base Color'])
-                else:
-                    self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Base Color'])
+                albedo_output = self._tinted_albedo(basetexture_node.outputs['Color'],
+                                                    basetexture_node.outputs['Alpha'])
+                self.connect_nodes(albedo_output, shader.inputs['Base Color'])
+                alpha_output = None
                 if self.translucent:
-                    self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Alpha'])
+                    alpha_output = basetexture_node.outputs['Alpha']
                 elif self.alphatest:
-                    self.connect_nodes(self.insert_alpha_clip(basetexture_node.outputs['Alpha'],
-                                                              self.alphatestreference), shader.inputs['Alpha'])
+                    alpha_output = self.insert_alpha_clip(basetexture_node.outputs['Alpha'], self.alphatestreference)
+                alpha_output = self._material_alpha(alpha_output)
+                if alpha_output is not None:
+                    self.connect_nodes(alpha_output, shader.inputs['Alpha'])
+            else:
+                tint = self._diffuse_modulation()
+                if tint is not None:
+                    shader.inputs['Base Color'].default_value = tint
+                if self.alpha < 1.0:
+                    self.set_blend_mode('BLEND')
+                    shader.inputs['Alpha'].default_value = self.alpha
 
-                if self.additive:
-                    basetexture_invert_node = self.create_node(Nodes.ShaderNodeInvert)
-                    basetexture_additive_mix_node = self.create_mix_color()
-                    self.insert_node(basetexture_node.outputs['Color'], basetexture_additive_mix_node.inputs[MIX_A],
-                                     basetexture_additive_mix_node.outputs[MIX_RESULT])
-                    basetexture_additive_mix_node.inputs[MIX_B].default_value = (1.0, 1.0, 1.0, 1.0)
-
-                    self.connect_nodes(basetexture_node.outputs['Color'], basetexture_invert_node.inputs['Color'])
-                    self.connect_nodes(basetexture_invert_node.outputs['Color'], shader.inputs['Transmission Weight'])
-                    self.connect_nodes(basetexture_invert_node.outputs['Color'],
-                                       basetexture_additive_mix_node.inputs[MIX_FACTOR])
+            if self.additive:
+                # SDK: the lit colour is added to what is behind it (SRC_ONE, DST_ONE).
+                transparent = self.create_node(Nodes.ShaderNodeBsdfTransparent)
+                add_shader = self.create_node(Nodes.ShaderNodeAddShader, 'additive')
+                self.connect_nodes(transparent.outputs[0], add_shader.inputs[0])
+                self.connect_nodes(shader.outputs['BSDF'], add_shader.inputs[1])
+                self.connect_nodes(add_shader.outputs[0], material_output.inputs['Surface'])
 
             bumpmap = self.bumpmap
             if bumpmap:
@@ -595,9 +562,70 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                     else:
                         if 'Emission Strength' in shader.inputs:
                             self.connect_nodes(basetexture_node.outputs['Alpha'], shader.inputs['Emission Strength'])
-                    self.connect_nodes(basetexture_node.outputs['Color'], shader.inputs['Emission Color'])
+                    # SDK: selfIllumComponent = $selfillumtint * albedo
+                    emission_output = albedo_output or basetexture_node.outputs['Color']
+                    tint = self.selfillumtint
+                    if tint is not None and tuple(tint[:3]) != (1.0, 1.0, 1.0):
+                        emission_output = self.insert_generic_tint(emission_output, tuple(tint))
+                    self.connect_nodes(emission_output, shader.inputs['Emission Color'])
 
             self._setup_phong(shader, self.get_node('$basetexture'))
+
+    def _diffuse_modulation(self):
+        """$color times $color2 (the SDK's g_DiffuseModulation), or None when neither is set."""
+        colors = [color for color in (self.color, self.color2) if color is not None]
+        if not colors:
+            return None
+        tint = [1.0, 1.0, 1.0, 1.0]
+        for color in colors:
+            tint = [a * b for a, b in zip(tint[:3], color[:3])] + [1.0]
+        return tuple(tint)
+
+    def _tinted_albedo(self, color_output, alpha_output):
+        """The base colour through $color/$color2, as ``vertexlit_and_unlit_generic_ps2x.fxc`` does::
+
+            tintedColor = baseColor.rgb * g_DiffuseModulation.rgb;
+            tintedColor = lerp( tintedColor, g_DiffuseModulation.rgb, $blendtintcoloroverbase );
+            baseColor.rgb = lerp( baseColor.rgb, tintedColor, baseColor.a );   // $blendtintbybasealpha only
+
+        so with $blendtintbybasealpha the base alpha is the paintable area, not a tint everywhere.
+        """
+        tint = self._diffuse_modulation()
+        if tint is None:
+            return color_output
+        tinted = self.insert_generic_tint(color_output, tint)
+        if self.blendtintcoloroverbase:
+            replace = self.create_mix_color('MIX', '$blendtintcoloroverbase')
+            replace.inputs[MIX_FACTOR].default_value = self.clamp_value(self.blendtintcoloroverbase)
+            self.connect_nodes(tinted, replace.inputs[MIX_A])
+            replace.inputs[MIX_B].default_value = tint
+            tinted = replace.outputs[MIX_RESULT]
+        if self.blendtintbybasealpha:
+            by_alpha = self.create_mix_color('MIX', '$blendtintbybasealpha')
+            self.connect_nodes(alpha_output, by_alpha.inputs[MIX_FACTOR])
+            self.connect_nodes(color_output, by_alpha.inputs[MIX_A])
+            self.connect_nodes(tinted, by_alpha.inputs[MIX_B])
+            tinted = by_alpha.outputs[MIX_RESULT]
+        return tinted
+
+    def _material_alpha(self, alpha_output):
+        """Scale the alpha by $alpha. Below 1 the SDK draws the material translucent even without $translucent."""
+        alpha = self.alpha
+        if alpha >= 1.0:
+            return alpha_output
+        self.set_blend_mode('BLEND')
+        if alpha_output is None:
+            value = self.create_node(Nodes.ShaderNodeValue, '$alpha')
+            value.outputs[0].default_value = alpha
+            return value.outputs[0]
+        return self._scale_value(alpha_output, alpha, '$alpha')
+
+    def _scale_value(self, value_output, factor: float, name: str = None):
+        multiply = self.create_node(Nodes.ShaderNodeMath, name)
+        multiply.operation = 'MULTIPLY'
+        self.connect_nodes(value_output, multiply.inputs[0])
+        multiply.inputs[1].default_value = factor
+        return multiply.outputs[0]
 
     def _setup_phong(self, shader, basetexture_node):
         """Approximate Source's Phong specular on a Principled BSDF.
@@ -717,19 +745,12 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                 mask_output = bumpmap_node.outputs['Alpha']
 
         if mask_output is not None:
-            # The SDK scales the specular *intensity* by the mask. Blender's
-            # Specular IOR Level is already set to a constant, so approximate the
-            # same effect by driving masked-out areas fully rough instead:
-            # Mix(Fac=mask, A=1.0, B=roughness)
-            mask_mix = self.create_node(Nodes.ShaderNodeMix, 'phongmask')
-            mask_mix.data_type = 'FLOAT'
-            self.connect_nodes(mask_output, mask_mix.inputs['Factor'])
-            mask_mix.inputs['A'].default_value = 1.0
-            if roughness_output is not None:
-                self.connect_nodes(roughness_output, mask_mix.inputs['B'])
-            else:
-                mask_mix.inputs['B'].default_value = shader.inputs['Roughness'].default_value
-            roughness_output = mask_mix.outputs[0]
+            # The SDK scales the specular *intensity* by the mask and leaves the
+            # highlight's size alone, so the mask scales Specular IOR Level.
+            # Masked-out texels lose their specular (0), as in the game, instead of
+            # keeping a broad, fully rough highlight.
+            self.connect_nodes(self._scale_value(mask_output, shader.inputs[spec_input].default_value, 'phongmask'),
+                               shader.inputs[spec_input])
 
         if roughness_output is not None:
             self.connect_nodes(roughness_output, shader.inputs['Roughness'])

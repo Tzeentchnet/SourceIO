@@ -10,7 +10,7 @@ from ...library.source1.vmt import VMT
 from ...library.source2 import CompiledMaterialResource
 from ...logger import SourceLogMan
 from .node_arranger import nodes_iterate
-from .shader_base import ShaderBase, ExtraMaterialParameters, unfilter_alpha_clips
+from .shader_base import ShaderBase, ExtraMaterialParameters, unfilter_alpha_clips, apply_vtf_sampler_flags
 from .shaders.goldsrc_shader_base import GoldSrcShaderBase
 from .shaders.source1_shader_base import Source1ShaderBase
 from .shaders.source2_shader_base import Source2ShaderBase
@@ -90,6 +90,7 @@ class ShaderRegistry:
         # params = handler._vmt.data.to_dict()
         material['vmt_parameters'] = vmt.data.to_dict()
         if material.node_tree is not None:
+            apply_vtf_sampler_flags(material)
             unfilter_alpha_clips(material)
         if handler.do_arrange:
             handler.align_nodes()

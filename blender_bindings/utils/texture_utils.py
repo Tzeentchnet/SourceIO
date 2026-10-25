@@ -7,6 +7,7 @@ import bpy
 import numpy as np
 
 from ...library.utils.pylib.image import save_exr, save_png, encode_exr, encode_png
+from .id_index import id_collection_state, id_collection_state_after_add
 from ...library.utils.tiny_path import TinyPath
 from ...logger import SourceLogMan
 
@@ -36,9 +37,60 @@ def _get_texture(texture_path: TinyPath, cache_identity: str = "", *other_args):
 
 def _add_texture(texture_path: TinyPath, real_name: str, cache_identity: str = "", *other_args):
     key = texture_cache_key(texture_path, cache_identity, *other_args)
-    cache = bpy.context.scene.get("texture_name_to_texture", {})
-    cache[key] = real_name
-    bpy.context.scene["texture_name_to_texture"] = cache
+    scene = bpy.context.scene
+    cache = scene.get("texture_name_to_texture")
+    if cache is None:
+        scene["texture_name_to_texture"] = {key: real_name}
+    else:
+        # Write into the stored group: assigning a dict back copies every entry, once per texture.
+        cache[key] = real_name
+    global _image_index_state
+    logical_path = texture_path.as_posix().casefold()
+    if _lookup_indexed_image(logical_path, cache_identity) is None:
+        _image_index[(logical_path, cache_identity)] = real_name
+    image = bpy.data.images.get(real_name)
+    if image is not None:
+        # Still in sync when this image is the only one made since the index was.
+        _image_index_state = id_collection_state_after_add(_image_index_state, bpy.data.images, image)
+
+
+#: (logical path, cache identity) -> image name, so a cache lookup does not scan every image. Hits are
+#: checked against the image; the index is rebuilt when a key is missing and images changed elsewhere.
+_image_index: dict[tuple[str, str], str] = {}
+_image_index_state: tuple[int, int, int] | None = None
+
+
+def _image_matches(image, logical_path: str, cache_identity: str) -> bool:
+    full_path = image.get('full_path')
+    return (full_path is not None and full_path.casefold() == logical_path
+            and image.get(CACHE_ID_PROPERTY, "") == cache_identity)
+
+
+def _lookup_indexed_image(logical_path: str, cache_identity: str) -> Optional[bpy.types.Image]:
+    name = _image_index.get((logical_path, cache_identity))
+    if name is None:
+        return None
+    image = bpy.data.images.get(name)
+    if image is not None and _image_matches(image, logical_path, cache_identity):
+        return image
+    return None
+
+
+def _find_image(logical_path: str, cache_identity: str) -> Optional[bpy.types.Image]:
+    global _image_index_state
+    image = _lookup_indexed_image(logical_path, cache_identity)
+    if image is not None:
+        return image
+    if (logical_path, cache_identity) not in _image_index and _image_index_state == id_collection_state(bpy.data.images):
+        return None
+    _image_index.clear()
+    for image_existing in bpy.data.images:
+        if (fp := image_existing.get('full_path')) is None:
+            continue
+        # The first image in name order wins, as the scan this replaced returned.
+        _image_index.setdefault((fp.casefold(), image_existing.get(CACHE_ID_PROPERTY, "")), image_existing.name)
+    _image_index_state = id_collection_state(bpy.data.images)
+    return _lookup_indexed_image(logical_path, cache_identity)
 
 
 def _variant_path(path: TinyPath, extension: str, cache_identity: str) -> TinyPath:
@@ -60,11 +112,9 @@ def check_texture_cache(
         cache_identity: str = "",
 ) -> Optional[bpy.types.Image]:
     logical_path = texture_path.as_posix().casefold()
-    for image_existing in bpy.data.images:
-        if (fp := image_existing.get('full_path')) is None:
-            continue
-        if fp.casefold() == logical_path and image_existing.get(CACHE_ID_PROPERTY, "") == cache_identity:
-            return image_existing
+    image_existing = _find_image(logical_path, cache_identity)
+    if image_existing is not None:
+        return image_existing
 
     short_name = _get_texture(texture_path, cache_identity)
     if short_name is not None:
@@ -263,15 +313,25 @@ def create_and_cache_texture(
         is_hdr: bool = False,
         invert_y: bool = False,
         cache_identity: str = "",
+        image_name: str | None = None,
 ):
+    """Store decoded pixels as an image. LDR ``data`` is float 0..1 or uint8 (kept as is, no conversion).
+
+    ``image_name`` replaces the name derived from ``cache_identity``, for variants users should see by their
+    texture's name."""
+    is_bytes = data.dtype == np.uint8 and not is_hdr
     if invert_y and not is_hdr:
         data = data.copy()
-        data[:, :, 1] = 1 - data[:, :, 1]
+        data[:, :, 1] = (255 if is_bytes else 1) - data[:, :, 1]
     height, width, channels = data.shape
     if is_hdr and channels == 4:
         # The native EXR writer assigns the interleaved values to channels in EXR (alphabetical) order: A, B, G, R.
         data = data[..., ::-1]
-    data = np.ascontiguousarray(data, dtype=np.float32).ravel()
+    if is_bytes:
+        byte_data = np.ascontiguousarray(data).ravel()
+    else:
+        data = np.ascontiguousarray(data, dtype=np.float32).ravel()
+        byte_data = None if is_hdr else (data * 255).astype(np.uint8)
 
     if bpy.context.scene.TextureCachePath != "":
         save_path = _variant_path(
@@ -284,7 +344,7 @@ def create_and_cache_texture(
         if is_hdr:
             save_exr(data.tobytes(), width, height, channels, save_path)
         else:
-            save_png((data * 255).astype(np.uint8).tobytes(), width, height, channels, save_path)
+            save_png(byte_data.tobytes(), width, height, channels, save_path)
         posix_path = save_path.as_posix()
         image = bpy.data.images.load(posix_path)
         image.alpha_mode = 'CHANNEL_PACKED'
@@ -293,7 +353,7 @@ def create_and_cache_texture(
         if is_hdr:
             image_data = encode_exr(data.tobytes(), width, height, channels)
         else:
-            image_data = encode_png((data * 255).astype(np.uint8).tobytes(), width, height, channels)
+            image_data = encode_png(byte_data.tobytes(), width, height, channels)
         image = bpy.data.images.new(
             _variant_image_name(texture_path, cache_identity),
             width=1,
@@ -304,6 +364,8 @@ def create_and_cache_texture(
         image.source = 'FILE'
         image.alpha_mode = 'CHANNEL_PACKED'
         logger.info(f"Save {texture_path.as_posix()!r} texture to memory")
+    if image_name is not None:
+        image.name = image_name
     image['full_path'] = texture_path.as_posix().lower()
     image[CACHE_ID_PROPERTY] = cache_identity
     _add_texture(texture_path, image.name, cache_identity)

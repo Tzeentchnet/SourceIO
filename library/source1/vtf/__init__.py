@@ -14,12 +14,19 @@ log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::VTF')
 
 
-def load_texture(file_object):
+def load_texture(file_object, normalized: bool = True):
+    """Decode the first frame as RGBA: ``(pixels, height, width)``.
+
+    LDR pixels are float32 in 0..1, or the decoder's own uint8 when ``normalized`` is False, which saves two
+    full-size conversions for callers that encode 8-bit images anyway. HDR pixels are always float32.
+    """
     data = file_object.read()
     try:
         pixel_data, width, height, is_float = load_vtf_texture(data)
         if is_float:
             rgba_data = np.frombuffer(pixel_data, dtype=np.float32).reshape(height, width, 4)
+        elif not normalized:
+            rgba_data = np.frombuffer(pixel_data, dtype=np.uint8).reshape(height, width, 4)
         else:
             rgba_data = np.frombuffer(pixel_data, dtype=np.uint8).reshape(height, width, 4).astype(np.float32) / 255
         return rgba_data, height, width
@@ -62,10 +69,10 @@ def load_texture_frames(file_object) -> tuple[list[np.ndarray], int, int]:
     return decoded, height, width
 
 
-def load_texture_tth(header_file: Buffer, data_file: Buffer):
+def load_texture_tth(header_file: Buffer, data_file: Buffer, normalized: bool = True):
     vtf_data = bytearray()
     if header_file.read_ascii_string(3) != "TTH":
-        return None
+        return None, 0, 0
     header_file.seek(6)
     entry_count = header_file.read_uint8()
     header_file.skip(1)
@@ -74,7 +81,7 @@ def load_texture_tth(header_file: Buffer, data_file: Buffer):
     vtf_data += header_file.read(header_size)
     vtf_data += zlib.decompress(data_file.read())
     memory_buffer = MemoryBuffer(vtf_data)
-    return load_texture(memory_buffer)
+    return load_texture(memory_buffer, normalized)
 
 
 def pad_to(im: np.ndarray, s_size: int):

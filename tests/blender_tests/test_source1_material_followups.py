@@ -6,6 +6,7 @@ import bpy
 import numpy as np
 
 from SourceIO.blender_bindings.material_loader.material_loader import ShaderRegistry
+from SourceIO.blender_bindings.material_loader.shader_base import ALPHA_CLIP_LABEL
 from SourceIO.blender_bindings.material_loader.shaders import source1_shader_base
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
 from SourceIO.blender_bindings.source1 import vtf as blender_vtf
@@ -56,6 +57,12 @@ class MaterialIndexTests(_CleanFile):
         external["full_path"] = "materials/b"
         self.assertIs(get_or_create_material("b", "materials/b"), external)
 
+    def test_material_renamed_and_retargeted_in_place_is_found(self):
+        material = get_or_create_material("a", "materials/a")
+        material.name = "b"
+        material["full_path"] = "materials/b"
+        self.assertIs(get_or_create_material("b", "materials/b"), material)
+
 
 class TextureIndexTests(_CleanFile):
     def _image(self, name, path, identity=""):
@@ -77,6 +84,36 @@ class TextureIndexTests(_CleanFile):
         self.assertIs(texture_utils.check_texture_cache(path, "invert_y"), flipped)
 
 
+class CachedVTFMetadataTests(_CleanFile):
+    def test_cached_image_recovers_vtf_sampler_flags(self):
+        image = bpy.data.images.new("cached", 1, 1)
+
+        class _OneVTF:
+            def __init__(self):
+                self.calls = 0
+
+            def find_file(self, *args, **kwargs):
+                self.calls += 1
+                return MemoryBuffer(b"VTF")
+
+        content_manager = _OneVTF()
+        shader = Source1ShaderBase(content_manager, _vmt('"VertexLitGeneric" {}'))
+
+        def tag_metadata(cached_image, data):
+            self.assertEqual(data, b"VTF")
+            cached_image["sourceio_vtf_flags"] = "0x00000001"
+            cached_image["sourceio_vtf_metadata"] = "{}"
+
+        with patch.object(source1_shader_base, "check_texture_cache", return_value=image), \
+                patch.object(source1_shader_base, "tag_vtf_metadata", side_effect=tag_metadata) as tag:
+            self.assertIs(shader.load_texture(TinyPath("cached")), image)
+            self.assertIs(shader.load_texture(TinyPath("cached")), image)
+
+        tag.assert_called_once()
+        self.assertEqual(content_manager.calls, 1)
+        self.assertEqual(image["sourceio_vtf_flags"], "0x00000001")
+
+
 class DecodeTimeConversionTests(_CleanFile):
     def _import(self, pixels, **kwargs):
         with patch.object(blender_vtf, "load_texture", return_value=(pixels, *pixels.shape[:2])), \
@@ -92,6 +129,15 @@ class DecodeTimeConversionTests(_CleanFile):
         expected[..., 1] = 255 - expected[..., 1]
         # The image's first row is the top one; Blender's pixels start at the bottom.
         np.testing.assert_array_equal(_pixels(image), expected[::-1].reshape(-1, 4))
+
+    def test_float_normal_map_is_not_flipped_twice(self):
+        pixels = np.array([[[0.2, 0.25, 0.8, 1.0]]], dtype=np.float32)
+        image = self._import(pixels, invert_y=True, cache_identity="invert_y")
+        converted = _pixels(image)
+        self.assertTrue(image["normalmap_converted"])
+        Source1ShaderBase.convert_normalmap(image)
+        np.testing.assert_array_equal(_pixels(image), converted)
+        self.assertEqual(converted[0, 1], 191)
 
     def test_flat_ssbump_becomes_a_flat_normal(self):
         flat = np.full((1, 1, 4), 255, np.uint8)
@@ -155,6 +201,20 @@ class PrincipledVertexLitGenericTests(_CleanFile):
         material, shader = self._material('"VertexLitGeneric" { "$basetexture" "t/glass" "$alpha" "0.25" }')
         self.assertEqual(material.surface_render_method, 'BLENDED')
         self.assertAlmostEqual(shader.inputs['Alpha'].links[0].from_socket.default_value, 0.25)
+
+    def test_alpha_is_scaled_before_alpha_test(self):
+        self._fake_texture("fence")
+        material, shader = self._material('"VertexLitGeneric" { "$basetexture" "t/fence" "$alphatest" "1" '
+                                          '"$alphatestreference" "0.5" "$alpha" "0.5" }')
+        clip = next(node for node in material.node_tree.nodes if node.label == ALPHA_CLIP_LABEL)
+        scaled_alpha = clip.inputs[0].links[0].from_node
+        self.assertEqual(scaled_alpha.name, '$alpha')
+        self.assertAlmostEqual(scaled_alpha.inputs[1].default_value, 0.5)
+        visible_alpha = shader.inputs['Alpha'].links[0].from_node
+        self.assertEqual(visible_alpha.name, '$alphatest alpha')
+        self.assertEqual({link.from_node.name for input_socket in visible_alpha.inputs for link in input_socket.links},
+                         {scaled_alpha.name, clip.name})
+        self.assertTrue(any(node.label == "Full resolution alpha" for node in material.node_tree.nodes))
 
     def test_vtf_sampler_flags(self):
         self._fake_texture("pixels", flags=0x1)  # POINTSAMPLE

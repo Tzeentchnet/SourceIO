@@ -2,10 +2,9 @@ import bpy
 import numpy as np
 
 from ..shader_base import ShaderBase
-from ...source1.vtf import import_texture
 from ...utils.texture_utils import check_texture_cache
 from ....library.shared.content_manager import ContentManager
-from ...source1.vtf import import_animated_texture, import_texture, import_texture_tth
+from ...source1.vtf import import_animated_texture, import_texture, import_texture_tth, tag_vtf_metadata
 from ....library.source1.vmt import VMT
 from ....library.utils.tiny_path import TinyPath
 
@@ -110,6 +109,13 @@ class Source1ShaderBase(ShaderBase):
         texture = self.load_texture(file.stem, parent, invert_y=invert_y, ssbump=ssbump)
         return texture or self.get_missing_texture(f'missing_{file.stem}', default_color)
 
+    def _tag_cached_vtf_metadata(self, image: bpy.types.Image, full_path: TinyPath):
+        if image.get("sourceio_vtf_metadata") is not None:
+            return
+        texture_file = self.content_manager.find_file("materials" / (full_path + ".vtf"))
+        if texture_file is not None:
+            tag_vtf_metadata(image, texture_file.read())
+
     def load_texture(self, texture_name: TinyPath, texture_path: TinyPath | None = None, *,
                      invert_y: bool = False, ssbump: bool = False):
         """Find or decode a VTF. With ``ssbump``/``invert_y`` the normal map is decoded already converted
@@ -127,8 +133,10 @@ class Source1ShaderBase(ShaderBase):
                 # Also true when the image came back from the on-disk texture cache, which drops custom properties.
                 image['ssbump_converted'] = image.get('ssbump_converted', False) or ssbump
                 image['normalmap_converted'] = image.get('normalmap_converted', False) or invert_y
+            self._tag_cached_vtf_metadata(image, full_path)
             return image
         if identity and (image := check_texture_cache(full_path)) is not None:
+            self._tag_cached_vtf_metadata(image, full_path)
             return image
         if texture_path is not None and texture_path.is_absolute():  # Absolute paths shouldn't even be here! This path is invalid
             return None

@@ -516,12 +516,18 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                 albedo_output = self._tinted_albedo(basetexture_node.outputs['Color'],
                                                     basetexture_node.outputs['Alpha'])
                 self.connect_nodes(albedo_output, shader.inputs['Base Color'])
-                alpha_output = None
-                if self.translucent:
-                    alpha_output = basetexture_node.outputs['Alpha']
-                elif self.alphatest:
-                    alpha_output = self.insert_alpha_clip(basetexture_node.outputs['Alpha'], self.alphatestreference)
+                alpha_output = basetexture_node.outputs['Alpha'] if self.translucent or self.alphatest else None
                 alpha_output = self._material_alpha(alpha_output)
+                if self.alphatest:
+                    clipped_alpha = self.insert_alpha_clip(alpha_output, self.alphatestreference)
+                    if self.translucent or self.alpha < 1.0:
+                        visible_alpha = self.create_node(Nodes.ShaderNodeMath, '$alphatest alpha')
+                        visible_alpha.operation = 'MULTIPLY'
+                        self.connect_nodes(alpha_output, visible_alpha.inputs[0])
+                        self.connect_nodes(clipped_alpha, visible_alpha.inputs[1])
+                        alpha_output = visible_alpha.outputs[0]
+                    else:
+                        alpha_output = clipped_alpha
                 if alpha_output is not None:
                     self.connect_nodes(alpha_output, shader.inputs['Alpha'])
             else:

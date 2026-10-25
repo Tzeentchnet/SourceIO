@@ -178,6 +178,11 @@ def get_or_create_material(name: str, full_path: str):
     key = _material_path_key(full_path.lstrip('/'))
     mat = _lookup_indexed_material(key)
     if mat is None:
+        named_mat = bpy.data.materials.get(name)
+        if named_mat is not None and _material_path_key(named_mat.get('full_path', '')) == key:
+            _material_index[key] = named_mat.name
+            mat = named_mat
+    if mat is None:
         if key in _material_index or _material_index_state != id_collection_state(bpy.data.materials):
             # Materials changed behind the index's back (another add-on, undo, a renamed or deleted material).
             _rebuild_material_index()

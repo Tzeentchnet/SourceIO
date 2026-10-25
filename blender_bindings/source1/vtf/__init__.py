@@ -82,7 +82,7 @@ def import_texture(texture_path: TinyPath, file_object, update=False, *, invert_
     tag_vtf_metadata(image, vtf_data)
     if ssbump and rgba_data.dtype == np.uint8:
         image['ssbump_converted'] = True
-    if invert_y and rgba_data.dtype == np.uint8:
+    if invert_y:
         image['normalmap_converted'] = True
     return image
 

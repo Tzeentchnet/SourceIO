@@ -15,14 +15,22 @@ This container can't run the full add-on. The bundled Linux `pylib.abi3.so` need
 | Check | Original | Patched |
 |---|---|---|
 | Unit tests (`tests/`, no Blender) | 476 pass / 17 fail* | identical set |
-| Blender tests (`tests/blender_tests`, under bpy 5.2.3) | 198 pass / 29 fail or error* | identical set + 11 new pass |
-| New `test_source1_material_followups.py` | 7 of 11 fail | 11 pass |
+| Blender tests (`tests/blender_tests`, under bpy 5.2.3) | 198 pass / 29 fail or error* | identical set + 15 new pass |
+| New `test_source1_material_followups.py` | 7 of the original 11 fail | 15 pass |
 | Material graphs: 8 VMTs × (Principled, BVLG) built through `ShaderRegistry` | — | only the intended differences (below); BVLG graphs unchanged except sampler flags |
 | Decoded pixels (normal map, ssbump), old in-Blender conversion vs new decode-time conversion | — | bit-identical |
 
 \* The baseline failures are the same on both trees. They come from the stubbed native decoder and compressor, and from suites `plan.md` says to run separately (`test_skins`, flex controllers).
 
 **Not checked here:** real VTF/VPK decoding, the e2e runners (`tests/e2e/*`) and real game imports. Run the `plan.md` baseline commands on Windows before you merge.
+
+### Review follow-ups
+
+The review-fix branch also applies `$alpha` before `$alphatest` while preserving the full-resolution alpha
+sampling workaround, restores VTF metadata when an image is loaded from the on-disk texture cache, avoids
+double-flipping float normal maps, and recognizes a material whose name and `full_path` were retargeted in
+place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the full headless Blender suite:
+237 passed, 1 skipped, 11 warnings, and 28 subtests passed.
 
 ---
 

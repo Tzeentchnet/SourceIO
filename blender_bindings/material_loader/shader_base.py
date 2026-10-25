@@ -53,13 +53,14 @@ def _bilinear_taps_group() -> bpy.types.ShaderNodeTree:
 
 
 def unfilter_alpha_clips(material: bpy.types.Material):
-    """Sample the alpha of every alpha clip that reads an image straight at full resolution.
+    """Sample the alpha of every alpha clip that reads an image at full resolution.
 
     EEVEE (and the viewport) samples textures through mipmaps it builds by averaging, so a thin alpha-tested
     texture averages below its cutoff a few metres away and vanishes: 19% of a chain-link fence's texels are
     wire, and from 10 m its alpha is mostly under 0.5. Cycles reads the full-resolution image and keeps it. The
     game's own mipmaps are made to keep the coverage, but Blender builds its own. Closest lookups skip the
-    mipmaps, so the alpha is four of them blended bilinearly, as Cycles' Linear interpolation does.
+    mipmaps, so the alpha is four of them blended bilinearly, as Cycles' Linear interpolation does. A scalar
+    multiplication between the image and clip is preserved so ``$alpha`` is applied before the alpha test.
     """
     nodes, links = material.node_tree.nodes, material.node_tree.links
     clips = [node for node in nodes if node.bl_idname == Nodes.ShaderNodeMath and node.label == ALPHA_CLIP_LABEL]
@@ -67,9 +68,23 @@ def unfilter_alpha_clips(material: bpy.types.Material):
         if not clip.inputs[0].links:
             continue
         link = clip.inputs[0].links[0]
+        sample_input = clip.inputs[0]
         image_node = link.from_node
-        if (image_node.bl_idname != Nodes.ShaderNodeTexImage or link.from_socket.name != "Alpha"
-                or image_node.image is None or image_node.interpolation == 'Closest'
+        if image_node.bl_idname != Nodes.ShaderNodeTexImage or link.from_socket.name != "Alpha":
+            if image_node.bl_idname != Nodes.ShaderNodeMath or image_node.operation != 'MULTIPLY':
+                continue
+            image_links = [
+                (input_socket, input_socket.links[0])
+                for input_socket in image_node.inputs
+                if input_socket.links
+                and input_socket.links[0].from_node.bl_idname == Nodes.ShaderNodeTexImage
+                and input_socket.links[0].from_socket.name == "Alpha"
+            ]
+            if len(image_links) != 1:
+                continue
+            sample_input, link = image_links[0]
+            image_node = link.from_node
+        if (image_node.image is None or image_node.interpolation == 'Closest'
                 or image_node.projection != 'FLAT' or 0 in image_node.image.size):
             continue
         vector_links = image_node.inputs["Vector"].links
@@ -105,7 +120,7 @@ def unfilter_alpha_clips(material: bpy.types.Material):
 
         bottom = lerp(alphas[0], alphas[1], weights.outputs["X"])
         top = lerp(alphas[2], alphas[3], weights.outputs["X"])
-        links.new(lerp(bottom, top, weights.outputs["Y"]), clip.inputs[0])
+        links.new(lerp(bottom, top, weights.outputs["Y"]), sample_input)
 
 
 #: VTF texture flags that are sampler states (``TEXTUREFLAGS_*`` in the SDK's ``imageformat``/``vtf.h``).

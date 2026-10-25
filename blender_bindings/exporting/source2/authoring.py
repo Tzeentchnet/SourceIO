@@ -152,6 +152,7 @@ def _encode_image_tga(
         srgb: bool = False,
         invert_green: bool = False,
         require_grayscale: bool = False,
+        alpha_to_grayscale: bool = False,
 ) -> bytes:
     width, height = (int(value) for value in image.size)
     if width <= 0 or height <= 0:
@@ -159,6 +160,10 @@ def _encode_image_tga(
     pixels = np.empty(len(image.pixels), dtype=np.float32)
     image.pixels.foreach_get(pixels)
     pixels = pixels.reshape(height, width, 4)
+    if alpha_to_grayscale:
+        alpha = pixels[..., 3].copy()
+        pixels[..., :3] = alpha[..., np.newaxis]
+        pixels[..., 3] = 1.0
     if require_grayscale:
         rgb = pixels[..., :3]
         channel_spread = np.max(rgb, axis=2) - np.min(rgb, axis=2)
@@ -196,12 +201,19 @@ def _encode_image_tga(
 
 def _alpha_mode(material, principled) -> MaterialAlphaMode:
     legacy = str(getattr(material, "blend_method", "")).casefold()
-    if legacy == "clip":
-        return MaterialAlphaMode.MASK
     alpha = principled.inputs.get("Alpha")
-    if alpha is not None and (alpha.is_linked or float(alpha.default_value) < 1.0):
+    has_alpha = (
+        alpha is not None
+        and (alpha.is_linked or float(alpha.default_value) < 1.0)
+    )
+    if not has_alpha:
+        return MaterialAlphaMode.OPAQUE
+    render_method = str(
+        getattr(material, "surface_render_method", "")
+    ).casefold()
+    if legacy == "blend" or render_method == "blended":
         return MaterialAlphaMode.BLEND
-    return MaterialAlphaMode.OPAQUE
+    return MaterialAlphaMode.MASK
 
 
 def _extract_principled_material(
@@ -304,6 +316,7 @@ def _extract_principled_material(
             srgb=role == TextureRole.BASE_COLOR,
         ))
 
+    alpha_mode = _alpha_mode(material, principled)
     alpha_socket = principled.inputs.get("Alpha")
     if alpha_socket is not None and alpha_socket.is_linked:
         alpha_link = alpha_socket.links[0] if len(alpha_socket.links) == 1 else None
@@ -321,6 +334,17 @@ def _extract_principled_material(
                 loss_kind=LossKind.DEFERRED,
                 path=("materials", material.name, "Alpha"),
             )
+        else:
+            textures.append(AuthoringTexture(
+                f"{name}_{TextureRole.ALPHA.value}",
+                TextureRole.ALPHA,
+                _encode_image_tga(
+                    base_image,
+                    alpha_to_grayscale=True,
+                ),
+                extension=".tga",
+                srgb=False,
+            ))
 
     normal_socket = principled.inputs.get("Normal")
     if normal_socket is not None and normal_socket.is_linked:
@@ -369,7 +393,7 @@ def _extract_principled_material(
         base_color=base_color,
         metallic=float(principled.inputs["Metallic"].default_value),
         roughness=float(principled.inputs["Roughness"].default_value),
-        alpha_mode=_alpha_mode(material, principled),
+        alpha_mode=alpha_mode,
         alpha_cutoff=float(getattr(material, "alpha_threshold", 0.5)),
         double_sided=not bool(getattr(material, "use_backface_culling", False)),
         textures=tuple(textures),

@@ -81,6 +81,7 @@ def serialize_vmat(
         normal_texture: ContentRelativePath | None = None,
         roughness_texture: ContentRelativePath | None = None,
         metalness_texture: ContentRelativePath | None = None,
+        alpha_texture: ContentRelativePath | None = None,
         shader: str = "csgo_complex.vfx",
 ) -> str:
     tint = " ".join(
@@ -91,17 +92,27 @@ def serialize_vmat(
         "Layer0",
         "{",
         f"    shader {_quoted(shader)}",
+    ]
+    if material.alpha_mode == MaterialAlphaMode.MASK:
+        lines.append("    F_ALPHA_TEST 1")
+    if metalness_texture is not None:
+        lines.append("    F_METALNESS_TEXTURE 1")
+    if material.alpha_mode == MaterialAlphaMode.MASK:
+        lines.append(
+            f"    g_flAlphaTestReference {_quoted(_float(material.alpha_cutoff))}"
+        )
+    lines.extend((
         f'    g_vColorTint "[{tint}]"',
         f"    TextureColor {_quoted(color_texture.as_posix())}",
-    ]
-    if metalness_texture is not None:
-        lines.insert(3, "    F_METALNESS_TEXTURE 1")
+    ))
     if normal_texture is not None:
         lines.append(f"    TextureNormal {_quoted(normal_texture.as_posix())}")
     if roughness_texture is not None:
         lines.append(f"    TextureRoughness {_quoted(roughness_texture.as_posix())}")
     if metalness_texture is not None:
         lines.append(f"    TextureMetalness {_quoted(metalness_texture.as_posix())}")
+    if alpha_texture is not None:
+        lines.append(f"    TextureTranslucency {_quoted(alpha_texture.as_posix())}")
     lines.extend(("}", ""))
     return "\n".join(lines)
 
@@ -249,6 +260,7 @@ class CS2AuthoringBackend:
             unsupported_roles = sorted(
                 role.value for role in textures
                 if role not in {
+                    TextureRole.ALPHA,
                     TextureRole.BASE_COLOR,
                     TextureRole.METALLIC,
                     TextureRole.NORMAL,
@@ -258,7 +270,7 @@ class CS2AuthoringBackend:
             if unsupported_roles:
                 loss_report.record(
                     "authoring.cs2.material.texture_unsupported",
-                    "The validated CS2 slice currently authors base-color, normal, roughness, and metalness textures.",
+                    "The validated CS2 slice currently authors base-color, alpha-test, normal, roughness, and metalness textures.",
                     severity=DiagnosticSeverity.ERROR,
                     loss_kind=LossKind.DEFERRED,
                     details={
@@ -266,12 +278,23 @@ class CS2AuthoringBackend:
                         "roles": unsupported_roles,
                     },
                 )
-            if material.alpha_mode != MaterialAlphaMode.OPAQUE:
+            if material.alpha_mode == MaterialAlphaMode.BLEND:
                 loss_report.record(
                     "authoring.cs2.material.alpha_unsupported",
-                    "Alpha blending and alpha testing are outside the validated CS2 slice.",
+                    "Alpha blending is outside the validated CS2 slice.",
                     severity=DiagnosticSeverity.ERROR,
                     loss_kind=LossKind.DEFERRED,
+                    details={"material": material_name},
+                )
+            elif (
+                    material.alpha_mode == MaterialAlphaMode.OPAQUE
+                    and TextureRole.ALPHA in textures
+            ):
+                loss_report.record(
+                    "authoring.cs2.material.alpha_texture_unused",
+                    "An alpha texture requires alpha-test material mode.",
+                    severity=DiagnosticSeverity.ERROR,
+                    loss_kind=LossKind.SAFETY,
                     details={"material": material_name},
                 )
 
@@ -360,6 +383,23 @@ class CS2AuthoringBackend:
                 )
             else:
                 metalness_source_path = None
+            alpha_texture = textures.get(TextureRole.ALPHA)
+            if material.alpha_mode == MaterialAlphaMode.MASK:
+                if alpha_texture is not None:
+                    alpha_source_path = stage_texture(
+                        alpha_texture.name,
+                        alpha_texture.payload,
+                        alpha_texture.extension,
+                    )
+                else:
+                    alpha = material.base_color[3]
+                    alpha_source_path = stage_texture(
+                        f"{material_name}_{TextureRole.ALPHA.value}",
+                        solid_color_tga((alpha, alpha, alpha, 1.0)),
+                        contract.source_texture_suffix if contract is not None else ".tga",
+                    )
+            else:
+                alpha_source_path = None
 
             if contract is not None and contract.source_texture_is_compiler_input:
                 loss_report.record(
@@ -381,6 +421,7 @@ class CS2AuthoringBackend:
                     normal_texture=normal_source_path,
                     roughness_texture=roughness_source_path,
                     metalness_texture=metalness_source_path,
+                    alpha_texture=alpha_source_path,
                     shader=contract.material_shader if contract is not None else "csgo_complex.vfx",
                 ),
             ))

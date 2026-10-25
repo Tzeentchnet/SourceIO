@@ -1,11 +1,12 @@
 # SourceIO Source Export Capability Plan
 
-**Status: the first CS2 static-authoring vertical slice and its normal-map,
-roughness, and metalness extensions are implemented and have passed the
-installed Workshop Tools exit gate.** Export is SourceIO's secondary goal after
-import quality; the aim is one straightforward path from a Blender scene to
-editable, optionally compiled static assets. Next: add CS2 alpha-test mapping,
-then the Source 1 static backend (implementation todos 9–13).
+**Status: the CS2 static-authoring vertical slice and its normal-map,
+roughness, metalness, and alpha-test extensions are implemented and have passed
+the installed Workshop Tools exit gate.** Export is SourceIO's secondary goal
+after import quality; the aim is one straightforward path from a Blender scene
+to editable, optionally compiled static assets. Next: the Source 1 static
+backend (implementation todos 10–12), followed by one settled export path
+(todo 13).
 Skeletal, animated, physics, and map authoring, and game coverage beyond
 priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
 are tracked in [plan.md](plan.md).
@@ -425,7 +426,7 @@ exists.
    - Run focused unit/headless/compiler tests, the import regression suite, clean
      register/unregister smoke tests, and extension builds.
 
-9. [ ] **Widening the CS2 material contract**
+9. [x] **Widening the CS2 material contract**
    - Accept ordinary Blender PBR materials instead of blocking them: normal map,
      roughness, metalness, then alpha test, in that order.
    - Capture an official Workshop Tools VMAT per mapping before serializing it;
@@ -438,10 +439,13 @@ exists.
      Resource Compiler packs the result into `g_tNormal` alpha.
    - [x] Metalness: serialize `TextureMetalness` with
      `F_METALNESS_TEXTURE`, author constants as solid data textures, and verify
-     the current compiler reads its red channel into `g_tColor` alpha rather than
-     emitting a separate `g_tMetalness`.
-   - [ ] Alpha test.
-   - Extend the installed-tools gate to compile and re-import each new slot.
+     the current compiler reads its red channel into `g_tColor` alpha for opaque
+     materials, or into `g_tMetalness` green when alpha testing occupies the
+     color alpha channel.
+   - [x] Alpha test: serialize `F_ALPHA_TEST`, `g_flAlphaTestReference`, and a
+     separate linear `TextureTranslucency`; support constant opacity and the base
+     image's Alpha output while continuing to block true alpha blending.
+   - [x] Extend the installed-tools gate to compile and re-import each new slot.
 
 10. [ ] **Implementing the Source 1 authoring backend**
     - Add static SMD, QC, VMT, source-texture, and VTEX-sidecar generation.

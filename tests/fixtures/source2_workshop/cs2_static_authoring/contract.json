@@ -5,6 +5,7 @@
   },
   "associated_texture_parameters": {
     "g_tColor": "source_texture",
+    "g_tMetalness": "metalness_source_texture",
     "g_tNormal": "normal_source_texture"
   },
   "compile_inputs": [
@@ -18,6 +19,7 @@
   "fbx_material": "sourceio_slot",
   "fbx_mesh": "sourceio_mesh",
   "paths": {
+    "alpha_source_texture": "materials/sourceio_contract/sourceio_alpha.tga",
     "material": "materials/sourceio_contract/sourceio.vmat",
     "metalness_source_texture": "materials/sourceio_contract/sourceio_metal.tga",
     "modeldoc": "models/sourceio_contract/sourceio.vmdl",
@@ -27,5 +29,5 @@
     "source_texture": "materials/sourceio_contract/sourceio_color.tga"
   },
   "schema": "sourceio.cs2-static-authoring-contract",
-  "schema_version": 4
+  "schema_version": 5
 }

@@ -81,6 +81,9 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
         principled.inputs["Base Color"].default_value = (0.25, 0.5, 0.75, 1.0)
         principled.inputs["Metallic"].default_value = 0.0
         principled.inputs["Roughness"].default_value = 0.5
+        principled.inputs["Alpha"].default_value = 0.25
+        material.surface_render_method = "DITHERED"
+        material.alpha_threshold = 0.4
         normal_image = bpy.data.images.new(
             "sourceio_normal",
             width=4,
@@ -171,6 +174,11 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             "F_METALNESS_TEXTURE",
             0,
         ) == 1
+        assert compiled_material.get_int_property("F_ALPHA_TEST", 0) == 1
+        assert compiled_material.get_float_property(
+            "g_flAlphaTestReference",
+            0.0,
+        ) == pytest.approx(0.4)
         source_normal = np.array((0.25, 0.8, 1.0))
         signed_normal = source_normal * 2.0 - 1.0
         compiled_normal = (
@@ -178,6 +186,7 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
         ) / 2.0
         for parameter, expected_rgb in (
             ("g_tColor", (1.0, 1.0, 1.0)),
+            ("g_tMetalness", (0.0, 0.75, 0.0)),
             ("g_tNormal", compiled_normal),
         ):
             texture_reference = compiled_material.get_texture_property(
@@ -198,8 +207,8 @@ def test_blender_authored_cs2_static_bundle_compiles_and_reimports():
             assert size == (4, 4)
             assert np.allclose(pixels[..., :3], expected_rgb, atol=0.03)
             if parameter == "g_tColor":
-                assert np.allclose(pixels[..., 3], 0.75, atol=0.03)
-            else:
+                assert np.allclose(pixels[..., 3], 0.25, atol=0.03)
+            elif parameter == "g_tNormal":
                 assert np.allclose(pixels[..., 3], 0.25, atol=0.03)
 
         compiled_model = _compiled_resource(CompiledModelResource, model_path)

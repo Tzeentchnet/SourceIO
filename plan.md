@@ -26,12 +26,12 @@ blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<Dota2>/game/dota" --expect-profile dota  # 7 PASS / 0 WARN / 0 FAIL; app ID 570
 $env:SOURCEIO_DOTA2_WORKSHOP_ROOT="<Dota2>"; python -m pytest tests/source2_workshop/test_dota_workshop_roundtrip.py -q  # 1 pass; generated model/material/texture compile and re-import
 $env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; python -m pytest tests/source2_workshop/test_cs2_workshop_contract.py -q         # 3 pass; official ModelDoc/FBX/VMAT/TGA contract and re-import
-$env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; blender -b --factory-startup --python-expr "..."                                # 15 pass; Blender authoring plus color/normal/roughness/metalness compile/re-import/recompile/cleanup
+$env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; blender -b --factory-startup --python-expr "..."                                # 1 pass; Blender-authored color/normal/roughness/metalness/alpha-test compile/re-import
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s alone); nameless world-node models renamed after their material
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 537 pass, 4 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 264 pass, 1 skip, 11 warnings, 47 subtests
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 540 pass, 4 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 266 pass, 1 skip, 13 warnings, 47 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass
@@ -61,11 +61,15 @@ Shipped in 5.14.0 (2026-10-15): VTF metadata and sprite sheets. `library/source1
 
 ### Export (secondary)
 
-The CS2 static-authoring slice is done (see [TODO.md](TODO.md)): editable FBX/VMDL/VMAT/TGA staging, preflight, manifests, File > Export and CLI, optional compile, recompile and compiled re-import. Normal-map, roughness, and metalness authoring now use the official texture contracts and have passed the Blender-to-Workshop round trip. Next, in order:
+The CS2 static-authoring slice is done (see [TODO.md](TODO.md)): editable
+FBX/VMDL/VMAT/TGA staging, preflight, manifests, File > Export and CLI, optional
+compile, recompile and compiled re-import. Base color, tangent-space normal maps,
+constant or image-driven roughness and metalness, alpha testing, and reuse of an
+existing VMAT use the official texture contracts and have passed the
+Blender-to-Workshop round trip. Next, in order:
 
-1. **Widen the CS2 material contract** (TODO.md item 9) so ordinary Blender PBR materials export without being blocked by alpha test. The mapping needs an official Workshop Tools fixture first. Today opaque base color, tangent-space normal maps, constant or image-driven roughness and metalness, or reuse of an existing VMAT, are accepted.
-2. **Source 1 static backend** (TODO.md items 10–12): SMD/QC/VMT/texture staging with optional `vtex`/`studiomdl`, on the same shared service. Needs a Source SDK 2013 install.
-3. **One export path** (TODO.md item 13): decide whether the experimental export node tree (`blender_bindings/ui/export_nodes`) moves onto the shared service or is deprecated, so users see one way to export.
+1. **Source 1 static backend** (TODO.md items 10–12): SMD/QC/VMT/texture staging with optional `vtex`/`studiomdl`, on the same shared service. Needs a Source SDK 2013 install.
+2. **One export path** (TODO.md item 13): decide whether the experimental export node tree (`blender_bindings/ui/export_nodes`) moves onto the shared service or is deprecated, so users see one way to export.
 
 Skeletal, animated, physics and map authoring are deferred (`docs/deferred-work.md`). Static ModelDoc/Hammer reconstruction stays a separate, explicitly lossy workflow.
 

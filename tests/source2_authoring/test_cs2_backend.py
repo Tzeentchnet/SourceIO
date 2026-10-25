@@ -8,6 +8,7 @@ from SourceIO.library.source2.authoring import (
     AuthoringTexture,
     CS2AuthoringBackend,
     ExtractedAuthoringModel,
+    MaterialAlphaMode,
     Source2AuthoringRequest,
     TextureRole,
     solid_color_tga,
@@ -281,6 +282,82 @@ def test_cs2_backend_authors_constant_metalness_as_texture(tmp_path):
     vmat = files["materials/sourceio/painted.vmat"]
     assert "F_METALNESS_TEXTURE 1" in vmat
     assert f'TextureMetalness "{metalness_path}"' in vmat
+
+
+def test_cs2_backend_authors_alpha_test_texture(tmp_path):
+    target = _target(tmp_path)
+    alpha_payload = solid_color_tga((0.25, 0.25, 0.25, 1.0))
+    material = AuthoringMaterial(
+        "painted",
+        alpha_mode=MaterialAlphaMode.MASK,
+        alpha_cutoff=0.4,
+        textures=(
+            AuthoringTexture(
+                "painted_alpha",
+                TextureRole.ALPHA,
+                alpha_payload,
+                extension=".tga",
+                srgb=False,
+            ),
+        ),
+    )
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+    files = {artifact.path.as_posix(): artifact.payload for artifact in output.artifacts}
+
+    assert not output.report.has_errors
+    assert files["materials/sourceio/textures/painted_alpha.tga"] == alpha_payload
+    vmat = files["materials/sourceio/painted.vmat"]
+    assert "F_ALPHA_TEST 1" in vmat
+    assert 'g_flAlphaTestReference "0.4"' in vmat
+    assert (
+        'TextureTranslucency "materials/sourceio/textures/painted_alpha.tga"'
+        in vmat
+    )
+
+
+def test_cs2_backend_authors_constant_alpha_test_as_texture(tmp_path):
+    target = _target(tmp_path)
+    material = AuthoringMaterial(
+        "painted",
+        base_color=(1.0, 1.0, 1.0, 0.25),
+        alpha_mode=MaterialAlphaMode.MASK,
+        alpha_cutoff=0.4,
+    )
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+    files = {artifact.path.as_posix(): artifact.payload for artifact in output.artifacts}
+
+    assert not output.report.has_errors
+    alpha_path = "materials/sourceio/textures/painted_alpha.tga"
+    assert files[alpha_path][18:22] == bytes((64, 64, 64, 255))
+    assert f'TextureTranslucency "{alpha_path}"' in files[
+        "materials/sourceio/painted.vmat"
+    ]
+
+
+def test_cs2_backend_keeps_alpha_blending_blocked(tmp_path):
+    target = _target(tmp_path)
+    material = AuthoringMaterial(
+        "painted",
+        alpha_mode=MaterialAlphaMode.BLEND,
+    )
+
+    output = CS2AuthoringBackend().build(
+        Source2AuthoringRequest(target, "crate"),
+        (_model(material),),
+    )
+
+    assert output.report.has_errors
+    assert "authoring.cs2.material.alpha_unsupported" in {
+        diagnostic.code for diagnostic in output.report
+    }
 
 
 def test_solid_color_tga_is_deterministic():

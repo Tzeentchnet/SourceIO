@@ -17,6 +17,7 @@ from SourceIO.blender_bindings import cli
 from SourceIO.library.source2.authoring import (
     AuthoringGrouping,
     AuthoringScope,
+    MaterialAlphaMode,
     Source2AuthoringRequest,
     TextureRole,
 )
@@ -372,6 +373,67 @@ class Source2AuthoringAdapterTests(unittest.TestCase):
         self.assertIn(
             "authoring.material.scalar_texture.color_unsupported",
             {item.code for item in report},
+        )
+
+    def test_principled_alpha_test_extracts_base_image_alpha(self):
+        obj = self.mesh_object()
+        material = self.principled_material()
+        material.surface_render_method = "DITHERED"
+        material.alpha_threshold = 0.4
+        principled = material.node_tree.nodes["Principled BSDF"]
+        image = bpy.data.images.new("paint", width=1, height=1, alpha=True)
+        image.pixels[:] = (0.2, 0.4, 0.6, 0.25)
+        texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+        texture.image = image
+        material.node_tree.links.new(
+            texture.outputs["Color"],
+            principled.inputs["Base Color"],
+        )
+        material.node_tree.links.new(
+            texture.outputs["Alpha"],
+            principled.inputs["Alpha"],
+        )
+        obj.data.materials.append(material)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+
+        models, report = extract_authoring_models(
+            bpy.context,
+            self.request(),
+            fbx_exporter=lambda path: path.write_bytes(b"fbx"),
+        )
+
+        self.assertFalse(report.has_errors)
+        authored = models[0].materials[0]
+        self.assertEqual(authored.alpha_mode, MaterialAlphaMode.MASK)
+        self.assertAlmostEqual(authored.alpha_cutoff, 0.4)
+        alpha = next(
+            texture for texture in authored.textures
+            if texture.role == TextureRole.ALPHA
+        )
+        self.assertFalse(alpha.srgb)
+        self.assertEqual(alpha.payload[18:22], bytes((64, 64, 64, 255)))
+
+    def test_principled_blended_alpha_remains_blend_mode(self):
+        obj = self.mesh_object()
+        material = self.principled_material()
+        material.surface_render_method = "BLENDED"
+        principled = material.node_tree.nodes["Principled BSDF"]
+        principled.inputs["Alpha"].default_value = 0.5
+        obj.data.materials.append(material)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+
+        models, report = extract_authoring_models(
+            bpy.context,
+            self.request(),
+            fbx_exporter=lambda path: path.write_bytes(b"fbx"),
+        )
+
+        self.assertFalse(report.has_errors)
+        self.assertEqual(
+            models[0].materials[0].alpha_mode,
+            MaterialAlphaMode.BLEND,
         )
 
     def test_unsupported_procedural_graph_blocks_before_fbx_export(self):

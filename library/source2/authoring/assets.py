@@ -9,6 +9,7 @@ from ..workshop import ContentRelativePath
 
 class TextureRole(str, Enum):
     BASE_COLOR = "base_color"
+    ALPHA = "alpha"
     NORMAL = "normal"
     ROUGHNESS = "roughness"
     METALLIC = "metallic"

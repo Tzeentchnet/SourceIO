@@ -152,7 +152,7 @@ def test_cs2_static_authoring_golden_contract():
     }
 
     assert contract["schema"] == "sourceio.cs2-static-authoring-contract"
-    assert contract["schema_version"] == 4
+    assert contract["schema_version"] == 5
     assert contract["addon_layout"] == {
         "content": "content/csgo_addons/{addon}",
         "game": "game/csgo_addons/{addon}",
@@ -209,9 +209,15 @@ def test_cs2_static_authoring_golden_contract():
         f'TextureRoughness "{paths["roughness_source_texture"].as_posix()}"'
         in material_text
     )
+    assert "F_ALPHA_TEST 1" in material_text
+    assert 'g_flAlphaTestReference "0.4"' in material_text
     assert "F_METALNESS_TEXTURE 1" in material_text
     assert (
         f'TextureMetalness "{paths["metalness_source_texture"].as_posix()}"'
+        in material_text
+    )
+    assert (
+        f'TextureTranslucency "{paths["alpha_source_texture"].as_posix()}"'
         in material_text
     )
     render_mesh_text = (_FIXTURE_DIRECTORY / "sourceio.fbx").read_text(
@@ -282,6 +288,9 @@ def test_cs2_workshop_static_contract_roundtrip():
         target.content_path(paths["metalness_source_texture"]).write_bytes(
             _fixture_tga(((16, 192, 32, 255), (16, 192, 32, 255)))
         )
+        target.content_path(paths["alpha_source_texture"]).write_bytes(
+            _fixture_tga(((32, 32, 32, 255), (224, 224, 224, 255)))
+        )
 
         runner = ResourceCompilerRunner(
             target,
@@ -314,8 +323,12 @@ def test_cs2_workshop_static_contract_roundtrip():
             material_path.as_posix(),
         )
         used_textures = material.get_used_textures()
+        assert material.get_int_property("F_ALPHA_TEST", 0) == 1
+        assert material.get_float_property(
+            "g_flAlphaTestReference",
+            0.0,
+        ) == pytest.approx(0.4)
         assert material.get_int_property("F_METALNESS_TEXTURE", 0) == 1
-        assert "g_tMetalness" not in used_textures
         for parameter, source_path_name in fixture_contract[
                 "associated_texture_parameters"
         ].items():
@@ -339,10 +352,19 @@ def test_cs2_workshop_static_contract_roundtrip():
             assert tuple(pixels.shape) == (4, 4, 4)
             if parameter == "g_tColor":
                 assert float(pixels[..., 3].min()) == pytest.approx(
-                    16 / 255,
+                    32 / 255,
                     abs=0.03,
                 )
                 assert float(pixels[..., 3].max()) == pytest.approx(
+                    224 / 255,
+                    abs=0.03,
+                )
+            if parameter == "g_tMetalness":
+                assert float(pixels[..., 1].min()) == pytest.approx(
+                    16 / 255,
+                    abs=0.03,
+                )
+                assert float(pixels[..., 1].max()) == pytest.approx(
                     16 / 255,
                     abs=0.03,
                 )

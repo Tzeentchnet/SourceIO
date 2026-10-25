@@ -64,8 +64,13 @@ instance/
 # Scrapy stuff:
 .scrapy
 
-# Local planning archives
-/docs/
+# Local planning archives and tracked public documentation
+/docs/*
+!/docs/user-guide.md
+!/docs/authoring.md
+!/docs/formats.md
+!/docs/development.md
+!/docs/fork-changes.md
 
 # PyBuilder
 target/

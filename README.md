@@ -3,502 +3,115 @@
 
 # SourceIO for Blender 5.2
 
-> **This is a fork of [REDxEYE/SourceIO](https://github.com/REDxEYE/SourceIO), updated to target Blender 5.2 only.**
-> Blender 4.x support has been removed in exchange for 5.2-native code paths, faster imports and packaging as a Blender extension.
-> For Blender 4.x use the [upstream add-on](https://github.com/REDxEYE/SourceIO). Credit for SourceIO itself goes to its upstream authors (see [Credits](#credits)).
-> The [Discord server](https://discord.gg/SF82W6aZ67) is maintained by the upstream project, not by this fork.
+SourceIO is a Blender extension for importing assets from GoldSrc, Source, and
+Source 2 games. It handles models, maps, materials, textures, animations,
+physics, and Source 2 sounds, with game-specific support for titles including
+Team Fortress 2, Counter-Strike 2, and Dota 2.
 
-SourceIO is a Blender add-on for importing GoldSrc, Source and Source 2 engine textures, models and maps.
+This repository is a Blender 5.2-only fork of
+[REDxEYE/SourceIO](https://github.com/REDxEYE/SourceIO). For Blender 4.x, use
+the upstream add-on. The linked Discord server is also maintained by the
+upstream project.
 
-## Installation (Blender 5.2+)
-SourceIO installs as a Blender extension. Download the zip for your platform from the [releases page](https://github.com/Tzeentchnet/SourceIO/releases), or build it from a checkout of this repository:
-```
-python tools/build_extension.py --blender path/to/blender [--platform windows-x64]
-```
-This writes one zip per platform to `dist/`, each containing only that platform's native library.
-Then use *Edit > Preferences > Get Extensions > Install from Disk...* and pick the zip for your platform.
-Installing the repository folder as a legacy add-on also still works.
+## Highlights
 
-The bundled Linux native library is built from the revisions pinned in `tools/pylib_sources.json` by the **Build Linux pylib** workflow. It targets `manylinux_2_28`, links the C++ runtimes statically, and is smoke-tested with Python 3.11 and 3.13. `tools/build_extension.py` refuses to package a Linux binary requiring newer GLIBC, GLIBCXX, or CXXABI versions.
+- Import GoldSrc, Source 1, and Source 2 models and maps.
+- Build Blender materials from common Source 1 and Source 2 shaders.
+- Import Source 1 and Source 2 animations, including Source 2 animation-graph
+  clips.
+- Preserve VTF metadata and export textures and sprite sheets for external
+  editing.
+- Extract Source 2 audio.
+- Author and optionally compile static assets for CS2 Workshop Tools and Source
+  1 toolchains.
+- Use the same workflows from Blender's UI, drag and drop, or the command line.
+
+## Installation
+
+SourceIO requires **Blender 5.2 or newer**.
+
+1. Download the package for your platform from
+   [Releases](https://github.com/Tzeentchnet/SourceIO/releases).
+2. In Blender, open *Edit > Preferences > Get Extensions*.
+3. Choose *Install from Disk...* and select the downloaded zip.
+
+Packages are available for Windows x64, Linux x64, macOS x64, and macOS arm64.
+Installing the repository as a legacy add-on remains supported for development
+checkouts. See [Development and testing](docs/development.md) to build packages
+from source.
+
+## Quick start
+
+### Import
+
+Open *File > Import > Source Engine Assets* and choose an asset. Most common
+formats can also be dragged into Blender, including `.mdl`, `.bsp`, `.vtf`,
+`.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk`
+files, `.vsnd_c`, and camera `.dmx` files.
+
+Imported maps initially contain placeholders for referenced models and merged
+world geometry. Select the placeholders you need and use *Load Entity* to expand
+them.
+
+### Export
+
+Use *File > Export* for the supported CS2 Workshop and Source 1 static-asset
+workflows. SourceIO writes editable source files and can optionally invoke the
+official compilers; it does not silently replace those tools with custom binary
+writers.
+
+See [Static asset authoring](docs/authoring.md) for supported material graphs,
+target setup, compilation, and recompile behavior.
 
 ### Command line
-With the extension enabled, files can be imported without opening the UI. The importer is chosen from the file extension, and for `.bsp` from the file header (GoldSrc or Source):
-```
-blender -c sourceio import [--scale S] [--no-materials] [--animations] [--clips PATTERNS] [--mip-level N] [--no-packed-channels] [--output out.blend] FILE [FILE ...]
-blender -c sourceio extract-sound [--output DIR] [--overwrite] FILE.vsnd_c [FILE.vsnd_c ...]
-blender -c sourceio extract-vtf [--output DIR] [--format tga|png] [--overwrite] FILE.vtf [FILE.vtf ...]
-blender -c sourceio export-modeldoc [--overwrite] OUTPUT.vmdl
-blender -c sourceio export-hammer [--overwrite] OUTPUT.vmap
-blender -c sourceio export-cs2 --install-root ROOT --addon ADDON --asset NAME [--scope selected|collection|scene] [--batch] [--overwrite] [--compile]
-blender -c sourceio recompile-cs2 --install-root ROOT --addon ADDON MANIFEST
-blender -c sourceio export-source1 --game-root GAME --content-root CONTENT --asset NAME [--scope selected|collection|scene] [--batch] [--overwrite] [--compile]
-blender -c sourceio recompile-source1 --game-root GAME --content-root CONTENT MANIFEST
-```
-`--clips` imports a Source 2 model's animation graph clips that match the patterns (see below).
-`extract-vtf` writes textures for editing in an external image editor (see [Editing VTF textures and sprite sheets](#editing-vtf-textures-and-sprite-sheets)).
-`export-modeldoc` and `export-hammer` are static reconstruction tools.
-`export-cs2` and `export-source1` are the separate editable static-authoring
-workflows described below.
 
-# Usage
-In order to find the import tools you simply need to go to File>Import>Source Engine Assets
-![](https://cdn.discordapp.com/attachments/786989240529059900/1143975506589515886/image.png)
+With the extension enabled, Blender can run SourceIO without opening the UI:
 
-Most formats can also be dragged and dropped into Blender: `.mdl`, `.bsp`, `.vtf`, `.vmt`, `.vmdl_c`, `.vmat_c`, `.vtex_c`, `.vphys_c`, `.vmap_c`, map `.vpk` files, `.vsnd_c` sounds and `.dmx` cameras. Source 2 animation resources (`.vnmclip_c`, `.vanim_c` and `.vagrp_c`) can be dropped onto a selected armature.
-
-### Source 1 backface culling
-Principled Source 1 materials remain two-sided by default for compatibility. To apply Source-style backface culling to newly imported Principled VertexLitGeneric materials, open *Edit > Preferences > Add-ons*, expand SourceIO, and enable **Cull Principled VertexLitGeneric backfaces**. Materials with `$nocull 1` remain two-sided. BVLG materials keep their existing culling behavior regardless of this preference.
-
-## Editing VTF textures and sprite sheets
-Particle textures (`SpriteCard` materials) pack many frames into one VTF, plus a *sprite sheet* that says which rectangle is which frame of which animation sequence. SourceIO reads the sheet, and the other metadata a VTF can carry, and can write the texture out for editing in Photoshop or any other image editor. SourceIO cannot write a sheet into a VTF itself, so the edited texture is rebuilt with `mksheet` and `vtex` from a game's `bin` folder (Team Fortress 2 and the Source SDK ship both).
-
-**What import keeps.** Importing a VTF (*File > Import > Source Engine Assets*, drag and drop, or a material on a model or map) stores on the Blender image:
-- `sourceio_vtf_version`, `sourceio_vtf_flags`, `sourceio_vtf_frames` and, for sheets, `sourceio_sprite_sheet_sequences`;
-- `sourceio_vtf_metadata`, a JSON copy of the header and every resource: the sprite sheet (sequences, loop setting, frame timing and rectangles), LOD clamp, CRC, VTFLib keyvalues and Strata Source hotspot rectangles.
-
-Blender has no Image Editor panel for an image's custom properties; read them in the Python console (`bpy.data.images["flamepuff"]["sourceio_vtf_metadata"]`) or export the image and open `name.vtf.json`. The sheet doesn't animate in Blender.
-
-**Exporting.** In the Image Editor, with an image imported from a VTF, choose *Image > Export for External Editing...*, pick a folder and choose TGA or PNG. From the command line (each `.vtf` is decoded straight from the file):
-```
-blender -c sourceio extract-vtf --output DIR [--format tga|png] [--overwrite] FILE.vtf [FILE.vtf ...]
-```
-For a texture named `name` the folder gets:
-
-| File | Contents |
-|---|---|
-| `name.tga` | The whole texture (`name_frameNNN.tga` per frame for an animated VTF). HDR textures are written as `.exr`. |
-| `name.sht` | The sheet exactly as stored in the VTF. |
-| `name_NNN.tga` | One image per sheet frame, each written once even when several sequences use it. |
-| `name.mks` | The sequences, loop settings and frame timing, in `mksheet`'s format. |
-| `name.vtf.json` | The header, every resource, and each frame's pixel rectangle and file. |
-
-A texture without a sheet gets only the image and the JSON. Existing files are not replaced unless you tick *Overwrite* (or pass `--overwrite`).
-
-**Rebuilding.** Pick one of two routes:
-1. *Keep the layout: edit the whole image.* Paint over `name.tga`, keeping every frame inside its cell, then run `vtex name.tga` next to `name.sht`. vtex attaches the `.sht` as it is, so the sheet comes back byte for byte.
-2. *Change the frames: edit the frame images.* Edit `name_NNN.tga` (frames may change size), or edit `name.mks` to change timing, looping or which frames a sequence uses. Run `mksheet name.mks`, which packs the frames into a new `name.tga` and `name.sht`, then `vtex name.tga`. mksheet chooses its own layout, so the sheet looks different from the original even when nothing changed.
-
-Route 2 replaces `name.tga` and `name.sht`, so edit either the frames or the whole image, not both. vtex expects its input inside the game's `materialsrc` folder; pass `-outdir DIR` (and `-game <game folder>` if vtex can't find `gameinfo.txt`) to compile from anywhere else.
-
-**Sheets made with `packmode rgb+a`.** These pack the color frames and the alpha frames separately, so the two layers overlap in the atlas (TF2's `effects/workshop/vistasmokev1` is one). The sheet doesn't record which sequence is color and which is alpha, so the export warns, and each frame image mixes the two layers. Use route 1 for these.
-
-Both routes were checked with TF2's `mksheet` and `vtex` on all 273 sprite-sheet textures in TF2. Route 1 gave back every sheet byte for byte with identical pixels; route 2 kept every sheet's sequences, loop settings, timing and frame pixels.
-
-## CS2 Workshop static authoring
-
-*File > Export > CS2 Workshop static asset* writes an editable static asset into
-a validated CS2 addon. It emits FBX, ModelDoc 36 VMDL, `csgo_complex.vfx` VMAT,
-32-bit TGA source textures, a deterministic manifest, and a preflight report.
-*Compile after export* optionally runs the installed official Resource Compiler;
-SourceIO does not write compiled Source 2 binaries itself.
-
-The target fields are:
-
-- **CS2 installation**: the install root containing both `content` and `game`,
-  for example `<steam>/common/Counter-Strike Global Offensive`, not
-  `game/csgo`.
-- **Workshop addon**: the existing or new lowercase addon name below
-  `content/csgo_addons` and `game/csgo_addons`.
-- **Asset name**: a lowercase path-safe model name. The default authored
-  directories are `models/sourceio`, `materials/sourceio`, and
-  `materials/sourceio/textures`.
-- **Scope/grouping**: selected meshes by default, or the active collection/scene;
-  combine them into one model or use batch mode for one model per object.
-
-The Blender adapter exports evaluated modifier results without changing source
-objects, materials, selection, mode, transforms, or render settings. Meshes need
-geometry and a UV map; triangulation, normals, FBX units, material names, and
-Source 2 transforms are handled deterministically.
-
-The currently verified material subset is deliberately narrow:
-
-- a SourceIO-imported or explicitly assigned existing `.vmat` is reused first;
-- otherwise, exactly one active Material Output must connect directly to one
-  Principled BSDF;
-- Base Color may be a constant or one directly connected Image Texture;
-- Normal may be unlinked or use an Image Texture Color output connected through
-  a default-strength tangent-space Normal Map node. SourceIO writes the verified
-  CS2 `TextureNormal` mapping and converts Blender's green-channel handedness;
-- Roughness may be a constant or one directly connected grayscale Image Texture
-  Color output. SourceIO writes it as linear data through the verified
-  `TextureRoughness` mapping; Resource Compiler packs it into the compiled normal
-  texture's alpha channel;
-- Metallic may be a constant or one directly connected grayscale Image Texture
-  Color output. SourceIO enables `F_METALNESS_TEXTURE` and writes the verified
-  `TextureMetalness` mapping. For opaque materials, Resource Compiler packs its
-  red channel into the compiled color texture's alpha channel. For alpha-tested
-  materials, it instead emits `g_tMetalness` and stores metalness in its green
-  channel;
-- Alpha may remain opaque or use alpha testing. With Blender's **Dithered**
-  surface render method, Alpha may be a constant below one or the Alpha output
-  of the same Image Texture used directly for Base Color. SourceIO writes
-  `F_ALPHA_TEST`, the Blender alpha threshold, and a separate linear
-  `TextureTranslucency`; Resource Compiler packs the result into the compiled
-  color texture's alpha channel. True **Blended** transparency remains blocked;
-- emission, other texture roles, and procedural graphs are blocked with
-  preflight diagnostics rather than guessed.
-
-No authored file is written when preflight contains a blocking error. Existing
-editable files are protected unless **Overwrite**/`--overwrite` is explicit.
-Successful exports write
-`sourceio/manifests/<asset>.sourceio.json` and
-`sourceio/reports/<asset>.preflight.json` inside the content addon. Recompile
-revalidates the target identity plus every editable artifact's size and SHA-256
-before launching the compiler. A compiler failure leaves the editable files in
-place and writes a bounded `sourceio/logs/<asset>.compile.log`; it is never
-reported as a successful compiled export.
-
-For command-line use, `SOURCEIO_CS2_WORKSHOP_ROOT` can replace
-`--install-root`:
-
-```powershell
-$env:SOURCEIO_CS2_WORKSHOP_ROOT = "<steam>\common\Counter-Strike Global Offensive"
-blender -c sourceio export-cs2 --addon my_addon --asset my_prop --compile
-blender -c sourceio recompile-cs2 --addon my_addon sourceio/manifests/my_prop.sourceio.json
+```text
+blender -c sourceio import --output scene.blend ASSET
 ```
 
-If export is blocked, inspect the preflight diagnostics for invalid/colliding
-names, missing UVs, unsupported Principled inputs, or protected existing files.
-If compilation is requested, verify that CS2 Workshop Tools installed
-`game/bin/win64/resourcecompiler.exe` and that the installation root and addon
-match the manifest. This workflow is CS2-specific static authoring, not a Dota
-exporter, general Source 2 binary exporter, skeletal exporter, or map authoring
-tool.
+Import, extraction, authoring, and recompile commands are documented in the
+[user guide](docs/user-guide.md#command-line).
 
-## Source 1 static authoring
+## Documentation
 
-*File > Export > Source 1 static asset* writes an editable static-prop bundle
-using separate SDK content and game roots. It emits SMD, QC,
-`VertexLitGeneric` VMT, 32-bit TGA sources, VTEX settings, a deterministic
-manifest, and a preflight report. *Compile after export* optionally runs the
-official `vtex.exe` and `studiomdl.exe`; SourceIO does not write compiled VTF or
-MDL binaries itself.
+- [User guide](docs/user-guide.md) — importing, drag and drop, map handling,
+  texture caching, command-line commands, and VTF editing.
+- [Static asset authoring](docs/authoring.md) — CS2 Workshop and Source 1
+  authoring, compiler integration, material limits, and reconstruction exports.
+- [Supported formats and game coverage](docs/formats.md).
+- [Development and testing](docs/development.md) — building packages, test
+  suites, installed-game gates, and experimental boundaries.
+- [Changes in this fork](docs/fork-changes.md) — modernization background,
+  major additions, and notable fixes.
+- [Open authoring backlog](TODO.md) and [current project plan](plan.md).
 
-The target fields are:
+## Scope
 
-- **Game root**: the mod or game folder containing `gameinfo.txt`, such as
-  `<TF2>/tf`.
-- **SDK content root**: the root below which SourceIO may create `modelsrc`,
-  `materialsrc`, and `sourceio` metadata folders. For the TF2 SDK tools this is
-  the TF2 installation root.
-- **Compiler root**: an optional folder containing both `vtex.exe` and
-  `studiomdl.exe`. If omitted, SourceIO checks the usual `bin` folder beside the
-  game root, then `SOURCEIO_SOURCE1_TOOL_ROOT`.
-- **Asset name, scope, and grouping**: the same path-safe combined/batch
-  choices as CS2 authoring. The default outputs are below
-  `models/sourceio/<asset>` and `materials/models/sourceio/<asset>`.
+SourceIO aims to produce useful, editable Blender scenes rather than emulate an
+entire game engine. Shader behavior, map entities, and compiled formats vary
+between games, so unrecognized games and uncommon assets may receive generic or
+partial handling.
 
-The adapter exports evaluated mesh modifiers without changing the scene and
-uses Source 1's unit scale. Meshes need geometry, normals, and a UV map. The
-installed TF2 round trip verifies positions, UVs, winding, normals, material
-identity, and texture data after StudioMDL/VTEX compilation and SourceIO
-re-import.
+Static reconstruction from compiled Source 2 resources is intentionally lossy,
+and current authoring workflows target static assets. SourceIO does not execute
+AnimGraphs, simulate a Source 2 particle renderer, or claim one-to-one runtime
+renderer parity.
 
-The supported material subset is intentionally explicit:
+## Credits
 
-- an imported Source 1 VMT or
-  `sourceio_export_source1_material_path` is reused through a local Patch VMT;
-- otherwise, the supported direct Principled graph authors base color/tint,
-  alpha test or blending, a default-strength tangent-space normal map, and
-  two-sided state;
-- roughness and metalness are not guessed into Source 1 phong controls.
-  Explicit phong can be enabled with the material custom property
-  `sourceio_source1_phong`; optional properties are
-  `sourceio_source1_phong_exponent`, `sourceio_source1_phong_boost`,
-  `sourceio_source1_phong_tint`, and
-  `sourceio_source1_phong_fresnel_ranges`;
-- unsupported procedural graphs and PBR slots block export during preflight.
-
-Compilation uses bounded logs, validates VTF/MDL/VVD/DX90 VTX outputs, and sets
-the `VPROJECT` environment required by Valve's VTEX in addition to passing
-`-game`. Recompile verifies every authored artifact's size and SHA-256 first.
-Compiler failures leave editable files and
-`sourceio/logs/<asset>.compile.log` in the SDK content root.
-
-For command-line use, the three root options can be supplied through
-environment variables:
-
-```powershell
-$env:SOURCEIO_SOURCE1_GAME_ROOT = "<steam>\common\Team Fortress 2\tf"
-$env:SOURCEIO_SOURCE1_CONTENT_ROOT = "<steam>\common\Team Fortress 2"
-$env:SOURCEIO_SOURCE1_TOOL_ROOT = "<steam>\common\Team Fortress 2\bin"
-blender -c sourceio export-source1 --asset my_prop --compile
-blender -c sourceio recompile-source1 sourceio/manifests/my_prop.sourceio.json
-```
-
-This is a static-prop workflow. Skeletal models, animation, physics, LODs,
-bodygroups, skins, flexes, and map authoring remain outside this slice. The
-existing direct Image Editor VTF export remains available and unchanged.
-
-The old **SourceIO model definition** export node tree is deprecated. Its node
-and socket types remain registered so existing `.blend` files load without
-discarding their graphs, but it no longer appears in the Add menu and its
-partial QC evaluator is disabled. Use File > Export or the matching
-`blender -c sourceio` commands for all supported authoring.
-
-## CS2 map import sizes
-
-A complete CS2 map import can make a much larger `.blend` than the map VPK suggests. The map archive references
-textures in CS2's shared VPKs; SourceIO decodes their GPU-compressed DXT/BC data and, unless a texture cache is
-configured, embeds the resulting PNG/EXR images in the `.blend`. These already-compressed images account for about
-90% of the saved file and gain little from Blender's file compression.
-
-Measured with every map placeholder loaded and Blender file compression enabled:
-
-| Map | Map VPK | Self-contained `.blend` | `.blend` without embedded images |
-|-----|--------:|-------------------------:|---------------------------------:|
-| `de_dust2` | 250 MiB | 1.6 GiB | about 167 MiB |
-| `de_inferno` | 432 MiB | 3.0 GiB | about 340 MiB |
-
-To keep the textures external, set *Scene Properties > SourceIO configuration > TextureCachePath* before importing.
-The cache still uses disk space and must remain available with the `.blend`, but it can be reused by later imports.
-Using *File > External Data > Pack Resources* embeds those files again and restores the larger file size.
-
-## Import times
-
-Importing a map is quick; most of the time goes into *Load Entity* on its prop placeholders, which imports each
-model and decodes its textures. Measured with SourceIO 5.12.0 in headless Blender 5.2.2 on one Windows desktop,
-with the games installed on a separate drive; times vary with CPU and disk speed:
-
-| Map | Map import | With every placeholder loaded | Placeholders |
-|-----|-----------:|------------------------------:|-------------:|
-| TF2 `ctf_2fort` | 31 s | 64 s | 2,320 |
-| TF2 `cp_badlands` | 17 s | 34 s | 1,308 |
-| TF2 `koth_harvest_final` | 16 s | 23 s | 673 |
-| TF2 `pl_upward` | 20 s | 47 s | 1,332 |
-| CS2 `cs_office` | 5 s | 2 min 10 s | 647 |
-| CS2 `de_dust2` | 8 s | 6 min 10 s | 698 |
-| CS2 `de_inferno` | 10 s | 8 min 35 s | 1,365 |
-| Dota 2 `dota` | 22 s | 5 min 20 s | 5,311 |
-
-A single model takes under 3 s for TF2 and Dota 2 (Dota heroes and creeps with their animations) and 1-12 s for CS2,
-where the agents, hostage and weapons have the most textures. A CS2 agent with all of its 2,089 graph clips takes
-about a minute. Saving a map with its textures embedded adds up to 15 s for TF2, Dota 2 and `cs_office`, and about
-1 and 1.5 minutes for the multi-gigabyte `de_dust2` and `de_inferno` files.
-
-To spend less time on a map:
-
-- Select only the placeholders you need before *Load Entity*; it loads the selected ones.
-- Keep *Use instances* on (the default) so a model placed many times is imported once and instanced.
-- Turn off *Import materials* when you only need the geometry.
-- Set a *TextureCachePath* (above): textures decoded by one import are written to disk and reused by later ones.
-
-# Changes in this fork
-
-## Blender 5.2 modernization
-* **Blender 4 code removed.** All version checks and legacy branches are gone (`use_auto_smooth`, `shadow_method`, `ShaderNodeMixRGB`, the pre-slotted-actions animation API, deprecated material properties).
-* **Transparency works again on 5.x.** Alpha-tested materials get a real alpha-clip node, decals and additive materials use *Blended* rendering, and skyboxes and decals no longer cast shadows. Previously these settings were silently skipped on Blender 4.3+.
-* **Faster mesh import.** Vertex weights are assigned in batches: about 6× faster.
-* **Animation importer.** Curves are computed with NumPy, actions use the slotted-action API, and an optional *Delta animations to NLA* setting puts additive animations on muted NLA tracks set to *Combine*.
-* **UI.** The MDL import dialog has collapsible sections and now exposes *World scale* and the BVLG option. Drag-and-drop handlers were added for `.vmdl_c`, `.vphys_c` and `.dmx` cameras.
-* **Packaging.** A `blender_manifest.toml` makes SourceIO a Blender 5.2 extension (Windows x64, Linux x64, macOS x64/arm64). `tools/build_extension.py` builds a separate package per platform (the Windows package is 3.4 MB instead of 7.1 MB).
-
-## New features
-* **Source 2 animations.** Enable *Import animations* in the VMDL import dialog. Supported sources:
-  * animations embedded in the model;
-  * external animation groups (`.vagrp_c` / `.vanim_c`);
-  * included models;
-  * older NTRO-format files.
-
-  All of VRF's segment decoders are ported. Position, rotation and scale channels are imported, with delta animations, looping flags and root motion. Morph/flex, user and data channels are retained, and NM float curves and rich event payloads are decoded. Results match VRF's own glTF export within float precision on every frame of 192 animations across 9 test models. Bone-mask and pose-parameter blending are not executed.
-* **Direct Source 2 animation import.** *File > Import > Source Engine Assets > Source2 animation* applies `.vanim_c` and `.vagrp_c` files to compatible selected armatures. A standalone VANIM needs its owning VAGRP decode key. AnimGraph documents are retained for inspection, but SourceIO never executes an AnimGraph.
-* **Source 2 animation graph clips** (`.vnmclip_c`, AnimGraph 2). CS2 characters animate through these rather than through the model: a CS2 agent has 2 animations of its own and reaches about 2000 clips through its animation graphs. Each clip is authored on its own skeleton and is matched to the model by bone name, the same way VRF does it. Two ways to import them:
-  * *Graph clips* in the VMDL import dialog (with *Import animations*) takes the model's clips whose path or name matches the patterns, for example `idle*, run_n_*`, or `*` for all of them (about a minute for a CS2 agent).
-  * *File > Import > Source Engine Assets > Source2 animation clip* puts clip files onto the selected armature. Weapons need this route, because their animation comes from the second track set of viewmodel and menu clips, which the weapon's own model doesn't list.
-
-  Additive clips and root motion are supported, and each action records the clip's path. The clip's events (sounds, particles, gameplay IDs) become pose markers on the action at their start frame. Character models honor their compiled default mesh-group mask, so a CS2 agent starts with its third-person body visible and its first-person arms in hidden collections. Bulk model import leaves the selected armature in its upright rest pose instead of playing the last imported clip; keep that armature active when choosing an action so the Action Editor and the pose use the same action. On 138 clips (the chicken, a CT agent and an AK-47), the result matches VRF's glTF export within 1e-4 units and 0.002°.
-* **GoldSrc animations.** All sequences embedded in a GoldSrc model are imported as actions when *Load animations* is enabled. Previously only a sequence named `walk1` was imported, and its values were wrong.
-* **More Source 2 texture formats.** ETC2, ETC2_EAC, R11_EAC and RG11_EAC.
-* **Source 2 texture subresources and metadata.** VTEX decoding supports explicit mip selection, arrays, volume slices, cube arrays, embedded images, sprite sheets and cubemap-radiance metadata while retaining HDR precision. Texture, material, model, map and *Load Entity* paths share the selected mip and packed-channel settings. Cache keys include every decode setting, so different variants cannot silently reuse the wrong image. VCS combo/channel metadata is used only when its packed-channel meaning is unambiguous; otherwise SourceIO records a diagnostic instead of guessing.
-* **Source 2 sounds.** VSND versions 1-4 can be imported or extracted. MP3 payloads are copied bit-for-bit; PCM and ADPCM become RIFF/WAV. Phoneme/emphasis tracks and CTRL metadata are written as compiler-compatible companion files when present. Blender integration creates speakers or VSE strips, but SourceIO is not a real-time Source 2 audio engine.
-* **Layered content resolution.** Loose files, mounted VPKs and nested archives resolve through deterministic mount precedence with streaming access, traversal checks and an optional lazy asset index.
-* **Static Source 2 reconstruction exports.** Selected Blender meshes can be exported as ModelDoc plus static DMX, and the active imported map collection as Hammer VMAP. Model export applies object transforms, converts Blender coordinates back with the configurable Source-unit scale, and retains canonical VMAT resource paths. Every export includes a machine-readable provenance sidecar and loss report and stages all authored outputs atomically. These are deliberately limited static vertical slices: dynamic rigs, complete animation authoring, original Hammer brush topology and other information absent from compiled resources are not fabricated.
-* **Command-line import.** `blender -c sourceio import ...` (see above).
-* **VTF sprite sheets and metadata.** Imported VTF images keep their header, sprite sheet and other resources, and *Image > Export for External Editing...* (or `blender -c sourceio extract-vtf`) writes a VTF out for Photoshop or any other image editor, with what Valve's `mksheet` and `vtex` need to rebuild it. See [Editing VTF textures and sprite sheets](#editing-vtf-textures-and-sprite-sheets).
-* **Source 1 overlays.** `info_overlay` decals (signs, posters, road markings) are imported into an `overlays` collection, clipped to the faces and displacements they cover. They were previously not imported at all. Controlled by *Load overlays* (on by default).
-* **Bone collections and colours** for Source 1 models (MDL v44–v52). Bones are sorted by what the engine uses them for: *Deform*, *Procedural*, *Bone merge*, *Attachments* and *Other*. Deform bones are coloured by side (left blue, right red, centre yellow), and the others by role.
-* **Flex controller panel** for Source 1 models with flexes (*SourceIO utils > Flex controllers* in the 3D view sidebar, with the face mesh active): a slider per face controller, keying and reset buttons. A stereo controller has one slider for both sides, split by a left/right balance (the eye icon shows left and right separately). With auto keying on, moving a slider keys it. Adapted from [REDxEYE/SourceIO#477](https://github.com/REDxEYE/SourceIO/pull/477) by hisprofile.
-* **One compact action per include model.** With *Include animations* and *Compact animations*, a character's animations are split into one action per source model (`heavy.mdl`, `heavy_animations.mdl`, `heavy_workshop_animations.mdl`), so animations that share a name across them keep it. Also from #477.
-* **Source 1 animations import like Source 2's.** With *Load animations*, include-model animations now load by default (the HL2 dog keeps all 134 of its animations in `dog_animations.mdl` and two other include models; before, only `@ragdoll` came in), and each animation is its own action unless *Compact animations* is turned on. The armature is left in its rest pose instead of on the last animation imported, which was often a delta pose that twisted the model on its own (the TF2 sentry's `d.a_pitch_up`).
-* **CS2 character and weapon materials.** Agents, the hostage, the chicken, gloves and weapons used to import with an untextured grey material, because their shaders (`csgo_character`, `csgo_weapon`) had no handler. They now get color, normal, roughness, metalness and tint. Blood masks, patches and stickers, which the game fills in at runtime, are left out.
-* **CS2 decals, light transmission and detail textures.** Props with a decal texture (crate logos, painted markings) get it blended in, over the color or multiplied as the material asks. Foliage, awnings and other thin surfaces let light through from behind, as in the game. Map surfaces get their detail textures. de_dust2 now leaves 4 textures unused, down from 26.
-* **CS2 texture scales and generic materials.** Blended map surfaces (plaster, gravel, concrete) use each layer's own texture scale, rotation and offset, and prop normal maps their own. Detail textures follow the second UV set on models that have one. Materials on the older `generic` shader (shell casings, the challenge coin) get their roughness, metalness, reflectance and glow.
-* **CS2 3D skyboxes.** Importing a CS2 map also imports its 3D skybox (the town and hills around de_dust2, for example), scaled up and placed around the map as the game shows it, in its own collection under the map's. Its *Load Entity* placeholders load like the map's.
-* **Readable CS2 map object names.** The map compiler merges Hammer's meshes and props into generated models named like `n0_lr0_c0_s_cb_nomerge6_steam_001`, and Hammer's own names don't survive compiling. Objects are now named after what the model was made for, usually its material (`steam_001`, `agave_plant_01`, `overlay12`); the full compiled path stays in the object's `entity_data`. Models whose compiled name says nothing (`nomerge3`, `mesh_cm00_lp<hash>`; de_dust2's skybox cloud cards) are renamed after their material when *Load Entity* loads them, unless they use several materials.
-* **Light blockers cast shadows only.** Meshes the game only draws into shadow maps (Hammer's `toolsblocklight` brushes, the grey slabs around de_dust2) go into a `shadow_casters` collection that is hidden in the viewport. Show it with its eye icon in the outliner and use *Load Entity* on its placeholders: the loaded meshes are invisible to the camera and to reflections, and cast shadows in renders, as in the game. Hide the collection again to keep them out of the viewport.
-* **Dota 2 world layers.** Map geometry and entities that belong to a world layer go into a collection per layer under the map's `world_layers` collection. Layers the game doesn't show when the map starts (Dota's `world_layer_dire_destruction` and `world_layer_radiant_destruction`, the scorched ground and rubble of a fallen base) are excluded from the view layer; tick a layer's checkbox in the outliner to show it. Before, both states were drawn on top of each other.
-* **Dota 2 terrain, crystals and water.** Dota's terrain, cliffs and most rocks (`multiblend.vfx`), its crystals (`crystal.vfx`) and its rivers (`water_dota.vfx`) rendered white. Terrain now blends up to four layers where the mapper painted them, revealed by each layer's mask and softened and tinted by the painted vertex data, following VRF. Crystal and water have no VRF port and follow the game's compiled shaders: crystals show their interior and exterior cube maps, water is a tinted, refracting surface with the shader's normals and highlight. Water doesn't flow (the flow map's placement is set by the game at runtime) and EEVEE shows no riverbed through it, where Cycles does.
-* **CS2 unlit materials.** Materials on `csgo_unlitgeneric` (glowing signs and screens, light panels, skybox clouds and mist, the music-kit screens) are drawn unlit, with the game's opaque, translucent, alpha-tested, additive and multiply modes. Their second texture is multiplied in where the material has one, so de_dust2's skybox clouds are clouds, not grey cards.
-* **CS2 sky and sunlight.** Importing a CS2 map sets its sky as the scene's world, turned as in the game, and the sun shines from where the sky's glow is, as bright relative to the sky and the map's lamps as the game draws it. A Cycles render of de_dust2 at the default exposure shows sunlit walls under a blue sky, where the sky used to be black and the sun hundreds of times too strong.
-* **CS2 lamp shapes.** Rectangular and disc lamps (`light_rect`: ceiling panels, strip lights) are imported as area lights of their size, and barn lights (`light_barn`) as spots that light the same footprint as the game's light, including stretched and off-center ones. Each lamp is as bright 100 units in front of it as the game's. Previously both were point lights.
-* **CS2 decals, detail textures and blended floors and walls.** Decals and overlays (`csgo_static_overlay`) use the game's blend modes: alpha-tested decals have hard edges, darkening and brightening decals (Mod2x, ModThenAdd) modulate the surface under them instead of covering it, and unlit decals are no longer shaded. Their opacity, painted vertex colors and color adjustments apply too. Detail textures follow the game's modes (Mod2x, Overlay, detail normals; Multiply and Replace on characters and weapons). Before, details darkened walls or were missing, e.g. on weapon keychains. Two-layer world surfaces (`csgo_lightmappedgeneric`: de_dust2's plaster, asphalt and ground blends) blend where the mapper painted them; before, the painted blend was ignored.
-* **CS2 environment materials.** The game's most common world materials (`csgo_environment`, about 1,560, and the blended `csgo_environment_blend`, about 830: ground, rock, sand, plaster and brick on most maps) follow the game's shader. Each layer gets its color correction (brightness, contrast, saturation, tint) and model tint where its tint mask allows, its metalness, roughness adjustments, detail normals and its own texture scale, rotation and second UV set; painted vertex colors tint them as the game does. Blended materials use up to three layers, mixed where the mapper painted them and by the layers' height maps, with the soft or crisp borders, tinted seams, surface-facing masks and shared color overlays the materials ask for. Before, these materials used only their color, normal and roughness textures, and blended layers followed the vertex color instead of the painted blend.
-* **`custom/*` search paths.** Every folder and VPK in a game's `custom` folder is mounted ahead of the game, as the engine does, so community content and workshop items resolve.
-
-## Bug fixes
-* CS2 maps had no sky: the sky was built but never assigned to the scene, so it wasn't saved either.
-* Source 2 suns pointed the wrong way: away from where the sky puts the sun, and at 90° minus the elevation they should have.
-* CS2 lamps (`light_omni2`, `light_rect`, `light_barn`) read their brightness as a plain number, but the game stores it in stops: bright lamps came out too dark, and dim ones with a negative value took negative energy.
-* CS2 materials on `csgo_unlitgeneric` (306 in the game) were imported as plain grey materials: the shader's handler was never loaded.
-* CS2 metalness: props ignored their metalness texture, and materials with one took metalness from the color alpha instead, so gold looked half-metallic and some glass looked like metal.
-* CS2 materials with anisotropic gloss (some agents' clothing, the music-kit record) were almost fully rough: roughness was read from a normal map that has none, and the texture that holds it was decoded as a normal map.
-* Alpha-tested materials (chain-link fences, foliage cards, grates) thinned out and vanished with distance in EEVEE and the viewport, while Cycles showed them. Blender's mipmaps average the alpha below the cutoff; the alpha is now read at full resolution, as Cycles does. This applies to Source 1 and Source 2 materials.
-* Source 2 maps: *Load Entity* on a merged world mesh whose pieces repeat one mesh placed only the first copy and skipped the rest of the merged mesh (22 pieces of de_dust2 and 19 of cs_office were missing).
-* Source 2 texture offsets moved textures vertically the wrong way, rotations turned the wrong way, and the rotation center acted as an extra offset.
-* CS2 translucent materials rendered opaque (the flag was read under an older name), and foliage without alpha testing was see-through wherever its color was dark. `csgo_complex` materials ignored their color tint.
-* CS2 maps no longer load an unconnected image node for every ambient occlusion texture (de_dust2: 478 "Unused texture" warnings down to 26). Source 2 applies ambient occlusion only to indirect light, which Blender computes itself.
-* Custom normals didn't follow deformation, so characters were lit and reflected from the wrong directions and looked metallic. Model meshes are turned upright by their armature, and the normals stayed behind; they also ignored poses and shape keys. This came from an earlier speed-up in this fork, now reverted (imports are about 5% slower).
-* Source 1 rim lighting (`$rimlight`) covered the whole surface in a white haze, which washed out TF2 characters. It now shows only at the silhouette, as in Source.
-* Combo flexes were clamped before being scaled back by *Flex Scale*, so they were too weak at a Flex Scale other than 1 (from #477).
-* Map props with a multi-frame `defaultanim` failed to pose, and GoldSrc animation import was broken (both regressions from the recent animation overhaul).
-* GoldSrc animations of 128 or more frames were decoded incorrectly. This broke models whose textures live in a separate `*T.mdl` file.
-* HDR Source 2 textures (BC6H, RGBA16161616F) were imported with reversed colour channels and squeezed into an 8-bit image. They are now pixel-exact.
-* New Source 2 texture formats: PNG/JPEG/WEBP-wrapped textures, and the 1-, 2- and 3-channel uint, float16 and float32 formats (R32F, RG1616, R16F, RG3232F and others), plus BGRA8888, IA88, A8 and R32_UINT.
-* Source 2 models with an attribute-less vertex buffer no longer fail to import.
-* Map VPKs whose map isn't named after the VPK file can now be imported.
-* Brush entities in BSPs without face data no longer crash the map import.
-* KV3 v2 data compressed as several zstd frames failed to load. This affected some newer Source 2 models' animation blocks.
-* External resource references in older NTRO-format Source 2 files were read as empty.
-* Source 1 animations stored in sections had broken rotations on every bone a section didn't list (for example 178 tracks on the TF2 heavy).
-* Source 1 v49+ frame animations that mix constant and per-frame data, which is most of them, failed to decode.
-* *Load Ref pose* failed on every model with animations and left Blender in edit mode.
-* Building an armature put any other selected armature into edit mode too, and a failed import could leave Blender in edit mode.
-* Displacements far from the map origin could be built from the wrong corner, which rotated their grid.
-* Water materials set with `$bottommaterial` weren't found, and underwater faces got an empty material.
-* Model materials with `..` in their path, and models whose VPK path differs in case, failed to resolve.
-* CS2 maps: spot-shaped `light_omni2` lights failed to import (33 on de_inferno), and entities without a model left a placeholder that *Load Entity* couldn't load.
-* CS:GO Source 2 materials: self-illuminated `csgo_vertexlitgeneric` and `csgo_static_overlay` materials, and `csgo_environment_blend` materials with a colour overlay, failed to build.
-* Source 2 normal maps could get corrupt pixels where compression pushed the stored X/Y past length 1.
-* A CS2 install was also detected as Dota 2.
-* Dota 2 terrain and props (`multiblend.vfx`, `global_lit_simple.vfx`) reflected the sky like wet stone, which showed as a pale haze over whole terrain tiles. Their specular texture holds the strength of a highlight from the map's sun, and it was read as physical reflectance, about 12 times too strong; it is now read the way the hero shader reads its specular mask. Its green channel no longer makes surfaces glow: the game doesn't use it.
-* Morphs of Source 2 models with external meshes (`m_morphSet`) never loaded.
-* Smaller fixes:
-  * duplicate *Export to VTF* menu entries after re-enabling the add-on;
-  * a leaked scene property;
-  * a leaked VTF file handle;
-  * a stuck progress bar after errors;
-  * an unformatted report message;
-  * a broken DMX session importer, now unregistered;
-  * a module that failed to import (`csgo_weapon.py`).
-
-## Experimental Source 2 boundaries
-
-Particle KV3 is kept immutable alongside a separate upgraded copy. Only the verified `vpcf2` upgrade path is
-applied, with per-component capability diagnostics; there is no particle renderer. Cloth reconstruction is
-default-off and requires an explicit backend capability report—SourceIO does not create a fake fallback cloth.
-Compiled-resource writing is also experimental and refusal-first: only whitelisted resource/block combinations
-with valid provenance pass serialization preflight, and writes are atomic. These core APIs are intentionally not
-presented as general Blender import/export support.
-
-## Testing
-`tests/fetch_samples.py` downloads 104 hash-verified sample assets (about 17 MB) from public repositories into the git-ignored `samples/` folder.
-`tests/e2e/run_sample_imports.py` imports each one headlessly through the real operators. For every texture, it also checks that the imported pixels match SourceIO's own decode:
-```
-python tests/fetch_samples.py
-blender -b --factory-startup --python tests/e2e/run_sample_imports.py -- [--filter TEXT] [--json report.json]
-```
-Current result: 87 pass, 6 warn (only because game content isn't included), 0 fail.
-
-`tests/e2e/run_game_imports.py` imports models and maps straight from an installed game through its own search paths. With Team Fortress 2 (9 models, including HL2's dog, and 4 maps), all 13 pass:
-```
-blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf"
-```
-It also takes a Source 2 game. With Counter-Strike 2 (9 models: agents, arms, weapons, chicken, hostage, a prop; and 3 maps), all 12 pass. `--load-placeholders` also loads every prop and world mesh a map places (de_dust2, de_inferno and cs_office load all of them without errors). `--clips "*"` imports every graph clip as well; all 9 models still pass:
-```
-blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders] [--clips PATTERNS]
-```
-
-The Dota 2 profile covers three animated models, representative `hero.vfx` and
-`global_lit_simple.vfx` materials, a texture, and the main world. All 7 assets pass
-with Steam app ID 570. The world gate also consumes a bounded entity report; the
-current installed baseline diagnoses 5,127 entities as 3,205 handled, 1,513
-represented, 374 deliberately deferred, and 35 unsupported:
-```
-blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/dota 2 beta/game/dota" --expect-profile dota
-```
-
-An opt-in Dota 2 Workshop Tools test generates a disposable addon, compiles a
-static model/material/texture fixture with `resourcecompiler.exe`, and re-imports
-the compiled resources. It is a compiler compatibility gate, not a public Dota
-export workflow. The generated addon and proprietary outputs remain local and are
-removed after the test:
-```
-$env:SOURCEIO_DOTA2_WORKSHOP_ROOT = "<steam>\common\dota 2 beta"
-python -m pytest tests/source2_workshop/test_dota_workshop_roundtrip.py -q
-```
-
-The CS2 contract and Blender-authored round-trip gates likewise use uniquely
-named disposable addons and discover the compiler-generated VTEX path from the
-compiled material instead of hardcoding it:
-```powershell
-$env:SOURCEIO_CS2_WORKSHOP_ROOT = "<steam>\common\Counter-Strike Global Offensive"
-python -m pytest tests/source2_workshop/test_cs2_workshop_contract.py -q
-blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, '..'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_cs2_authoring_roundtrip.py', '-q']))"
-```
-
-Generated, redistributable Source 2 fixtures and strict normalized snapshots live under `tests/fixtures` and
-`tests/conformance`. The optional VRF differential oracle never downloads or discovers an executable from `PATH`.
-Set `SOURCEIO_VRF_CLI` to an explicit VRF `Decompiler` path, optionally pin it with
-`SOURCEIO_VRF_CLI_SHA256`, and set `SOURCEIO_VRF_TIMEOUT` to a positive timeout in seconds. Without
-`SOURCEIO_VRF_CLI`, the differential test is an explicit skip; an invalid configured path or hash is an error.
-Run the harness with, for example:
-```
-python tools/source2_conformance.py snapshot
-python tools/source2_conformance.py differential FILE.vtex_c
-```
-VRF's excluded test-file corpus is not copied or redistributed.
-
-# Supported formats
-
-The tables list user-facing operators registered by the extension. Source 2 authoring formats without the compiled
-`_c` suffix cannot be imported. SourceIO can reconstruct the documented static `.vmdl`/DMX and `.vmap` slices, but
-does not claim a lossless compiled-to-authored round trip.
-
-## GoldSrc, Source 1 and related formats
-
-| Extension | Contents | Import | Export | Notes |
-|-----------|----------|:------:|:------:|-------|
-| `.mdl` | GoldSrc or Source model | Yes | No | The version is detected from the file. |
-| `.md3` | Quake III model | Yes | No | Uses the model importer. |
-| `.bsp` | Compiled GoldSrc or Source map | Yes | No | GoldSrc and Source use separate map importers. |
-| `.vtf` | Source texture | Yes | Yes | VTF is currently the only exported asset format. Sprite sheets and other metadata are read on import, and *Export for External Editing* writes TGA/PNG plus a `.sht` and `mksheet` `.mks` for rebuilding with Valve's tools. |
-| `.vmt` | Source material or skybox | Yes | No | Skybox import reads its six VMT faces. |
-
-## Source 2 and DMX
-
-| Extension | Contents | Import | Export | Notes |
-|-----------|----------|:------:|:------:|-------|
-| `.vmdl_c` | Compiled model | Yes | Static reconstruction | Optional animations and AnimGraph clip discovery. |
-| `.vmap_c` | Compiled map | Yes | Static reconstruction | Imports the world and entity placeholders. |
-| `.vpk` | Packed Source 2 map | Yes | No | Map VPKs only; this is not a general VPK browser. |
-| `.vtex_c` | Compiled texture | Yes | No | Mip and packed-channel controls are shared across importers. |
-| `.vmat_c` | Compiled material | Yes | No | |
-| `.vphys_c` | Compiled physics | Yes | No | |
-| `.vnmclip_c` | AnimGraph 2 animation clip | Yes | No | Applied to a selected armature. |
-| `.vanim_c` / `.vagrp_c` | Compiled animation/group | Yes | No | Applied to compatible selected armatures; AnimGraphs are not executed. |
-| `.vsnd_c` | Compiled sound | Yes | Extract | VSND v1-v4 audio plus available compiler companions. |
-| `.fbx` / `.vmdl` / `.vmat` / `.tga` | Editable CS2 static asset bundle | No | CS2 authoring | Optional official compilation; limited to the documented static base-color, normal-map, roughness, metalness, and alpha-test subset. |
-| `.vmdl` / `.dmx` | Editable static model bundle | No | Yes | Reconstructed from selected meshes with provenance and a loss report. |
-| `.vmap` | Editable static Hammer map | No | Yes | Reconstructed from the active imported collection with a loss report. |
-| `.dmx` | Valve camera | Yes | No | Camera DMX only; session import is not registered. |
-
-## Game coverage
-
-No game is claimed as fully supported: containers often share an engine format, while shaders and map entities are
-game-specific. Automated end-to-end coverage currently imports models and maps from **Team Fortress 2** and
-**Counter-Strike 2**, plus models, materials, a texture, and the main world from **Dota 2**.
-
-Dedicated Source 1 map-entity handling also exists for Half-Life 2 and its episodes, Counter-Strike: Source,
-Garry's Mod, Source Filmmaker, Black Mesa, Counter-Strike: Global Offensive, Left 4 Dead 2, Portal, Portal 2 and
-several Portal 2 mods, Vampire: The Masquerade - Bloodlines, Vindictus, Titanfall and supported Quake III-derived
-formats. Source 2 has dedicated handlers for Counter-Strike 2, Dota 2, Half-Life: Alyx, S&box and Deadlock.
-Unrecognized games use generic entity handling and should be treated as partial support.
-
-# Credits
-
-* [datamodel.py](https://github.com/Artfunkel/BlenderSourceTools/blob/master/io_scene_valvesource/datamodel.py) by [Artfunkel](https://github.com/Artfunkel)
-* [ValveResourceFormat](https://github.com/ValveResourceFormat/ValveResourceFormat), whose MIT-licensed implementation is used for Source 2 format research and attributed ports such as animation decoding. Its separately excluded test assets are not redistributed.
-* [BlenderVertexLitGeneric](https://github.com/syborg64/BlenderVertexLitGeneric) shader node group by [syborg64](https://github.com/syborg64)
-* [equilib](https://github.com/haruishi43/equilib) cubemap-to-equirectangular converter by [haruishi43](https://github.com/haruishi43/equilib)
-* [HFSExtract](https://github.com/yretenai/HFSExtract), used to write the native HFS decryptor, by [yretenai](https://github.com/yretenai)
-* Better HWM expression-handling idea by [hisanimations](https://youtube.com/c/hisanimations)
+- SourceIO and its original authors:
+  [REDxEYE/SourceIO](https://github.com/REDxEYE/SourceIO).
+- [datamodel.py](https://github.com/Artfunkel/BlenderSourceTools/blob/master/io_scene_valvesource/datamodel.py)
+  by [Artfunkel](https://github.com/Artfunkel).
+- [ValveResourceFormat](https://github.com/ValveResourceFormat/ValveResourceFormat)
+  for Source 2 format research and attributed MIT-licensed ports.
+- [BlenderVertexLitGeneric](https://github.com/syborg64/BlenderVertexLitGeneric)
+  by [syborg64](https://github.com/syborg64).
+- [equilib](https://github.com/haruishi43/equilib) by
+  [haruishi43](https://github.com/haruishi43).
+- [HFSExtract](https://github.com/yretenai/HFSExtract) by
+  [yretenai](https://github.com/yretenai).
+- Better HWM expression handling by
+  [hisanimations](https://youtube.com/c/hisanimations).

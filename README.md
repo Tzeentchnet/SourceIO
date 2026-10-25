@@ -230,6 +230,12 @@ This is a static-prop workflow. Skeletal models, animation, physics, LODs,
 bodygroups, skins, flexes, and map authoring remain outside this slice. The
 existing direct Image Editor VTF export remains available and unchanged.
 
+The old **SourceIO model definition** export node tree is deprecated. Its node
+and socket types remain registered so existing `.blend` files load without
+discarding their graphs, but it no longer appears in the Add menu and its
+partial QC evaluator is disabled. Use File > Export or the matching
+`blender -c sourceio` commands for all supported authoring.
+
 ## CS2 map import sizes
 
 A complete CS2 map import can make a much larger `.blend` than the map VPK suggests. The map archive references

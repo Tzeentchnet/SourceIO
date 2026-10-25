@@ -8,8 +8,9 @@ SMD/QC/VMT/TGA/VTEX-settings output, bounded compiler integration, and verified
 manifest recompile. Its installed TF2 gate compiles and re-imports Blender
 geometry, UVs, winding, normals, materials, and textures.** Export is SourceIO's
 secondary goal after import quality; the aim is one straightforward path from a
-Blender scene to editable, optionally compiled static assets. Next: settle on
-one export path (implementation todo 13).
+Blender scene to editable, optionally compiled static assets. File > Export and
+the CLI are now the supported authoring paths; the legacy export node tree is
+load-compatible but deprecated.
 Skeletal, animated, physics, and map authoring, and game coverage beyond
 priority 3, are parked in the local `docs/deferred-work.md`. Current priorities
 are tracked in [plan.md](plan.md).
@@ -17,10 +18,11 @@ are tracked in [plan.md](plan.md).
 ## Problem and proposed approach
 
 SourceIO is primarily an importer. It has a working single-image Source 1 VTF
-exporter, an experimental Source 1 export-node tree, deliberately limited static
-Source 2 ModelDoc/DMX and Hammer reconstruction, and now a profile-validated CS2
-static-authoring workflow. It does not yet provide the equivalent Source 1
-workflow or a general authoring pipeline for every Source/Source 2 asset class.
+exporter, validated Source 1 and CS2 static-authoring workflows, and deliberately
+limited static Source 2 ModelDoc/DMX and Hammer reconstruction. The old Source 1
+export-node tree is retained only so existing `.blend` files load; it is no
+longer an authoring path. SourceIO does not provide a general authoring pipeline
+for every Source/Source 2 asset class.
 
 The proposed solution is a shared, engine-neutral export pipeline with:
 
@@ -147,10 +149,10 @@ profiles, Wine) is parked in `docs/deferred-work.md`.
   complete compiler workflow.
 - Source 1 imported materials retain parsed VMT parameters in addition to their
   canonical resource paths.
-- `blender_bindings/ui/export_nodes` is an experimental QC/VTF prototype, not a
-  complete or safe export pipeline. The new service should not depend on it.
-  After the service is stable, the node tree can either emit the shared export
-  model or be clearly deprecated.
+- `blender_bindings/ui/export_nodes` is a deprecated QC/VTF prototype, not a
+  complete or safe export pipeline. Its types remain registered for `.blend`
+  load compatibility, but new-node discovery and partial QC evaluation are
+  disabled. The supported File > Export and CLI paths use the shared services.
 
 ## Game and SDK access priorities
 
@@ -470,9 +472,12 @@ exists.
       identity. Imported VMT provenance and explicit phong parameters are
       supported without converting Principled roughness or metalness.
 
-13. [ ] **Settling on one export path**
+13. [x] **Settling on one export path**
     - Move the experimental export node tree onto the shared service, or deprecate
       it, so File > Export and the CLI are the single documented way to export.
+    - The prototype is deprecated with load compatibility: legacy node/socket
+      types still deserialize, while new-node discovery and evaluation are
+      disabled with guidance to the supported File > Export and CLI workflows.
 
 ## Validation and acceptance gates
 

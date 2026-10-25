@@ -8,22 +8,20 @@ from . import nodes
 
 class SourceIO_OP_EvaluateNodeTree(Operator):
     bl_idname = "sourceio.evaluate_nodetree"
-    bl_label = "Evaluate tree"
+    bl_label = "Use File > Export instead"
+    bl_description = (
+        "The legacy SourceIO export node tree is deprecated; use the validated "
+        "File > Export or command-line authoring workflows"
+    )
     tmp_file: bpy.types.Text
 
     def execute(self, context: bpy.types.Context):
-        if not bpy.data.texts.get('qc', False):
-            self.tmp_file = bpy.data.texts.new('qc')
-        else:
-            self.tmp_file = bpy.data.texts['qc']
-        all_nodes = context.space_data.node_tree.nodes
-        outputs = []  # type:list[Node]
-        for node in all_nodes:  # type: Node
-            if node.bl_idname == "SourceIOModelNode":
-                outputs.append(node)
-        for output in outputs:  # type:nodes.SourceIOModelNode
-            self.traverse_tree(output)
-        return {'FINISHED'}
+        self.report(
+            {"WARNING"},
+            "The legacy export node tree is deprecated; use File > Export > "
+            "Source Engine Assets or blender -c sourceio.",
+        )
+        return {'CANCELLED'}
 
     def traverse_tree(self, start_node: nodes.SourceIOModelNode):
         start_node.write(self.tmp_file)
@@ -54,7 +52,10 @@ class SourceIO_OP_EvaluateNodeTree(Operator):
 
 class SourceIO_NT_ModelTree(NodeTree):
     bl_idname = 'sourceio.model_definition'
-    bl_label = "SourceIO model definition"
+    bl_label = "SourceIO model definition (deprecated)"
+    bl_description = (
+        "Load-only compatibility for legacy SourceIO export node trees"
+    )
     bl_icon = 'NODETREE'
 
     def update(self, ):
@@ -245,4 +246,3 @@ def evaluate_tree(tree, targets=None, collapse_reroutes=True, skip_frames=True) 
             if sock.name in outputs:
                 ctx.values[(node, sock)] = outputs[sock.name]
     return ctx
-

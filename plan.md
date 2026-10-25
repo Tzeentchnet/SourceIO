@@ -33,7 +33,7 @@ blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
 cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 563 pass, 5 skip (tests/archive left out; installed-tool gates opt out without their environment; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 270 pass, 2 skip, 17 warnings, 47 subtests
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 271 pass, 2 skip, 17 warnings, 47 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass
@@ -76,9 +76,10 @@ verified outputs, and recompile. It preserves evaluated-scene state, uses Source
 local Patch, and exposes explicit phong parameters without guessing from PBR
 values. The installed TF2 gate runs VTEX and StudioMDL and re-imports positions,
 UVs, winding, normals, material identity, and texture data. It also locks the
-`VPROJECT` requirement that resolved VTEX's earlier hang. Next:
-
-1. **One export path** (TODO.md item 13): decide whether the experimental export node tree (`blender_bindings/ui/export_nodes`) moves onto the shared service or is deprecated, so users see one way to export.
+`VPROJECT` requirement that resolved VTEX's earlier hang. File > Export and the
+CLI are now the one supported authoring path. The experimental export node tree
+is deprecated: its types remain registered so legacy `.blend` files load, but
+new-node discovery and its partial QC evaluator are disabled.
 
 Skeletal, animated, physics and map authoring are deferred (`docs/deferred-work.md`). Static ModelDoc/Hammer reconstruction stays a separate, explicitly lossy workflow.
 

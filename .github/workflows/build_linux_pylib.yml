@@ -82,7 +82,7 @@ jobs:
           export PATH="/opt/python/cp311-cp311/bin:$PATH"
           cmake -S pylib-src -B pylib-build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc -Wl,--hash-style=both" \
+            -DCMAKE_MODULE_LINKER_FLAGS="-static-libstdc++ -static-libgcc -Wl,--hash-style=both" \
             -DPython3_ROOT_DIR=/opt/python/cp311-cp311 \
             -DFETCHCONTENT_SOURCE_DIR_VTFEDIT="$GITHUB_WORKSPACE/vtflib-src" \
             -DFETCHCONTENT_SOURCE_DIR_COMPRESSONATOR="$GITHUB_WORKSPACE/compressonator-src" \

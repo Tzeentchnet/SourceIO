@@ -19,6 +19,8 @@ This writes one zip per platform to `dist/`, each containing only that platform'
 Then use *Edit > Preferences > Get Extensions > Install from Disk...* and pick the zip for your platform.
 Installing the repository folder as a legacy add-on also still works.
 
+The bundled Linux native library is built from the revisions pinned in `tools/pylib_sources.json` by the **Build Linux pylib** workflow. It targets `manylinux_2_28`, links the C++ runtimes statically, and is smoke-tested with Python 3.11 and 3.13. `tools/build_extension.py` refuses to package a Linux binary requiring newer GLIBC, GLIBCXX, or CXXABI versions.
+
 ### Command line
 With the extension enabled, files can be imported without opening the UI. The importer is chosen from the file extension, and for `.bsp` from the file header (GoldSrc or Source):
 ```

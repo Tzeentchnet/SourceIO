@@ -16,6 +16,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from check_linux_pylib import CompatibilityError, validate_compatibility
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYLIB = "library/utils/pylib"
 
@@ -67,9 +69,18 @@ def main() -> int:
                         help="platform to build, may be repeated (default: all)")
     args = parser.parse_args()
 
+    platforms = args.platform or sorted(PLATFORM_LIBRARIES)
+    if "linux-x64" in platforms:
+        linux_pylib = REPO_ROOT / PYLIB / "linux" / "pylib.abi3.so"
+        try:
+            validate_compatibility(linux_pylib)
+        except (OSError, CompatibilityError) as error:
+            print(f"FAILED linux-x64: {error}", file=sys.stderr)
+            return 1
+
     files = source_files()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    for platform in args.platform or sorted(PLATFORM_LIBRARIES):
+    for platform in platforms:
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / REPO_ROOT.name
             stage(platform, files, source)

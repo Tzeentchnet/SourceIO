@@ -34,11 +34,11 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 
 ---
 
-## 1. Blocker outside the patch: the Linux native library won't load on most distros
+## 1. Resolved blocker: Linux native-library compatibility
 
 `library/utils/pylib/linux/pylib.abi3.so` links `sqrtf@GLIBC_2.43` and `__isoc23_*@GLIBC_2.38`. Ubuntu 24.04 LTS (2.39), Debian 13 (2.41) and RHEL/Rocky 9 (2.34) can't load it, so `import SourceIO` fails with `GLIBC_2.43 not found`. `blender_manifest.toml` still lists `linux-x64` as supported.
 
-**Fix:** build the Rust/C extension in a `manylinux_2_28` container (Blender's own Linux builds target glibc 2.28), or link with `-Wl,--hash-style=both` against an older sysroot. Then check with `objdump -T pylib.abi3.so | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1`. Consider adding that check to `tools/build_extension.py`.
+**Resolved:** the replacement is built from pinned native and transitive source revisions in a `manylinux_2_28` container. It requires at most `GLIBC_2.27` and links libstdc++ and libgcc statically, so it has no `GLIBCXX` or `CXXABI` runtime requirement. CI imports it with both Python 3.11 and 3.13, and `tools/build_extension.py` rejects Linux binaries above the compatibility policy before packaging.
 
 ---
 

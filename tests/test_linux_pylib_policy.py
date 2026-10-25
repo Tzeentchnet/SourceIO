@@ -45,3 +45,12 @@ def test_rejects_non_elf_input(tmp_path):
     path.write_bytes(b"not an ELF")
     with pytest.raises(CompatibilityError, match="not an ELF binary"):
         required_versions(path)
+
+
+def test_bundled_linux_pylib_meets_policy():
+    binary = Path(__file__).resolve().parents[1] / "library/utils/pylib/linux/pylib.abi3.so"
+    assert validate_compatibility(binary) == {
+        "GLIBC": (2, 27),
+        "GLIBCXX": None,
+        "CXXABI": None,
+    }

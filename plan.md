@@ -16,7 +16,7 @@ State (2026-10-15): [5.14.0-blender5.2](https://github.com/Tzeentchnet/SourceIO/
 Checks, with the current baseline. End-to-end runners (`tests/e2e/`) first; the unit and Blender tests cover what an E2E run can't see (exact values, node wiring, formats without samples):
 
 ```
-blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 617/617 modules, register/unregister/register OK
+blender -b --factory-startup --python tests/e2e/run_renamed_smoke.py                                       # 619/619 modules, register/unregister/register OK
 blender -b --factory-startup --python tests/e2e/run_sample_imports.py                                      # 87 PASS / 6 KNOWN / 0 WARN / 0 FAIL
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<TF2>/tf"                   # 13 PASS / 0 WARN / 0 FAIL
 blender -b ... run_game_imports.py -- --game "<TF2>/tf" --load-placeholders                                  # 13 PASS; 2fort 2320/2320, badlands 1308/1308, harvest 673/673, upward 1332/1332 placeholders
@@ -30,8 +30,8 @@ $env:SOURCEIO_CS2_WORKSHOP_ROOT="<CS2>"; blender -b --factory-startup --python-e
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_dust2 --load-placeholders                     # PASS, 698/698 placeholders, 3D skybox, 2 hidden collections, 295 materials (~183 s alone); nameless world-node models renamed after their material
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --map de_nuke --load-placeholders                      # PASS, 1108/1108 placeholders, 286 materials, 175 lights
 blender -b ... run_game_imports.py -- --game "<CS2>/game/csgo" --model <each default model> --clips "*"               # 9 PASS, agents 2089 clips each (~55 s each)
-cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 523 pass, 4 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
-cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 222 pass, 1 skip, 28 subtests
+cd D:/Github && "D:/Blender Foundation/Blender 5.2/5.2/python/bin/python.exe" -m pytest SourceIO/tests -q -p no:cacheprovider --ignore=SourceIO/tests/blender_tests   # 530 pass, 4 skip (tests/archive left out; includes tests/conformance, tests/source2_core, tests/source2_export, tests/experimental)
+cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['SourceIO/tests/blender_tests', '-q', '--ignore=SourceIO/tests/blender_tests/test_skins.py']))"  # 244 pass, 1 skip, 6 warnings, 31 subtests
 cd D:/Github && blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, 'D:/Github'); sys.exit(pytest.main(['SourceIO/tests/blender_tests/test_skins.py', '-q']))"  # 8 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; unittest.main(module='SourceIO.tests.blender_tests.test_armatures', argv=['x'], exit=False)"   # 10 pass
 cd D:/Github && blender -b --factory-startup --python-expr "import sys; sys.path.insert(0, 'D:/Github'); import SourceIO, unittest; SourceIO.register(); unittest.main(module='SourceIO.tests.blender_tests.test_source1_animations', argv=['x'], exit=False)"   # 3 pass

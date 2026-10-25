@@ -13,6 +13,7 @@ from SourceIO.blender_bindings.material_loader.material_loader import (
 from SourceIO.blender_bindings.material_loader.shader_base import ALPHA_CLIP_LABEL, ExtraMaterialParameters
 from SourceIO.blender_bindings.material_loader.shaders import source1_shader_base
 from SourceIO.blender_bindings.material_loader.shaders.source1_shader_base import Source1ShaderBase
+from SourceIO.blender_bindings.material_loader.shaders.source1_shaders.lightmap_generic import LightmapGeneric
 from SourceIO.blender_bindings.material_loader.shaders.source1_shaders.vertexlit_generic import (
     VertexLitGeneric,
     phong_exponent_to_roughness,
@@ -102,6 +103,24 @@ class TextureIndexTests(_CleanFile):
         flipped.name = "renamed"
         self.assertIs(texture_utils.check_texture_cache(path, "invert_y"), flipped)
 
+    def test_texture_variant_is_cached_without_mutating_the_source(self):
+        path = TinyPath('brick/detail')
+        plain = self._image('plain', path.as_posix())
+        plain.colorspace_settings.is_data = False
+        plain.colorspace_settings.name = 'sRGB'
+        plain['sourceio_vtf_metadata'] = '{"flags": 0}'
+
+        variant = texture_utils.create_texture_variant(path, plain, 'detail_data')
+        variant.colorspace_settings.is_data = True
+        variant.colorspace_settings.name = 'Non-Color'
+
+        self.assertIsNot(variant, plain)
+        self.assertEqual(variant['sourceio_vtf_metadata'], plain['sourceio_vtf_metadata'])
+        self.assertEqual(variant[texture_utils.CACHE_ID_PROPERTY], 'detail_data')
+        self.assertEqual(variant.colorspace_settings.name, 'Non-Color')
+        self.assertEqual(plain.colorspace_settings.name, 'sRGB')
+        self.assertIs(texture_utils.create_texture_variant(path, plain, 'detail_data'), variant)
+
 
 class CachedVTFMetadataTests(_CleanFile):
     def test_cached_image_recovers_vtf_sampler_flags(self):
@@ -163,6 +182,44 @@ class DecodeTimeConversionTests(_CleanFile):
         flat[..., :3] = round(255 / 3 ** 0.5)
         normal = blender_vtf.ssbump_to_normal(flat)[0, 0]
         np.testing.assert_allclose(normal, [0.5, 0.5, 1.0, 1.0], atol=0.01)
+
+
+class DetailTextureColorspaceTests(_CleanFile):
+    def _assert_colorspace(self, shader_type, mode, is_data):
+        image = bpy.data.images.new(f'{shader_type.__name__}_{mode}', 1, 1, alpha=True)
+        image.colorspace_settings.is_data = False
+        image.colorspace_settings.name = 'sRGB'
+        suffix = f'{shader_type.__name__.lower()}_{mode}'
+        shader = shader_type(
+            _NoFiles(),
+            _vmt(
+                f'"{shader_type.SHADER}" {{ "$detail" "t/detail_{suffix}" '
+                f'"$detail2" "t/detail2_{suffix}" '
+                f'"$detailblendmode" "{mode}" }}'
+            ),
+        )
+        with patch.object(Source1ShaderBase, 'load_texture_or_default', return_value=image):
+            detail = shader.detail
+            detail2 = shader.detail2
+
+        self.assertIsNot(detail, image)
+        self.assertIsNot(detail2, image)
+        self.assertIsNot(detail, detail2)
+        for variant in (detail, detail2):
+            self.assertEqual(variant.colorspace_settings.is_data, is_data)
+            self.assertEqual(variant.colorspace_settings.name, 'Non-Color' if is_data else 'sRGB')
+        self.assertFalse(image.colorspace_settings.is_data)
+        self.assertEqual(image.colorspace_settings.name, 'sRGB')
+
+    def test_vertexlit_detail_mode_zero_is_data_and_other_modes_are_srgb(self):
+        for mode in (0, 1, 2, 5, 7):
+            with self.subTest(mode=mode):
+                self._assert_colorspace(VertexLitGeneric, mode, mode == 0)
+
+    def test_lightmapped_detail_only_mode_one_is_srgb(self):
+        for mode in (0, 1, 2, 5, 7):
+            with self.subTest(mode=mode):
+                self._assert_colorspace(LightmapGeneric, mode, mode != 1)
 
 
 class PrincipledVertexLitGenericTests(_CleanFile):

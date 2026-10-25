@@ -141,6 +141,21 @@ def check_texture_cache(
     return image
 
 
+def create_texture_variant(texture_path: TinyPath, image: bpy.types.Image,
+                           cache_identity: str) -> bpy.types.Image:
+    if not cache_identity:
+        raise ValueError('A texture variant requires a non-empty cache identity')
+    if existing := check_texture_cache(texture_path, cache_identity):
+        return existing
+
+    variant = image.copy()
+    variant.name = _variant_image_name(texture_path, cache_identity)
+    variant['full_path'] = texture_path.as_posix().casefold()
+    variant[CACHE_ID_PROPERTY] = cache_identity
+    _add_texture(texture_path, variant.name, cache_identity)
+    return variant
+
+
 def _is_writable_dir(path: TinyPath) -> bool:
     """True if ``path`` exists (or can be created) and we may write into it."""
     probe = path

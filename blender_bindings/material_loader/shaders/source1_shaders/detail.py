@@ -18,25 +18,32 @@ TCOMBINE_MOD2X_SELECT_TWO_PATTERNS = 7
 
 class DetailSupportMixin(Source1ShaderBase):
 
+    DETAIL_SRGB_MODES = None
+
+    def _load_detail_texture(self, property_name: str):
+        texture_path = self._vmt.get_string(property_name, None)
+        if texture_path is None:
+            return None
+
+        uses_srgb = (self.detailmode != 0 if self.DETAIL_SRGB_MODES is None
+                     else self.detailmode in self.DETAIL_SRGB_MODES)
+        cache_identity = 'detail_srgb' if uses_srgb else 'detail_data'
+        image = self.load_texture_variant_or_default(
+            texture_path,
+            cache_identity,
+            (1.0, 1.0, 1.0, 0.5),
+        )
+        image.colorspace_settings.is_data = not uses_srgb
+        image.colorspace_settings.name = 'sRGB' if uses_srgb else 'Non-Color'
+        return image
+
     @property
     def detail(self):
-        texture_path = self._vmt.get_string('$detail', None)
-        if texture_path is not None:
-            image = self.load_texture_or_default(texture_path, (1.0, 1.0, 1.0, 0.5))
-            image.colorspace_settings.is_data = True
-            image.colorspace_settings.name = 'Non-Color'
-            return image
-        return None
+        return self._load_detail_texture('$detail')
 
     @property
     def detail2(self):
-        texture_path = self._vmt.get_string('$detail2', None)
-        if texture_path is not None:
-            image = self.load_texture_or_default(texture_path, (1.0, 1.0, 1.0, 0.5))
-            image.colorspace_settings.is_data = True
-            image.colorspace_settings.name = 'Non-Color'
-            return image
-        return None
+        return self._load_detail_texture('$detail2')
 
     @property
     def detailfactor(self):

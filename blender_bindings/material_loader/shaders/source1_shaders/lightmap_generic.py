@@ -48,6 +48,7 @@ class LightmapGeneric(DetailSupportMixin, Source1ShaderBase):
     itself is left to the scene world and only its strength/tint are translated.
     """
     SHADER = 'lightmappedgeneric'
+    DETAIL_SRGB_MODES = frozenset({1})
 
     #: ``worldvertextransition.cpp`` sets ``m_nAlphaTestReference = -1``, i.e. the
     #: parameter does not exist for that shader. Subclasses can opt out.

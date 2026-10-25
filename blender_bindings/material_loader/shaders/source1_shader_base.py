@@ -2,7 +2,7 @@ import bpy
 import numpy as np
 
 from ..shader_base import Nodes, ShaderBase
-from ...utils.texture_utils import check_texture_cache
+from ...utils.texture_utils import check_texture_cache, create_texture_variant
 from ....library.shared.content_manager import ContentManager
 from ...source1.vtf import import_animated_texture, import_texture, import_texture_tth, tag_vtf_metadata
 from ....library.source1.vmt import VMT
@@ -145,6 +145,17 @@ class Source1ShaderBase(ShaderBase):
         parent = None if len(file.parts) == 1 else file.parent
         texture = self.load_texture(file.stem, parent, invert_y=invert_y, ssbump=ssbump)
         return texture or self.get_missing_texture(f'missing_{file.stem}', default_color)
+
+    def load_texture_variant_or_default(self, file: str, cache_identity: str,
+                                        default_color: tuple = (1.0, 1.0, 1.0, 1.0)):
+        file = TinyPath(file.removeprefix('/'))
+        full_path = TinyPath(file.stem) if len(file.parts) == 1 else file.parent / file.stem
+        if image := check_texture_cache(full_path, cache_identity):
+            self._tag_cached_vtf_metadata(image, full_path)
+            return image
+
+        image = self.load_texture_or_default(file.as_posix(), default_color)
+        return create_texture_variant(full_path, image, cache_identity)
 
     def _tag_cached_vtf_metadata(self, image: bpy.types.Image, full_path: TinyPath):
         if image.get("sourceio_vtf_metadata") is not None:

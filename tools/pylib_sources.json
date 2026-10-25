@@ -5,10 +5,10 @@
   },
   "vtflib": {
     "repository": "REDxEYE/VTFLib",
-    "revision": "74e2388960cbb3c66301b815f0ca1de4f34e6019"
+    "revision": "71134b44e1ca3ec4031d9b71a15fc3d12decddde"
   },
   "compressonator": {
     "repository": "REDxEYE/compressonator",
-    "revision": "b50eb65769c461f19d03f9e4be4617eebe29731d"
+    "revision": "8e2f9fe8ad9d0e549fbe82e4e1559d82d4da2382"
   }
 }

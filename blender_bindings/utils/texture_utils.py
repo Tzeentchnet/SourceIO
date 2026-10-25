@@ -1,12 +1,14 @@
 import os
 import tempfile
+from io import BytesIO
 from hashlib import md5, sha256
 from typing import Optional
 
 import bpy
 import numpy as np
+from PIL import Image as PILImage
 
-from ...library.utils.pylib.image import save_exr, save_png, encode_exr, encode_png
+from ...library.utils.pylib.image import save_exr, encode_exr
 from ...library.utils.perf_sampler import timed, timed_region
 from .id_index import id_collection_state, id_collection_state_after_add
 from ...library.utils.tiny_path import TinyPath
@@ -18,6 +20,36 @@ logger = SourceLogMan().get_logger("TextureUtils")
 #: extracted once can be reused by later imports from the same game.
 CACHE_DIR_NAME = "sourceio_cache"
 CACHE_ID_PROPERTY = "sourceio_cache_identity"
+# Level 2 kept representative output sizes at native-encoder levels while retaining its fast path.
+PNG_COMPRESSION_LEVEL = 2
+_PNG_MODES = {1: "L", 2: "LA", 3: "RGB", 4: "RGBA"}
+
+
+def _png_image(image_data: bytes, width: int, height: int, channels: int) -> PILImage.Image:
+    if width <= 0 or height <= 0:
+        raise ValueError("PNG width and height must be positive")
+    mode = _PNG_MODES.get(channels)
+    if mode is None:
+        raise ValueError("PNG channels must be 1, 2, 3, or 4")
+    expected_size = width * height * channels
+    if len(image_data) != expected_size:
+        raise ValueError(
+            f"PNG data has {len(image_data)} bytes; expected {expected_size} "
+            f"for {width}x{height}x{channels}"
+        )
+    return PILImage.frombytes(mode, (width, height), image_data)
+
+
+def _encode_png_fast(image_data: bytes, width: int, height: int, channels: int) -> bytes:
+    output = BytesIO()
+    with _png_image(image_data, width, height, channels) as image:
+        image.save(output, format="PNG", compress_level=PNG_COMPRESSION_LEVEL)
+    return output.getvalue()
+
+
+def _save_png_fast(image_data: bytes, width: int, height: int, channels: int, path):
+    with _png_image(image_data, width, height, channels) as image:
+        image.save(path, format="PNG", compress_level=PNG_COMPRESSION_LEVEL)
 
 
 def texture_cache_key(texture_path: TinyPath, cache_identity: str = "", *other_args: str) -> str:
@@ -363,7 +395,8 @@ def create_and_cache_texture(
         if is_hdr:
             save_exr(data.tobytes(), width, height, channels, save_path)
         else:
-            save_png(byte_data.tobytes(), width, height, channels, save_path)
+            with timed_region("texture.save_png"):
+                _save_png_fast(byte_data.tobytes(), width, height, channels, save_path)
         posix_path = save_path.as_posix()
         image = bpy.data.images.load(posix_path)
         image.alpha_mode = 'CHANNEL_PACKED'
@@ -374,7 +407,7 @@ def create_and_cache_texture(
                 image_data = encode_exr(data.tobytes(), width, height, channels)
         else:
             with timed_region("texture.encode_png"):
-                image_data = encode_png(byte_data.tobytes(), width, height, channels)
+                image_data = _encode_png_fast(byte_data.tobytes(), width, height, channels)
         image = bpy.data.images.new(
             _variant_image_name(texture_path, cache_identity),
             width=1,

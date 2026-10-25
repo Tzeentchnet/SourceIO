@@ -6,8 +6,9 @@ Scope: the Blender add-on at `21bf348` (5.14.0), focused on import speed and on 
 `f63bd403`, the review corrections as `b18ddcd8`, and the Linux/material
 correctness follow-ups in subsequent `master` commits. The historical
 `sourceio-audit.patch` review artifact is not distributed and must not be
-applied to current `master`. The measurement item under **Recommended next** is
-now implemented; the other six remain proposals rather than completed work.
+applied to current `master`. The measurement and PNG-compression items under
+**Recommended next** are now implemented; the other five remain proposals
+rather than completed work.
 
 ## How this was checked
 
@@ -57,7 +58,7 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 ### Recommended next (not in the patch)
 
 1. **Wrap DXT payloads as DDS instead of decoding them.** Most VTFs are DXT1/DXT5. A 128-byte DDS header in front of the VTF's top mip would let Blender load it directly (`image.pack(data=dds_bytes)`). That skips the native decode, the PNG encode and the PNG decode, and keeps packed `.blend` files 4–8× smaller. Check vertical orientation and BC5/ATI2N normal maps first, which still need the Z reconstruction the decoder does now.
-2. **PNG encode level.** `encode_png` runs for every texture when no cache path is set. If the Rust encoder uses default compression, a fast level (or `png::Compression::Fast`) cuts encode time a lot, and Blender's decode time barely changes.
+2. **Implemented 2026-10-24 — PNG encode level.** Blender 5.2's bundled Pillow now writes temporary import PNGs at compression level 2, selected because a synthetic speed/size sweep retained native-encoder-sized output while avoiding its expensive default compression. Pixel-exact tests cover L, LA, RGB and RGBA data plus both in-memory and file-backed output. On the same warm-cache installed maps, encoding fell from 13.36 s to 3.46 s for TF2 `ctf_2fort` (3.9×; total import 21.72 s to 11.02 s) and from 97.84 s to 34.08 s for CS2 `de_dust2` (2.9×; total import 289.57 s to 268.02 s).
 3. **Source 2 unused textures.** `ShaderRegistry.source2_create_nodes` decodes every texture a `.vmat` lists but the shader didn't use (`handler.unused_textures`). That's useful for authoring, but costly on CS2/Dota maps. An import option ("Load unreferenced textures", off by default for maps) would skip that work.
 4. **Displacements** (`import_bsp.import_disp`): one object per displacement face, each with up to 6 colour layers written through the legacy `mesh.vertex_colors` API. Merging displacements per material into one mesh, and writing `mesh.color_attributes.new(..., 'FLOAT_COLOR', 'CORNER')` in one `foreach_set` per layer, would cut object count and depsgraph cost on displacement-heavy maps (CS:GO, L4D2).
 5. **Repeated property evaluation in shaders.** VMT properties such as `self.bumpmap` and `self.basetexture` reload (now cheaply) on every access, and `create_nodes` reads them several times. Caching per handler instance (`functools.cached_property`, set up after proxies run) would remove the rest of that work.

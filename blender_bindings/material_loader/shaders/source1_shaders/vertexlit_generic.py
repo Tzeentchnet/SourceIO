@@ -170,7 +170,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
 
     @property
     def phongfresnelranges(self):
-        return self._color_property('$phongfresnelranges', length=3, filler=0.1)
+        return self._color_property('$phongfresnelranges', (0.0, 0.5, 1.0), length=3, filler=1.0)
 
     @property
     def phongexponent(self):
@@ -685,6 +685,38 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         multiply.inputs[1].default_value = factor
         return multiply.outputs[0]
 
+    def _phong_fresnel_output(self, shader, strength: float):
+        low, middle, high = self.phongfresnelranges
+
+        facing = self.create_node(Nodes.ShaderNodeLayerWeight, 'phongfresnel facing')
+        facing.inputs['Blend'].default_value = 0.5
+        if shader.inputs['Normal'].is_linked:
+            self.connect_nodes(shader.inputs['Normal'].links[0].from_socket, facing.inputs['Normal'])
+
+        centered = self.create_node(Nodes.ShaderNodeMath, 'phongfresnel centered')
+        centered.operation = 'MULTIPLY_ADD'
+        self.connect_nodes(facing.outputs['Facing'], centered.inputs[0])
+        self.connect_nodes(facing.outputs['Facing'], centered.inputs[1])
+        centered.inputs[2].default_value = -0.5
+
+        branch = self.create_node(Nodes.ShaderNodeMath, 'phongfresnel branch')
+        branch.operation = 'GREATER_THAN'
+        self.connect_nodes(centered.outputs[0], branch.inputs[0])
+        branch.inputs[1].default_value = 0.0
+
+        slope = self.create_node(Nodes.ShaderNodeMix, 'phongfresnel slope')
+        slope.data_type = 'FLOAT'
+        slope.inputs['A'].default_value = (middle - low) * 2.0
+        slope.inputs['B'].default_value = (high - middle) * 2.0
+        self.connect_nodes(branch.outputs[0], slope.inputs['Factor'])
+
+        remap = self.create_node(Nodes.ShaderNodeMath, 'phongfresnel range')
+        remap.operation = 'MULTIPLY_ADD'
+        self.connect_nodes(centered.outputs[0], remap.inputs[0])
+        self.connect_nodes(slope.outputs[0], remap.inputs[1])
+        remap.inputs[2].default_value = middle
+        return self._scale_value(remap.outputs[0], strength, 'phongfresnel strength')
+
     def _setup_phong(self, shader, basetexture_node):
         """Approximate Source's Phong specular on a Principled BSDF.
 
@@ -727,13 +759,8 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             # log-scaled so boost 1 -> 0.5, 16 -> ~0.75, 255 -> 1.0
             strength = 0.5 + 0.5 * min(1.0, math.log(boost, 255.0))
 
-        fresnel_ranges = self.phongfresnelranges
-        if fresnel_ranges and len(fresnel_ranges) > 1:
-            # vRanges = (low, mid, high); the SDK's piecewise curve is centred on
-            # `mid`, which is the value seen across most of the surface, so use it
-            # as the constant stand-in for the per-pixel fresnel term.
-            strength *= max(fresnel_ranges[1], 0.0)
         shader.inputs[spec_input].default_value = self.clamp_value(strength)
+        specular_output = self._phong_fresnel_output(shader, strength)
 
         # --- Roughness from the exponent (scalar or texture red channel) ---
         exponent_texture = self.phongexponenttexture
@@ -813,8 +840,13 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             # highlight's size alone, so the mask scales Specular IOR Level.
             # Masked-out texels lose their specular (0), as in the game, instead of
             # keeping a broad, fully rough highlight.
-            self.connect_nodes(self._scale_value(mask_output, shader.inputs[spec_input].default_value, 'phongmask'),
-                               shader.inputs[spec_input])
+            masked_specular = self.create_node(Nodes.ShaderNodeMath, 'phongmask')
+            masked_specular.operation = 'MULTIPLY'
+            self.connect_nodes(mask_output, masked_specular.inputs[0])
+            self.connect_nodes(specular_output, masked_specular.inputs[1])
+            specular_output = masked_specular.outputs[0]
+
+        self.connect_nodes(specular_output, shader.inputs[spec_input])
 
         if roughness_output is not None:
             self.connect_nodes(roughness_output, shader.inputs['Roughness'])

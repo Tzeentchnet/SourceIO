@@ -317,10 +317,18 @@ class PrincipledVertexLitGenericTests(_CleanFile):
     def test_phong_mask_scales_specular_not_roughness(self):
         self._fake_texture("skin")
         self._fake_texture("skin_n")
-        _, shader = self._material('"VertexLitGeneric" { "$basetexture" "t/skin" "$bumpmap" "t/skin_n" '
-                                   '"$phong" "1" "$phongexponent" "20" }')
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$basetexture" "t/skin" "$bumpmap" "t/skin_n" '
+            '"$phong" "1" "$phongexponent" "20" }'
+        )
         self.assertTrue(shader.inputs['Specular IOR Level'].is_linked)
         self.assertFalse(shader.inputs['Roughness'].is_linked)
+        phong_mask = material.node_tree.nodes['phongmask']
+        self.assertEqual(shader.inputs['Specular IOR Level'].links[0].from_node, phong_mask)
+        self.assertEqual(
+            {link.from_node.name for socket in phong_mask.inputs for link in socket.links},
+            {'$bumpmap', 'phongfresnel strength'},
+        )
 
     def test_phong_exponent_texture_uses_exact_roughness_curve(self):
         self._fake_texture("exponent")
@@ -359,6 +367,51 @@ class PrincipledVertexLitGenericTests(_CleanFile):
                 )
                 denominator = material.node_tree.nodes['phongexponent denominator']
                 self.assertEqual(denominator.inputs[1].default_value, factor)
+
+    def test_phong_fresnel_ranges_use_exact_piecewise_curve(self):
+        self._fake_texture("normal")
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$phong" "1" "$phongexponent" "20" "$bumpmap" "t/normal" '
+            '"$normalmapalphaphongmask" "0" "$phongfresnelranges" "[0.1 0.4 0.9]" }'
+        )
+        strength = shader.inputs['Specular IOR Level'].links[0].from_node
+        remap = strength.inputs[0].links[0].from_node
+        centered = remap.inputs[0].links[0].from_node
+        slope = remap.inputs[1].links[0].from_node
+        branch = slope.inputs['Factor'].links[0].from_node
+        facing = centered.inputs[0].links[0].from_node
+
+        self.assertEqual(strength.name, 'phongfresnel strength')
+        self.assertEqual(strength.operation, 'MULTIPLY')
+        self.assertAlmostEqual(strength.inputs[1].default_value, 0.5)
+        self.assertEqual(remap.operation, 'MULTIPLY_ADD')
+        self.assertAlmostEqual(remap.inputs[2].default_value, 0.4)
+        self.assertEqual(centered.operation, 'MULTIPLY_ADD')
+        self.assertAlmostEqual(centered.inputs[2].default_value, -0.5)
+        self.assertEqual(centered.inputs[0].links[0].from_socket.name, 'Facing')
+        self.assertEqual(centered.inputs[1].links[0].from_socket.name, 'Facing')
+        self.assertEqual(branch.operation, 'GREATER_THAN')
+        self.assertAlmostEqual(slope.inputs['A'].default_value, 0.6)
+        self.assertAlmostEqual(slope.inputs['B'].default_value, 1.0)
+        self.assertEqual(facing.bl_idname, 'ShaderNodeLayerWeight')
+        self.assertEqual(
+            facing.inputs['Normal'].links[0].from_socket,
+            shader.inputs['Normal'].links[0].from_socket,
+        )
+
+        def evaluate(facing_value):
+            centered_value = facing_value * facing_value + centered.inputs[2].default_value
+            slope_value = (slope.inputs['B'].default_value if centered_value > 0.0
+                           else slope.inputs['A'].default_value)
+            return centered_value * slope_value + remap.inputs[2].default_value
+
+        self.assertAlmostEqual(evaluate(0.0), 0.1)
+        self.assertAlmostEqual(evaluate(0.5 ** 0.5), 0.4)
+        self.assertAlmostEqual(evaluate(1.0), 0.9)
+
+    def test_phong_fresnel_ranges_use_sdk_default(self):
+        shader = VertexLitGeneric(_NoFiles(), _vmt('"VertexLitGeneric" { "$phong" "1" }'))
+        self.assertSequenceEqual(tuple(shader.phongfresnelranges), (0.0, 0.5, 1.0))
 
     def test_blend_tint_by_base_alpha_masks_the_tint(self):
         self._fake_texture("skin")

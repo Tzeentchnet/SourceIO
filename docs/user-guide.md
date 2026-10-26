@@ -68,6 +68,20 @@ Actual import time and file size depend on enabled options, game updates,
 hardware, and the selected placeholders. Current reproducible performance
 baselines are kept in [`plan.md`](../plan.md), not in this user guide.
 
+### Source 1 DDS staging
+
+Compatible single-frame DXT1/DXT5 VTF textures use direct DDS staging by
+default. This keeps their compressed mip data intact and avoids the VTF decode,
+PNG encode, and PNG decode steps. Textures that need pixel conversion, and
+unsupported layouts such as animation, cubemaps, volumes, or ATI2N/BC5, still
+use the decoded image path.
+
+To use decoded PNG staging for newly loaded, uncached Source 1 VTFs, open
+*Edit > Preferences > Add-ons*, expand SourceIO, and disable **Use direct DDS
+staging for Source 1 textures**. Already loaded images and files in an external
+texture cache remain reusable; clear the cache and start from an empty file
+when comparing the two paths.
+
 ### Source 1 backface culling
 
 Principled Source 1 materials are two-sided by default. To apply Source-style

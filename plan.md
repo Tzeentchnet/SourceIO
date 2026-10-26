@@ -14,10 +14,10 @@ Last reconciled: **2026-10-25**.
 
 | Gate | Current result |
 |---|---|
-| Renamed-module smoke | 635/635 modules; register/unregister/register passed |
+| Renamed-module smoke | 636/636 modules; register/unregister/register passed |
 | Public sample imports | 87 pass, 6 known, 0 warn, 0 fail |
-| Non-Blender tests | 574 passed, 7 skipped |
-| Blender tests excluding skins | 276 passed, 2 skipped, 17 warnings, 51 subtests |
+| Non-Blender tests | 591 passed, 7 skipped |
+| Blender tests excluding skins | 287 passed, 2 skipped, 17 warnings, 54 subtests |
 | Blender skin tests | 8 passed |
 | Windows extension package | Built successfully |
 
@@ -90,6 +90,26 @@ Warm-cache measurements from 2026-10-24:
 | CS2 `de_dust2 --load-placeholders` | Initial baseline | 289.57 s | PNG encoding: 97.84 s; 3,803 model loads |
 | CS2 `de_dust2 --load-placeholders` | Fast PNG staging | 268.02 s | PNG encoding: 34.08 s |
 | CS2 `de_dust2 --load-placeholders` | Aggregate model reuse | 219.68 s | 672 model loads; all output counts unchanged; another 18.0% improvement |
+
+A controlled three-run warm-cache A/B from 2026-10-25 used Blender 5.2.2,
+the current `master` as the baseline, and interleaved measurements after one
+warm-up per tree:
+
+| Corpus | Stage | Median wall time | Relevant measured work |
+|---|---|---:|---|
+| TF2 `ctf_2fort` | Decoded VTF to PNG | 14.17 s (13.92–14.21) | 212 PNG encodes; 4.43 s in the representative median report |
+| TF2 `ctf_2fort` | Direct DDS staging | 10.04 s (9.88–10.05) | 191 DDS images and 21 PNG fallbacks; PNG encoding 0.70 s; 29.1% total improvement |
+
+All six measured runs produced 3,308 objects, 599 meshes, 193 materials, and
+225 images with no errors and identical details and diagnostics. Compatible
+single-frame 2D DXT1/DXT5 textures retain their full compressed mip chain;
+transformed normals, animation, cubemaps, volumes, ATI2N/BC5, and unsupported
+formats keep the decoded path. Direct DDS staging is enabled by default and can
+be disabled in the add-on preferences for newly loaded, uncached textures.
+Public Blender samples verify orientation and alpha while allowing only the
+decoder-defined BC endpoint variance: at most 7/255 in RGB and 1/255 in
+interpolated DXT5 alpha. Absolute times are comparable only within this A/B, not
+with the separate 2026-10-24 measurements.
 
 A controlled warm-cache A/B from 2026-10-25 used Blender 5.2.2 and the same
 instrumented tree, disabling only the new draw-call material cache for the

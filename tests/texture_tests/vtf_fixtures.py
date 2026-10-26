@@ -3,9 +3,13 @@ import struct
 
 import numpy as np
 
-from SourceIO.library.source1.vtf.metadata import RESOURCE_IMAGE
+from SourceIO.library.source1.vtf.metadata import RESOURCE_IMAGE, RESOURCE_LOW_RES_IMAGE
 
 RGBA8888 = 0
+DXT1 = 13
+DXT5 = 15
+DXT1_ONEBITALPHA = 20
+ATI2N = 37
 NO_DATA = 0x02
 
 
@@ -53,6 +57,51 @@ def build_vtf(pixels, resources=(), version=(7, 3), flags=0):
     directory.append((RESOURCE_IMAGE, 0, offset))
     header += b"".join(struct.pack("<3sBI", *entry) for entry in directory)
     return header.ljust(header_size, b"\0") + blocks + pixels.tobytes()
+
+
+def build_compressed_vtf(width, height, image_format, mips, *, version=(7, 3), flags=0,
+                         frame_count=1, depth=1, low_res_format=0xFFFFFFFF,
+                         low_res_size=(0, 0), low_res_data=b""):
+    """Build a block-compressed VTF; ``mips`` are supplied largest-first."""
+    mips = tuple(mips)
+    if not mips:
+        raise ValueError("At least one mip is required")
+    high_res_data = b"".join(reversed(mips))
+    low_res_width, low_res_height = low_res_size
+    resource_count = 1 + bool(low_res_data)
+    header_size = 80 if version < (7, 3) else (80 + 8 * resource_count + 15) & ~15
+    header = struct.pack(
+        "<4s2IIHHIHH4x3f4xfIBIBB", b"VTF\0", version[0], version[1], header_size, width, height,
+        flags, frame_count, 0, 0.5, 0.5, 0.5, 1.0, image_format, len(mips), low_res_format,
+        low_res_width, low_res_height,
+    )
+    if version >= (7, 2):
+        header += struct.pack("<H", depth)
+    if version < (7, 3):
+        return header.ljust(header_size, b"\0") + low_res_data + high_res_data
+
+    header += struct.pack("<3xI8x", resource_count)
+    offset = header_size
+    entries = []
+    if low_res_data:
+        entries.append((RESOURCE_LOW_RES_IMAGE, 0, offset))
+        offset += len(low_res_data)
+    entries.append((RESOURCE_IMAGE, 0, offset))
+    header += b"".join(struct.pack("<3sBI", *entry) for entry in entries)
+    return header.ljust(header_size, b"\0") + low_res_data + high_res_data
+
+
+def bc1_solid(red, green, blue):
+    color = ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3)
+    return struct.pack("<HHI", color, 0, 0)
+
+
+def bc1_transparent():
+    return struct.pack("<HHI", 0, 0, 0xFFFFFFFF)
+
+
+def bc3_solid(red, green, blue, alpha):
+    return bytes((alpha, 0)) + b"\0" * 6 + bc1_solid(red, green, blue)
 
 
 def checker(width=8, height=4):

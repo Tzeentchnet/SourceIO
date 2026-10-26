@@ -3,28 +3,31 @@ import zlib
 import numpy as np
 
 from ...utils.texture_utils import (create_and_cache_texture,
-                                                           create_and_cache_image_sequence,
-                                                           get_asset_cache_roots)
+                                    create_and_cache_image_sequence,
+                                    create_texture_from_encoded_image,
+                                    get_asset_cache_roots)
 from ....library.shared.content_manager import ContentManager
 from ....library.source1.vtf import convert_skybox_to_equiangular
+from ....library.source1.vtf.dds import vtf_to_dds
 from ....library.source1.vtf import load_texture, load_texture_frames, load_texture_tth
-from ....library.source1.vtf.metadata import read_vtf_metadata
+from ....library.source1.vtf.metadata import VTFMetadata, read_vtf_metadata
 from ....library.utils.tiny_path import TinyPath
 from ....library.utils import Buffer, MemoryBuffer
+from ...preferences import source1_dds_enabled
 from ....logger import SourceLogMan
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::VTF')
 
 
-def tag_vtf_metadata(image, vtf_data: bytes):
+def tag_vtf_metadata(image, vtf_data: bytes, metadata: VTFMetadata | None = None):
     """Record the VTF header and resources (sprite sheet, LOD clamp, hotspots...) on an imported image.
 
     ``sourceio_vtf_metadata`` holds the full :meth:`VTFMetadata.to_dict` as JSON; *Image > Export for External
     Editing* reads the sprite sheet back from it.
     """
     try:
-        metadata = read_vtf_metadata(vtf_data)
+        metadata = metadata or read_vtf_metadata(vtf_data)
     except ValueError as ex:
         logger.warn(f'Cannot read VTF metadata of "{image.name}": {ex}')
         return
@@ -62,7 +65,7 @@ def ssbump_to_normal(rgba: np.ndarray) -> np.ndarray:
 
 def import_texture(texture_path: TinyPath, file_object, update=False, *, invert_y: bool = False,
                    ssbump: bool = False, cache_identity: str = ""):
-    """Decode a VTF into an image, keeping 8-bit textures 8-bit throughout.
+    """Import a VTF, wrapping compatible DXT1/DXT5 payloads as DDS and decoding all other layouts.
 
     ``ssbump`` converts a self-shadowed bump map to a normal map and ``invert_y`` flips green (Source to Blender
     normal maps), both before the image is encoded, so the image is never read back from Blender to change it.
@@ -70,17 +73,38 @@ def import_texture(texture_path: TinyPath, file_object, update=False, *, invert_
     """
     logger.info(f'Loading "{texture_path.name}" texture')
     vtf_data = file_object.read()
-    rgba_data, image_height, image_width = load_texture(MemoryBuffer(vtf_data), normalized=False)
-    if rgba_data is None:
-        return None
-    rgba_data = rgba_data.reshape(image_height, image_width, -1)
-    if ssbump and rgba_data.dtype == np.uint8:
-        rgba_data = np.clip(np.rint(ssbump_to_normal(rgba_data) * 255), 0, 255).astype(np.uint8)
+    metadata = None
+    metadata_error = False
+    dds_data = None
+    ssbump_converted = False
+    if source1_dds_enabled() and not invert_y and not ssbump:
+        try:
+            metadata = read_vtf_metadata(vtf_data)
+        except ValueError as ex:
+            logger.warn(f'Cannot read VTF metadata of "{texture_path.name}": {ex}')
+            metadata_error = True
+        if metadata is not None:
+            try:
+                dds_data = vtf_to_dds(vtf_data, metadata)
+            except ValueError as ex:
+                logger.warn(f'Cannot stage "{texture_path.name}" as DDS: {ex}; falling back to decoded pixels')
 
-    image = create_and_cache_texture(texture_path, rgba_data, False, invert_y, cache_identity,
-                                     image_name=texture_path.stem if cache_identity else None)
-    tag_vtf_metadata(image, vtf_data)
-    if ssbump and rgba_data.dtype == np.uint8:
+    if dds_data is not None:
+        image = create_texture_from_encoded_image(texture_path, dds_data, "dds", cache_identity)
+    else:
+        rgba_data, image_height, image_width = load_texture(MemoryBuffer(vtf_data), normalized=False)
+        if rgba_data is None:
+            return None
+        rgba_data = rgba_data.reshape(image_height, image_width, -1)
+        if ssbump and rgba_data.dtype == np.uint8:
+            rgba_data = np.clip(np.rint(ssbump_to_normal(rgba_data) * 255), 0, 255).astype(np.uint8)
+            ssbump_converted = True
+
+        image = create_and_cache_texture(texture_path, rgba_data, False, invert_y, cache_identity,
+                                         image_name=texture_path.stem if cache_identity else None)
+    if not metadata_error:
+        tag_vtf_metadata(image, vtf_data, metadata)
+    if ssbump_converted:
         image['ssbump_converted'] = True
     if invert_y:
         image['normalmap_converted'] = True

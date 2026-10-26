@@ -24,6 +24,9 @@ individual changes.
 - Normal-map and SSBump conversion happens before image creation.
 - Temporary import PNGs use Blender's bundled Pillow at a measured fast
   compression level.
+- Single-frame 2D DXT1/DXT5 VTFs keep their compressed mip payloads through
+  default-enabled direct DDS staging; the add-on preference can force decoded
+  PNG, and transformed normals and unsupported layouts always retain that path.
 - Source 2 aggregate placeholders batch selected draw calls and reuse decoded
   vertex/index buffers.
 - Source 2 model draw calls reuse resolved, loaded materials with matching

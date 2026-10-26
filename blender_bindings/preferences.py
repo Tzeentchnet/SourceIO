@@ -8,6 +8,15 @@ ADDON_PACKAGE = __package__.rsplit(".blender_bindings", 1)[0]
 class SourceIOPreferences(bpy.types.AddonPreferences):
     bl_idname = ADDON_PACKAGE
 
+    use_source1_dds: BoolProperty(
+        name="Use direct DDS staging for Source 1 textures",
+        description=(
+            "Load compatible single-frame DXT1/DXT5 VTF textures directly as DDS; "
+            "unsupported and transformed textures still use decoded PNG images"
+        ),
+        default=True,
+    )
+
     principled_backface_culling: BoolProperty(
         name="Cull Principled VertexLitGeneric backfaces",
         description=(
@@ -18,13 +27,24 @@ class SourceIOPreferences(bpy.types.AddonPreferences):
     )
 
     def draw(self, context):
+        self.layout.prop(self, "use_source1_dds")
         self.layout.prop(self, "principled_backface_culling")
 
 
-def principled_backface_culling_enabled(context=None) -> bool:
+def _addon_preferences(context=None):
     context = context or bpy.context
     preferences = getattr(context, "preferences", None)
     if preferences is None:
-        return False
+        return None
     addon = preferences.addons.get(ADDON_PACKAGE)
-    return bool(addon and addon.preferences.principled_backface_culling)
+    return getattr(addon, "preferences", None)
+
+
+def source1_dds_enabled(context=None) -> bool:
+    preferences = _addon_preferences(context)
+    return True if preferences is None else bool(getattr(preferences, "use_source1_dds", True))
+
+
+def principled_backface_culling_enabled(context=None) -> bool:
+    preferences = _addon_preferences(context)
+    return bool(preferences and preferences.principled_backface_culling)

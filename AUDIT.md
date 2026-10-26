@@ -6,11 +6,11 @@ Scope: the Blender add-on at `21bf348` (5.14.0), focused on import speed and on 
 `f63bd403`, the review corrections as `b18ddcd8`, and the Linux/material
 correctness follow-ups in subsequent `master` commits. The historical
 `sourceio-audit.patch` review artifact is not distributed and must not be
-applied to current `master`. The measurement and PNG-compression items under
-**Recommended next** are now implemented, followed by measured Source 2
-aggregate-model reuse; the other five remain proposals rather than completed
-work. Their current priority is tracked in [TODO.md](TODO.md); this document
-retains the audit rationale and measurements.
+applied to current `master`. The measurement, PNG-compression, and direct-DDS
+items under **Recommended next** are now implemented, followed by measured
+Source 2 aggregate-model reuse; the other five remain proposals rather than
+completed work. Their current priority is tracked in [TODO.md](TODO.md); this
+document retains the audit rationale and measurements.
 
 ## How this was checked
 
@@ -60,7 +60,7 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 
 ### Recommended next (not in the patch)
 
-1. **Wrap DXT payloads as DDS instead of decoding them.** Most VTFs are DXT1/DXT5. A 128-byte DDS header in front of the VTF's top mip would let Blender load it directly (`image.pack(data=dds_bytes)`). That skips the native decode, the PNG encode and the PNG decode, and keeps packed `.blend` files 4–8× smaller. Check vertical orientation and BC5/ATI2N normal maps first, which still need the Z reconstruction the decoder does now.
+1. **Implemented 2026-10-25 — direct DDS staging.** Single-frame 2D DXT1/DXT5 VTFs, including DXT1 one-bit alpha, now retain and reorder their complete compressed mip chain under a 128-byte DDS header. A default-enabled add-on preference can force newly loaded textures back through decoded PNG. Transformed normal maps, SSBump, animation, cubemaps, volume textures, ATI2N/BC5, and other formats always retain that path. Public and synthetic Blender tests verify orientation, alpha, packing, disk-cache reuse, preference behavior, and fallback behavior. A three-run warm-cache `ctf_2fort` A/B reduced median wall time from 14.17 s to 10.04 s (29.1%); 191 of 212 images used DDS, all scene counts and diagnostics matched, and the retained reports record every timing region.
 2. **Implemented 2026-10-24 — PNG encode level.** Blender 5.2's bundled Pillow now writes temporary import PNGs at compression level 2, selected because a synthetic speed/size sweep retained native-encoder-sized output while avoiding its expensive default compression. Pixel-exact tests cover L, LA, RGB and RGBA data plus both in-memory and file-backed output. On the same warm-cache installed maps, encoding fell from 13.36 s to 3.46 s for TF2 `ctf_2fort` (3.9×; total import 21.72 s to 11.02 s) and from 97.84 s to 34.08 s for CS2 `de_dust2` (2.9×; total import 289.57 s to 268.02 s).
 3. **Source 2 unused textures.** `ShaderRegistry.source2_create_nodes` decodes every texture a `.vmat` lists but the shader didn't use (`handler.unused_textures`). That's useful for authoring, but costly on CS2/Dota maps. An import option ("Load unreferenced textures", off by default for maps) would skip that work.
 4. **Displacements** (`import_bsp.import_disp`): one object per displacement face, each with up to 6 colour layers written through the legacy `mesh.vertex_colors` API. Merging displacements per material into one mesh, and writing `mesh.color_attributes.new(..., 'FLOAT_COLOR', 'CORNER')` in one `foreach_set` per layer, would cut object count and depsgraph cost on displacement-heavy maps (CS:GO, L4D2).

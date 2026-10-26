@@ -472,6 +472,60 @@ class ModelBufferCacheTests(unittest.TestCase):
         self.assertEqual(combine.call_count, 2)
 
 
+class DrawCallMaterialCacheTests(unittest.TestCase):
+    def setUp(self):
+        bpy.ops.wm.read_homefile(use_empty=True)
+
+    def test_reuses_valid_material_with_matching_identity(self):
+        content_manager = SimpleNamespace()
+        import_context = vmdl_loader.ImportContext(scale=SCALE)
+        key = vmdl_loader._draw_call_material_cache_key(
+            "Materials/Test.VMAT", import_context)
+        matching_key = vmdl_loader._draw_call_material_cache_key(
+            "materials/test.vmat", import_context)
+        material = bpy.data.materials.new("test")
+        material["full_path"] = "materials/test.vmat?sourceio-scale=0x1.a027525460aa6p-6"
+        material["source_loaded"] = True
+
+        vmdl_loader._cache_draw_call_material(
+            content_manager, key, material, morph_supported=True, overlay=False)
+
+        cached = vmdl_loader._get_cached_draw_call_material(content_manager, matching_key)
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached[0], material)
+        self.assertEqual(cached[1:], (True, False))
+
+    def test_invalidates_removed_material(self):
+        content_manager = SimpleNamespace()
+        import_context = vmdl_loader.ImportContext(scale=SCALE)
+        key = vmdl_loader._draw_call_material_cache_key("materials/test.vmat", import_context)
+        material = bpy.data.materials.new("test")
+        material["full_path"] = "materials/test.vmat?sourceio-scale=0x1.a027525460aa6p-6"
+        material["source_loaded"] = True
+        vmdl_loader._cache_draw_call_material(
+            content_manager, key, material, morph_supported=False, overlay=True)
+
+        bpy.data.materials.remove(material)
+
+        self.assertIsNone(vmdl_loader._get_cached_draw_call_material(content_manager, key))
+        cache = getattr(content_manager, vmdl_loader._DRAW_CALL_MATERIAL_CACHE_ATTRIBUTE)
+        self.assertNotIn(key, cache)
+
+    def test_invalidates_changed_material_identity(self):
+        content_manager = SimpleNamespace()
+        import_context = vmdl_loader.ImportContext(scale=SCALE)
+        key = vmdl_loader._draw_call_material_cache_key("materials/test.vmat", import_context)
+        material = bpy.data.materials.new("test")
+        material["full_path"] = "materials/test.vmat?sourceio-scale=0x1.a027525460aa6p-6"
+        material["source_loaded"] = True
+        vmdl_loader._cache_draw_call_material(
+            content_manager, key, material, morph_supported=False, overlay=False)
+
+        material["full_path"] = "materials/replaced.vmat"
+
+        self.assertIsNone(vmdl_loader._get_cached_draw_call_material(content_manager, key))
+
+
 class AggregateLoadTests(unittest.TestCase):
     def setUp(self):
         bpy.ops.wm.read_homefile(use_empty=True)

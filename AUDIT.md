@@ -50,12 +50,13 @@ place. Blender 5.2.2 validation passes all 15 focused follow-up tests and the fu
 
 ### Fixed in the patch
 
-| # | Problem | Fix | Measured (bpy 5.2.3, 2000 items) |
+| # | Problem | Fix | Measured |
 |---|---|---|---|
 | S1 | `get_or_create_material` scanned every material and built two `TinyPath`s for each one, on every call. Map imports call it per face group, displacement, overlay and prop material, so the cost grows quadratically. | Path → material index (`bpy_utils.py`). Hits are checked against the material. The index rebuilds when materials are renamed, deleted or added elsewhere, which it detects with a `session_uid` fingerprint (`utils/id_index.py`, one C-level `foreach_get`). | 3.6 s create + 3.4 s repeat hits → **0.65 s + 0.11 s** |
 | S2 | `check_texture_cache` scanned every image on every lookup, and `_add_texture` copied the scene's whole `texture_name_to_texture` group on every texture. | Same index scheme for images (`texture_utils.py`); the scene group is written in place. | 2.4 s + 0.9 s → **0.55 s + 0.09 s** |
 | S3 | 8-bit VTFs went uint8 → float32 (`/255`) → float32 (`*255`) → uint8 before PNG encoding. That's two full-size passes and about 4× the memory per texture. | `load_texture(..., normalized=False)` keeps the decoder's uint8; `create_and_cache_texture` accepts uint8. | ~65 ms and 64 MB of temporaries saved per 2048² texture |
 | S4 | Every normal map (and ssbump) was decoded, packed, then read back with `image.pixels.foreach_get`, flipped in numpy, written back, and **re-packed**, which Blender re-encodes as PNG. | Green flip and ssbump → normal now happen on the decoded array before the single encode. Converted variants are cached under their own identity (`invert_y`, `ssbump+invert_y`) and keep the texture's plain name. If only the plain image is already loaded, the old in-place conversion still runs. | Removes a full decode + float round trip + PNG re-encode per normal map (typically about a third of a map's textures) |
+| S5 | Source 2 model draw calls reopened and reparsed the same compiled material resource, then repeated an idempotent `load_material` call after the Blender material already existed. | Fixed phase timings identified material resolution as dominant. A validated cache keyed by material path, texture settings, and import scale now reuses the loaded Blender material plus its overlay and morph flags. Deleted, replaced, or identity-changed materials miss the cache. | Controlled Blender 5.2.2 `de_dust2 --load-placeholders`: 3,768 lookups/loads → **295**; material resolution 185.77 s → **100.59 s**; wall time 228.69 s → **144.10 s** (37.0%), with identical output counts and diagnostics |
 
 ### Recommended next (not in the patch)
 

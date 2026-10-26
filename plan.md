@@ -91,6 +91,22 @@ Warm-cache measurements from 2026-10-24:
 | CS2 `de_dust2 --load-placeholders` | Fast PNG staging | 268.02 s | PNG encoding: 34.08 s |
 | CS2 `de_dust2 --load-placeholders` | Aggregate model reuse | 219.68 s | 672 model loads; all output counts unchanged; another 18.0% improvement |
 
+A controlled warm-cache A/B from 2026-10-25 used Blender 5.2.2 and the same
+instrumented tree, disabling only the new draw-call material cache for the
+baseline:
+
+| Corpus | Stage | Wall time | Relevant measured work |
+|---|---|---:|---|
+| CS2 `de_dust2 --load-placeholders` | Material cache disabled | 228.69 s | 3,768 material-resource lookups and `load_material` calls; material resolution: 185.77 s |
+| CS2 `de_dust2 --load-placeholders` | Draw-call material reuse | 144.10 s | 295 material-resource lookups and `load_material` calls; material resolution: 100.59 s; 37.0% total improvement |
+
+Both A/B runs produced 4,679 objects, 746 images, 32 lights, 4,048
+collections, 3,768 meshes, 295 materials, and 698/698 loaded placeholders,
+with identical details and diagnostics. The retained JSON reports include
+separate material resolution, resource lookup, buffer decode, index remapping,
+mesh creation, material attachment, attribute population, and mesh validation
+timings.
+
 The Source 2 unused-texture pass took 0.001 seconds on this `de_dust2` corpus.
 The Source 1 MDL flex loop was not exercised by the map benchmarks. Future
 performance work must start with a representative measurement rather than these

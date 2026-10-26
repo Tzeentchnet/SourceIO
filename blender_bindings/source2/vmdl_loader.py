@@ -27,7 +27,7 @@ from ...library.source2.keyvalues3.types import NullObject, Object
 from ...library.source2.exceptions import MissingBlock
 from ...library.utils.math_utilities import SOURCE2_HAMMER_UNIT_TO_METERS
 from ...library.utils.path_utilities import path_stem
-from ...library.utils.perf_sampler import timed
+from ...library.utils.perf_sampler import timed, timed_region
 from ...library.source2.compiled_resource import DATA_BLOCK
 from ...library.utils.tiny_path import TinyPath
 from .animation_loader import import_animations
@@ -48,6 +48,16 @@ from ..exporting.source2.provenance import (
 logger = SourceLogMan().get_logger("Source2::Model")
 
 DRAW_CALL_INDEX_PROPERTY = "sourceio_draw_call_index"
+_DRAW_CALL_MATERIAL_CACHE_ATTRIBUTE = "_sourceio_draw_call_material_cache"
+
+
+@dataclass(frozen=True)
+class _CachedDrawCallMaterial:
+    name: str
+    session_uid: int
+    full_path: str
+    morph_supported: bool
+    overlay: bool
 
 
 def put_into_collections(model_container, model_name, parent_collection=None, bodygroup_grouping=False):
@@ -113,6 +123,67 @@ class ImportContext:
     import_animations: bool = False
     animation_clips: str = ''  # graph clip filter, see parse_clip_filter
     texture_settings: TextureImportSettings = field(default_factory=TextureImportSettings)
+
+
+def _draw_call_material_cache_key(
+        material_name: str,
+        import_context: ImportContext,
+) -> tuple[str, str, str] | None:
+    try:
+        scale_identity = float(import_context.scale).hex()
+    except (TypeError, ValueError):
+        return None
+    texture_settings = import_context.texture_settings or TextureImportSettings()
+    return (
+        TinyPath(material_name).as_posix().casefold(),
+        texture_settings.cache_identity(),
+        scale_identity,
+    )
+
+
+def _get_cached_draw_call_material(
+        content_manager: ContentManager,
+        key: tuple[str, str, str] | None,
+) -> tuple[bpy.types.Material, bool, bool] | None:
+    if key is None:
+        return None
+    cache: dict[tuple[str, str, str], _CachedDrawCallMaterial] | None = getattr(
+        content_manager, _DRAW_CALL_MATERIAL_CACHE_ATTRIBUTE, None)
+    if not cache or (entry := cache.get(key)) is None:
+        return None
+    material = bpy.data.materials.get(entry.name)
+    if (
+        material is None
+        or material.session_uid != entry.session_uid
+        or material.get("full_path", "") != entry.full_path
+        or not material.get("source_loaded", False)
+    ):
+        cache.pop(key, None)
+        return None
+    return material, entry.morph_supported, entry.overlay
+
+
+def _cache_draw_call_material(
+        content_manager: ContentManager,
+        key: tuple[str, str, str] | None,
+        material: bpy.types.Material,
+        morph_supported: bool,
+        overlay: bool,
+):
+    if key is None:
+        return
+    cache: dict[tuple[str, str, str], _CachedDrawCallMaterial] | None = getattr(
+        content_manager, _DRAW_CALL_MATERIAL_CACHE_ATTRIBUTE, None)
+    if cache is None:
+        cache = {}
+        setattr(content_manager, _DRAW_CALL_MATERIAL_CACHE_ATTRIBUTE, cache)
+    cache[key] = _CachedDrawCallMaterial(
+        material.name,
+        material.session_uid,
+        material.get("full_path", ""),
+        morph_supported,
+        overlay,
+    )
 
 
 @timed
@@ -588,93 +659,82 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
     index_buffer_info = draw_call['m_indexBuffer']
 
     index_buffer = index_buffers[index_buffer_info['m_hBuffer']]
-    material_name = draw_call['m_material', 'm_pMaterial']
-    material_resource: CompiledMaterialResource | None = None
-    if not isinstance(material_name, NullObject):
-        material_resource = mesh_resource.get_child_resource(material_name, content_manager,
-                                                             CompiledMaterialResource)
-    else:
-        material_name = "NullMaterial"
-    tint = draw_call.get("m_vTintColor", None)
-    material = None
+    with timed_region("source2.import_drawcall.material_resolution"):
+        material_name = draw_call['m_material', 'm_pMaterial']
+        material_resource: CompiledMaterialResource | None = None
+        material_cache_key = None
+        cached_material = None
+        if not isinstance(material_name, NullObject):
+            if import_context.import_materials:
+                material_cache_key = _draw_call_material_cache_key(material_name, import_context)
+                cached_material = _get_cached_draw_call_material(content_manager, material_cache_key)
+            if cached_material is None:
+                with timed_region("source2.import_drawcall.material_resource_lookup"):
+                    material_resource = mesh_resource.get_child_resource(
+                        material_name, content_manager, CompiledMaterialResource)
+        else:
+            material_name = "NullMaterial"
+        tint = draw_call.get("m_vTintColor", None)
+        material = None
 
-    if material_resource:
-        if import_context.import_materials:
-            material = load_material(
-                content_manager,
-                material_resource,
-                TinyPath(material_name),
-                tint is not None and all(a != 1.0 for a in tint),
-                texture_settings=import_context.texture_settings,
-                import_scale=import_context.scale,
-            )
-            morph_supported = material_resource.get_int_property('F_MORPH_SUPPORTED', 0) == 1
-            overlay = material_resource.get_int_property('F_OVERLAY', 0) == 1
-            if not overlay:
-                data = material_resource.get_block(KVBlock, block_name='DATA')
-                if data:
-                    shader = data['m_shaderName']
-                    overlay |= shader == "csgo_static_overlay.vfx"
-                    overlay |= shader == "citadel_overlay.vfx"
+        if cached_material is not None:
+            material, morph_supported, overlay = cached_material
+        elif material_resource:
+            if import_context.import_materials:
+                material = load_material(
+                    content_manager,
+                    material_resource,
+                    TinyPath(material_name),
+                    tint is not None and all(a != 1.0 for a in tint),
+                    texture_settings=import_context.texture_settings,
+                    import_scale=import_context.scale,
+                )
+                morph_supported = material_resource.get_int_property('F_MORPH_SUPPORTED', 0) == 1
+                overlay = material_resource.get_int_property('F_OVERLAY', 0) == 1
+                if not overlay:
+                    data = material_resource.get_block(KVBlock, block_name='DATA')
+                    if data:
+                        shader = data['m_shaderName']
+                        overlay |= shader == "csgo_static_overlay.vfx"
+                        overlay |= shader == "citadel_overlay.vfx"
+                _cache_draw_call_material(
+                    content_manager,
+                    material_cache_key,
+                    material,
+                    morph_supported,
+                    overlay,
+                )
+            else:
+                overlay = False
+                morph_supported = bool(morph_block)
         else:
             overlay = False
             morph_supported = bool(morph_block)
-    else:
-        overlay = False
-        morph_supported = bool(morph_block)
-        logger.warn(f'Failed to load material {material_name} for {mesh_resource.name}')
+            logger.warn(f'Failed to load material {material_name} for {mesh_resource.name}')
 
-    all_buffers = []
-    for vertex_buffer_info in draw_call['m_vertexBuffers']:
-        vertex_buffer = vertex_buffers[vertex_buffer_info['m_hBuffer']]
-        all_buffers.append(vertex_buffer)
-        if extra_vertex_buffers:
-            extra_vertex_buffer = extra_vertex_buffers[vertex_buffer_info['m_hBuffer']]
-            all_buffers.append(extra_vertex_buffer)
-    all_buffers = [vb for vb in all_buffers if vb.vertex_count > 0]
-    base_vertex = draw_call['m_nBaseVertex']
-    vertex_count = draw_call['m_nVertexCount']
-    vertices, vertex_buffer = (
-        _get_combined_vertex_buffers(import_context, all_buffers, mesh_resource)
-        if all_buffers else (None, None)
-    )
-    if vertices is None or 'POSITION' not in (vertices.dtype.names or ()):
-        logger.warn(f'Skipping draw call of {mesh_resource.name} with material {material_name}: '
-                    f'vertex buffer has no POSITION attribute')
-        return g_vertex_offset + vertex_count
-    indices = _get_index_buffer(import_context, index_buffer, mesh_resource)
-    tri_start = draw_call['m_nStartIndex'] // 3
-    tri_count = draw_call['m_nIndexCount'] // 3
-    part_indices = indices[tri_start:tri_start + tri_count]
-    used_vertices_ids, _, new_indices = np.unique(part_indices, return_index=True, return_inverse=True)
-    used_vertices = vertices[base_vertex:][used_vertices_ids]
+    with timed_region("source2.import_drawcall.buffer_decode"):
+        all_buffers = []
+        for vertex_buffer_info in draw_call['m_vertexBuffers']:
+            vertex_buffer = vertex_buffers[vertex_buffer_info['m_hBuffer']]
+            all_buffers.append(vertex_buffer)
+            if extra_vertex_buffers:
+                extra_vertex_buffer = extra_vertex_buffers[vertex_buffer_info['m_hBuffer']]
+                all_buffers.append(extra_vertex_buffer)
+        all_buffers = [vb for vb in all_buffers if vb.vertex_count > 0]
+        base_vertex = draw_call['m_nBaseVertex']
+        vertex_count = draw_call['m_nVertexCount']
+        vertices, vertex_buffer = (
+            _get_combined_vertex_buffers(import_context, all_buffers, mesh_resource)
+            if all_buffers else (None, None)
+        )
+        if vertices is None or 'POSITION' not in (vertices.dtype.names or ()):
+            logger.warn(f'Skipping draw call of {mesh_resource.name} with material {material_name}: '
+                        f'vertex buffer has no POSITION attribute')
+            return g_vertex_offset + vertex_count
+        indices = _get_index_buffer(import_context, index_buffer, mesh_resource)
 
-    del part_indices
     material_stem = path_stem(material_name)
     model_name = mesh_name or mesh_resource.name
-    mesh = FastMesh.new(f'{model_name}_{material_stem}_mesh')
-    mesh_obj = bpy.data.objects.new(f'{model_name}_{material_stem}', mesh)
-    if import_context.draw_call_indices is not None:
-        mesh_obj[DRAW_CALL_INDEX_PROPERTY] = draw_call_index
-
-    if tint is not None:
-        mesh_obj.color = list(tint) + [1.0]
-
-    logger.debug(f"Mesh attributes: {used_vertices.dtype.names}")
-
-    positions = used_vertices['POSITION'] * import_context.scale
-
-    normals = None
-    if vertex_buffer.has_attribute('NORMAL'):
-        normals = used_vertices['NORMAL']
-        if use_compressed_normals(draw_call):
-            if normals.dtype == np.uint32:
-                normals = convert_normals_2(normals)
-            else:
-                normals = convert_normals(normals)
-
-    if overlay and normals is not None:
-        positions += normals * 0.001
 
     def filter_collapsed_point_tris(verts: np.ndarray, tris: np.ndarray):
         v0 = verts[tris[:, 0]]
@@ -688,136 +748,176 @@ def import_drawcall(content_manager: ContentManager, import_context: ImportConte
         keep = ~(dup01 | dup12 | dup20)
         return keep
 
-    new_indices = new_indices.reshape((-1, 3))
-    keep = filter_collapsed_point_tris(positions, new_indices)
+    with timed_region("source2.import_drawcall.index_remapping"):
+        tri_start = draw_call['m_nStartIndex'] // 3
+        tri_count = draw_call['m_nIndexCount'] // 3
+        part_indices = indices[tri_start:tri_start + tri_count]
+        used_vertices_ids, _, new_indices = np.unique(part_indices, return_index=True, return_inverse=True)
+        used_vertices = vertices[base_vertex:][used_vertices_ids]
+        logger.debug(f"Mesh attributes: {used_vertices.dtype.names}")
 
-    new_indices = new_indices[keep]
+        del part_indices
+        positions = used_vertices['POSITION'] * import_context.scale
 
-    mesh.from_pydata(positions, np.empty(0), new_indices, shade_flat=normals is None)
+        normals = None
+        if vertex_buffer.has_attribute('NORMAL'):
+            normals = used_vertices['NORMAL']
+            if use_compressed_normals(draw_call):
+                if normals.dtype == np.uint32:
+                    normals = convert_normals_2(normals)
+                else:
+                    normals = convert_normals(normals)
 
-    if material is None:
-        material = get_or_create_material(material_stem, TinyPath(material_name).as_posix())
-    add_material(material, mesh_obj)
+        if overlay and normals is not None:
+            positions += normals * 0.001
 
-    if data_block.get('m_materialGroups', None):
-        default_skin = data_block['m_materialGroups'][0]
+        new_indices = new_indices.reshape((-1, 3))
+        keep = filter_collapsed_point_tris(positions, new_indices)
+        new_indices = new_indices[keep]
 
-        if material_name in default_skin['m_materials']:
-            mat_id = default_skin['m_materials'].index(material_name)
-            mat_groups = {}
-            for skin_group in data_block['m_materialGroups']:
-                if mat_id >= len(skin_group['m_materials']):
-                    continue
-                skin_material = skin_group['m_materials'][mat_id]
-                skin_bpy_material = material if skin_material == material_name else None
-                if skin_bpy_material is None and import_context.import_materials:
-                    skin_resource = model_resource.get_child_resource(skin_material, content_manager,
-                                                                      CompiledMaterialResource)
-                    if skin_resource is not None:
-                        skin_bpy_material = load_material(
-                            content_manager,
-                            skin_resource,
-                            TinyPath(skin_material),
-                            tint is not None and all(a != 1.0 for a in tint),
-                            texture_settings=import_context.texture_settings,
-                            import_scale=import_context.scale,
-                        )
-                if skin_bpy_material is None:
-                    skin_bpy_material = get_or_create_material(
-                        path_stem(skin_material), TinyPath(skin_material).as_posix())
-                mat_groups[skin_group['m_name']] = skin_bpy_material["full_path"]
+    with timed_region("source2.import_drawcall.mesh_creation"):
+        mesh = FastMesh.new(f'{model_name}_{material_stem}_mesh')
+        mesh_obj = bpy.data.objects.new(f'{model_name}_{material_stem}', mesh)
+        if import_context.draw_call_indices is not None:
+            mesh_obj[DRAW_CALL_INDEX_PROPERTY] = draw_call_index
 
-            mesh_obj['active_skin'] = default_skin['m_name']
-            mesh_obj['skin_groups'] = mat_groups
-    else:
-        mesh_obj['active_skin'] = 'default'
-        mesh_obj['skin_groups'] = []
-    mesh_obj['model_type'] = 's2'
+        if tint is not None:
+            mesh_obj.color = list(tint) + [1.0]
 
-    vertex_indices = np.zeros(len(mesh.loops), dtype=np.uint32)
-    mesh.loops.foreach_get('vertex_index', vertex_indices)
+        mesh.from_pydata(positions, np.empty(0), new_indices, shade_flat=normals is None)
 
-    if tint is not None:
-        vc = mesh.color_attributes.get('TINT', False) or mesh.color_attributes.new('TINT', 'FLOAT_COLOR', 'CORNER')
+    with timed_region("source2.import_drawcall.material_attachment"):
+        if material is None:
+            material = get_or_create_material(material_stem, TinyPath(material_name).as_posix())
+        add_material(material, mesh_obj)
 
-        c = np.ones(4, dtype=np.float32)
-        c[:3] = np.asarray(tint, dtype=np.float32)[:3]
-        vc.data.foreach_set('color', np.broadcast_to(c, (vertex_indices.size, 4)).ravel())
+        if data_block.get('m_materialGroups', None):
+            default_skin = data_block['m_materialGroups'][0]
 
-    for uv_id in range(16):
-        attrib_name = "TEXCOORD" if uv_id == 0 else f"TEXCOORD_{uv_id}"
-        if not vertex_buffer.has_attribute(attrib_name):
-            continue
+            if material_name in default_skin['m_materials']:
+                mat_id = default_skin['m_materials'].index(material_name)
+                mat_groups = {}
+                for skin_group in data_block['m_materialGroups']:
+                    if mat_id >= len(skin_group['m_materials']):
+                        continue
+                    skin_material = skin_group['m_materials'][mat_id]
+                    skin_bpy_material = material if skin_material == material_name else None
+                    if skin_bpy_material is None and import_context.import_materials:
+                        skin_resource = model_resource.get_child_resource(skin_material, content_manager,
+                                                                          CompiledMaterialResource)
+                        if skin_resource is not None:
+                            skin_bpy_material = load_material(
+                                content_manager,
+                                skin_resource,
+                                TinyPath(skin_material),
+                                tint is not None and all(a != 1.0 for a in tint),
+                                texture_settings=import_context.texture_settings,
+                                import_scale=import_context.scale,
+                            )
+                    if skin_bpy_material is None:
+                        skin_bpy_material = get_or_create_material(
+                            path_stem(skin_material), TinyPath(skin_material).as_posix())
+                    mat_groups[skin_group['m_name']] = skin_bpy_material["full_path"]
 
-        # Vertex paint (VertexPaintBlendParams, VertexPaintBlendParams1, VertexPaintTintColor) is data, not a UV.
-        invert_v = not vertex_buffer.get_attribute(attrib_name).shader_semantic.startswith('VertexPaint')
-
-        uv = used_vertices[attrib_name]
-        if uv.shape[1] < 2:
-            continue
-        if uv.shape[1] == 4:
-            uv0 = convert_to_float32(uv[:, :2])
-            uv1 = convert_to_float32(uv[:, 2:])
-            if invert_v:
-                np.multiply(uv0[:, 1], -1.0, out=uv0[:, 1])
-                np.add(uv0[:, 1], 1.0, out=uv0[:, 1])
-                np.multiply(uv1[:, 1], -1.0, out=uv1[:, 1])
-                np.add(uv1[:, 1], 1.0, out=uv1[:, 1])
-            data = mesh.uv_layers.new(name=attrib_name).data
-            data.foreach_set('uv', uv0[vertex_indices].reshape(-1))
-            data = mesh.uv_layers.new(name=attrib_name + "_2").data
-            data.foreach_set('uv', uv1[vertex_indices].reshape(-1))
+                mesh_obj['active_skin'] = default_skin['m_name']
+                mesh_obj['skin_groups'] = mat_groups
         else:
-            uv2 = convert_to_float32(uv[:, :2])
-            if invert_v:
-                np.multiply(uv2[:, 1], -1.0, out=uv2[:, 1])
-                np.add(uv2[:, 1], 1.0, out=uv2[:, 1])
-            data = mesh.uv_layers.new(name=attrib_name).data
-            data.foreach_set('uv', uv2[vertex_indices].reshape(-1))
+            mesh_obj['active_skin'] = 'default'
+            mesh_obj['skin_groups'] = []
+        mesh_obj['model_type'] = 's2'
 
-    if normals is not None:
-        mesh.set_custom_normals(normals)
+    with timed_region("source2.import_drawcall.attribute_population"):
+        vertex_indices = np.zeros(len(mesh.loops), dtype=np.uint32)
+        mesh.loops.foreach_get('vertex_index', vertex_indices)
 
-    for i in range(8):
-        name = "COLOR" if i == 0 else f"COLOR_{i}"
-        if not vertex_buffer.has_attribute(name):
-            # HACK: Output a 0s array for COLOR0, since blender uses (0,0,0,1) as a fallback for missing vertex colors, but S2 default is (0,0,0,0)
-            if i == 0:
-                color = np.broadcast_to(np.zeros(4, dtype=np.float32), (vertex_indices.size, 4))
-            else:
+        if tint is not None:
+            vc = mesh.color_attributes.get('TINT', False) or mesh.color_attributes.new(
+                'TINT', 'FLOAT_COLOR', 'CORNER')
+
+            c = np.ones(4, dtype=np.float32)
+            c[:3] = np.asarray(tint, dtype=np.float32)[:3]
+            vc.data.foreach_set('color', np.broadcast_to(c, (vertex_indices.size, 4)).ravel())
+
+        for uv_id in range(16):
+            attrib_name = "TEXCOORD" if uv_id == 0 else f"TEXCOORD_{uv_id}"
+            if not vertex_buffer.has_attribute(attrib_name):
                 continue
-        else:
-            # According to blender, "byte" color is just a color stored as float that is capped at 1.
-            color = used_vertices[name].astype(np.float32) / 255
 
-        vc = mesh.color_attributes.get(name, False) or mesh.color_attributes.new(name, 'BYTE_COLOR', 'CORNER')
-        # Deadlock stores vertex colors as SRGB
-        vc.data.foreach_set('color_srgb' if content_manager.steam_id == SteamAppId.DEADLOCK else 'color', color[vertex_indices].ravel())
+            # Vertex paint (VertexPaintBlendParams, VertexPaintBlendParams1, VertexPaintTintColor) is data, not a UV.
+            invert_v = not vertex_buffer.get_attribute(attrib_name).shader_semantic.startswith('VertexPaint')
 
-    _add_vertex_groups(model_resource, vertex_buffer, mesh_id, used_vertices, mesh_obj)
-    objects.append(mesh_obj)
+            uv = used_vertices[attrib_name]
+            if uv.shape[1] < 2:
+                continue
+            if uv.shape[1] == 4:
+                uv0 = convert_to_float32(uv[:, :2])
+                uv1 = convert_to_float32(uv[:, 2:])
+                if invert_v:
+                    np.multiply(uv0[:, 1], -1.0, out=uv0[:, 1])
+                    np.add(uv0[:, 1], 1.0, out=uv0[:, 1])
+                    np.multiply(uv1[:, 1], -1.0, out=uv1[:, 1])
+                    np.add(uv1[:, 1], 1.0, out=uv1[:, 1])
+                data = mesh.uv_layers.new(name=attrib_name).data
+                data.foreach_set('uv', uv0[vertex_indices].reshape(-1))
+                data = mesh.uv_layers.new(name=attrib_name + "_2").data
+                data.foreach_set('uv', uv1[vertex_indices].reshape(-1))
+            else:
+                uv2 = convert_to_float32(uv[:, :2])
+                if invert_v:
+                    np.multiply(uv2[:, 1], -1.0, out=uv2[:, 1])
+                    np.add(uv2[:, 1], 1.0, out=uv2[:, 1])
+                data = mesh.uv_layers.new(name=attrib_name).data
+                data.foreach_set('uv', uv2[vertex_indices].reshape(-1))
 
-    if morph_block and morph_supported and morph_texture is not None:
-        pos_bundle_id = morph_block.get_bundle_id('MORPH_BUNDLE_TYPE_POSITION_SPEED', 'BUNDLE_TYPE_POSITION_SPEED')
-        if pos_bundle_id is not None:
-            mesh_obj.shape_key_add(name='base')
-            for flex_name_ in morph_block['m_FlexDesc']:
-                flex_name = flex_name_['m_szFacs']
-                morph_data = morph_block.get_morph_data(flex_name, pos_bundle_id, morph_texture)
-                if morph_data is None:
+        if normals is not None:
+            mesh.set_custom_normals(normals)
+
+        for i in range(8):
+            name = "COLOR" if i == 0 else f"COLOR_{i}"
+            if not vertex_buffer.has_attribute(name):
+                # HACK: Output a 0s array for COLOR0, since blender uses (0,0,0,1) as a fallback for missing vertex colors, but S2 default is (0,0,0,0)
+                if i == 0:
+                    color = np.broadcast_to(np.zeros(4, dtype=np.float32), (vertex_indices.size, 4))
+                else:
                     continue
-                flex = morph_data[:, :, :3].reshape((-1, 3))
-                flex_verts = flex[g_vertex_offset:g_vertex_offset + vertex_count]
-                if not np.any(flex_verts):
-                    logger.debug(f'Skipping {flex_name!r} because flex delta is zero')
-                    continue
-                shape = mesh_obj.shape_key_add(name=flex_name)
-                shape.value = 0.0
-                co = (positions + flex_verts * import_context.scale).reshape(-1)
-                shape.data.foreach_set("co", co)
+            else:
+                # According to blender, "byte" color is just a color stored as float that is capped at 1.
+                color = used_vertices[name].astype(np.float32) / 255
+
+            vc = mesh.color_attributes.get(name, False) or mesh.color_attributes.new(
+                name, 'BYTE_COLOR', 'CORNER')
+            # Deadlock stores vertex colors as SRGB
+            vc.data.foreach_set(
+                'color_srgb' if content_manager.steam_id == SteamAppId.DEADLOCK else 'color',
+                color[vertex_indices].ravel(),
+            )
+
+        _add_vertex_groups(model_resource, vertex_buffer, mesh_id, used_vertices, mesh_obj)
+        objects.append(mesh_obj)
+
+        if morph_block and morph_supported and morph_texture is not None:
+            pos_bundle_id = morph_block.get_bundle_id(
+                'MORPH_BUNDLE_TYPE_POSITION_SPEED', 'BUNDLE_TYPE_POSITION_SPEED')
+            if pos_bundle_id is not None:
+                mesh_obj.shape_key_add(name='base')
+                for flex_name_ in morph_block['m_FlexDesc']:
+                    flex_name = flex_name_['m_szFacs']
+                    morph_data = morph_block.get_morph_data(flex_name, pos_bundle_id, morph_texture)
+                    if morph_data is None:
+                        continue
+                    flex = morph_data[:, :, :3].reshape((-1, 3))
+                    flex_verts = flex[g_vertex_offset:g_vertex_offset + vertex_count]
+                    if not np.any(flex_verts):
+                        logger.debug(f'Skipping {flex_name!r} because flex delta is zero')
+                        continue
+                    shape = mesh_obj.shape_key_add(name=flex_name)
+                    shape.value = 0.0
+                    co = (positions + flex_verts * import_context.scale).reshape(-1)
+                    shape.data.foreach_set("co", co)
 
     g_vertex_offset += vertex_count
-    mesh.validate()
+    with timed_region("source2.import_drawcall.mesh_validation"):
+        mesh.validate()
     return g_vertex_offset
 
 

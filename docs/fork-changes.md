@@ -26,6 +26,8 @@ individual changes.
   compression level.
 - Source 2 aggregate placeholders batch selected draw calls and reuse decoded
   vertex/index buffers.
+- Source 2 model draw calls reuse resolved, loaded materials with matching
+  texture settings and import scale.
 - Optional bounded timings are available through
   `SOURCEIO_PERF_TRACE=1`.
 

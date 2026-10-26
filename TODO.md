@@ -54,9 +54,6 @@ Measure each candidate on a representative installed asset before changing
 behavior. Retain before/after JSON timing reports and verify identical imported
 output counts.
 
-- [ ] Split the current Source 2 `import_drawcall` timing into index remapping,
-      Blender mesh creation, attribute population, and material attachment, then
-      optimize only the measured dominant phase.
 - [ ] Evaluate wrapping compatible DXT1/DXT5 VTF payloads as DDS to avoid decode,
       PNG encode, and PNG decode. Verify orientation and BC5/ATI2N normal handling
       before enabling it.

@@ -69,10 +69,10 @@ def load_texture_frames(file_object) -> tuple[list[np.ndarray], int, int]:
     return decoded, height, width
 
 
-def load_texture_tth(header_file: Buffer, data_file: Buffer, normalized: bool = True):
+def reconstruct_texture_tth(header_file: Buffer, data_file: Buffer) -> bytes | None:
     vtf_data = bytearray()
     if header_file.read_ascii_string(3) != "TTH":
-        return None, 0, 0
+        return None
     header_file.seek(6)
     entry_count = header_file.read_uint8()
     header_file.skip(1)
@@ -80,8 +80,14 @@ def load_texture_tth(header_file: Buffer, data_file: Buffer, normalized: bool = 
     header_file.seek(16 + entry_count * 8 + 4)
     vtf_data += header_file.read(header_size)
     vtf_data += zlib.decompress(data_file.read())
-    memory_buffer = MemoryBuffer(vtf_data)
-    return load_texture(memory_buffer, normalized)
+    return bytes(vtf_data)
+
+
+def load_texture_tth(header_file: Buffer, data_file: Buffer, normalized: bool = True):
+    vtf_data = reconstruct_texture_tth(header_file, data_file)
+    if vtf_data is None:
+        return None, 0, 0
+    return load_texture(MemoryBuffer(vtf_data), normalized)
 
 
 def pad_to(im: np.ndarray, s_size: int):

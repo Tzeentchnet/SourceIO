@@ -9,7 +9,7 @@ from ...utils.texture_utils import (create_and_cache_texture,
 from ....library.shared.content_manager import ContentManager
 from ....library.source1.vtf import convert_skybox_to_equiangular
 from ....library.source1.vtf.dds import vtf_to_dds
-from ....library.source1.vtf import load_texture, load_texture_frames, load_texture_tth
+from ....library.source1.vtf import load_texture, load_texture_frames, reconstruct_texture_tth
 from ....library.source1.vtf.metadata import VTFMetadata, read_vtf_metadata
 from ....library.utils.tiny_path import TinyPath
 from ....library.utils import Buffer, MemoryBuffer
@@ -159,11 +159,16 @@ def import_animated_texture(texture_path: TinyPath, file_object, content_manager
 
 def import_texture_tth(texture_path: TinyPath, header_file: Buffer, data_file: Buffer, update=False):
     logger.info(f'Loading "{texture_path.name}" texture')
-    rgba_data, image_height, image_width = load_texture_tth(header_file, data_file, normalized=False)
+    vtf_data = reconstruct_texture_tth(header_file, data_file)
+    if vtf_data is None:
+        return None
+    rgba_data, image_height, image_width = load_texture(MemoryBuffer(vtf_data), normalized=False)
     if rgba_data is None:
         return None
     rgba_data = rgba_data.reshape(image_height, image_width, -1)
-    return create_and_cache_texture(texture_path, rgba_data, False, False)
+    image = create_and_cache_texture(texture_path, rgba_data, False, False)
+    tag_vtf_metadata(image, vtf_data)
+    return image
 
 
 def load_skybox_texture(skyname, content_manager:ContentManager, width=1024):

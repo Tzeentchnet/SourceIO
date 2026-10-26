@@ -42,7 +42,7 @@ Compared with the upstream baseline this fork started from, it adds:
   blend, decal, and unlit materials.
 - **Editable authoring workflows:** verified static-asset export, official
   compiler integration, manifests, and recompile for CS2 Workshop Tools and
-  Source 1 toolchains.
+  Source 1 toolchains, including both Source SDK Base 2013 profiles.
 - **Blender 5.2-native packaging and testing:** split-platform extensions,
   manylinux-compatible binaries, public sample tests, installed-game gates, and
   official-tool round trips.

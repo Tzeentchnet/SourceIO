@@ -11,24 +11,6 @@ This is the canonical list of open planned or desired work.
 
 Completed work is removed rather than retained as checked history.
 
-## Current priority
-
-### Source SDK Base 2013 and Half-Life 2
-
-TF2 validates the shared Source 1 authoring pipeline, but it does not replace a
-reference Source SDK 2013 gate.
-
-- [ ] Discover and validate both Source SDK Base 2013 profiles.
-- [ ] Create a disposable mod fixture without committing proprietary content.
-- [ ] Compile generated SMD, QC, VMT, and texture sources with the SDK tools.
-- [ ] Verify the expected MDL, VVD, VTX, and VTF outputs and re-import them.
-- [ ] Run representative Half-Life 2 models and maps through the installed-game
-      regression runner.
-- [ ] Record installation and tool hashes plus a machine-readable gate report.
-
-This gate is complete only when it is reproducible from documented local
-prerequisites; installing the SDK alone is not completion.
-
 ## Desired material-authoring extensions
 
 Each mapping needs an official-tool fixture, an explicit Blender graph contract,

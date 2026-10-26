@@ -69,6 +69,8 @@ The installed-game runner imports assets through each game's real search paths:
 
 ```text
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Team Fortress 2/tf"
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Source SDK Base 2013 Singleplayer/sourcetest" --expect-profile sdk2013_sp
+blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Source SDK Base 2013 Multiplayer/sourcetest" --expect-profile sdk2013_mp
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/Counter-Strike Global Offensive/game/csgo" [--load-placeholders] [--clips PATTERNS]
 blender -b --factory-startup --python tests/e2e/run_game_imports.py -- --game "<steam>/common/dota 2 beta/game/dota" --expect-profile dota
 ```
@@ -112,7 +114,7 @@ The Blender-authored round trip runs inside Blender:
 blender -b --factory-startup --python-expr "import sys, pytest; sys.path.insert(0, '..'); import SourceIO; SourceIO.register(); sys.exit(pytest.main(['tests/blender_tests/test_cs2_authoring_roundtrip.py', '-q']))"
 ```
 
-### Source 1 toolchain
+### TF2 Source 1 toolchain
 
 ```powershell
 $env:SOURCEIO_SOURCE1_TOOLCHAIN_ROOT = "<steam>\common\Team Fortress 2"
@@ -121,6 +123,39 @@ python -m pytest tests/source1_toolchain/test_source1_toolchain_contract.py -q
 
 The corresponding Blender-authored test verifies geometry, materials, textures,
 official compilation, re-import, and manifest-driven recompile.
+
+### Source SDK Base 2013
+
+Install both Source SDK Base 2013 profiles from Steam. The consolidated gate
+validates their manifests and tools, creates disposable mod/content roots,
+compiles and recompiles the same generated SMD/QC/VMT/TGA fixture with both
+toolchains, re-imports it in Blender, and imports the bundled `sourcetest` HL2
+corpus:
+
+```powershell
+$env:SOURCEIO_SOURCE_SDK_2013_SP_ROOT = "<steam>\common\Source SDK Base 2013 Singleplayer"
+$env:SOURCEIO_SOURCE_SDK_2013_MP_ROOT = "<steam>\common\Source SDK Base 2013 Multiplayer"
+$env:SOURCEIO_BLENDER = "<blender>\blender.exe"
+python tests/source1_toolchain/run_source_sdk_2013_gate.py --json source-sdk-2013-gate.json
+```
+
+The JSON uses the `sourceio.source-sdk-2013-gate` schema and includes Steam
+build IDs, SHA-256 tool/content/output fingerprints, bounded compiler outcomes,
+Blender re-import assertions, installed-game results, and cleanup status. The
+runner returns nonzero for a missing profile, unexpected diagnostic, failed
+compiler or re-import, incomplete report, or cleanup failure.
+
+The two shipped `sourcetest` maps have explicit `KNOWN` results for their
+missing Lost Coast HDR skybox and unsupported image conversion. Only those
+exact diagnostics are accepted; new warnings remain `WARN` and fail the
+consolidated gate. Generated sources, compiled outputs, and the disposable mod
+remain in a temporary directory and are removed after the report is assembled.
+
+The compiler-only pytest integration can also be run separately:
+
+```powershell
+python -m pytest tests/source1_toolchain/test_source_sdk_2013_roundtrip.py -q
+```
 
 ## Source 2 conformance tools
 

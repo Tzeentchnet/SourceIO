@@ -13,16 +13,18 @@ Usage:
         [--texture panorama/images/heroes/npc_dota_hero_abaddon_png.vtex_c ...] [--map dota]
 
 The game folder holds gameinfo.txt (Source 1) or gameinfo.gi (Source 2). With no explicit assets, a
-profile-specific TF2, CS2 or Dota 2 corpus is used. Assets are read through the game's own search paths
-(VPKs included), copied into a temporary folder, and imported with the game still mounted so dependencies
-resolve the way they do for a user. Maps are imported from the game's maps folder (.bsp, or a Source 2 map
-.vpk). --include-animations imports Source 1 include-model animations or Source 2 model animations.
+profile-specific TF2, Source SDK Base 2013, CS2 or Dota 2 corpus is used. Assets are read through the
+game's own search paths (VPKs included), copied into a temporary folder, and imported with the game still
+mounted so dependencies resolve the way they do for a user. Source 1 maps can be loose or VPK-backed;
+Source 2 map VPKs are imported in place. --include-animations imports Source 1 include-model animations
+or Source 2 model animations.
 The default Dota profile enables model animations because they are part of its acceptance gate: a hero or
 creep model that has or references animations must import at least one action.
 --load-placeholders runs *Load Entity* on every prop placeholder left by a Source 2 map. --clips imports
 matching Source 2 animation-graph clips and implies --include-animations; "*" can import thousands.
---save keeps the scene the last import left. Results use the same basic PASS/WARN/FAIL rules as
-run_sample_imports.py plus profile-specific minimum assertions; exit code is 1 if anything failed.
+--save keeps the scene the last import left. Results use the same basic PASS/KNOWN/WARN/FAIL rules as
+run_sample_imports.py plus profile-specific minimum assertions; KNOWN is limited to explicit
+profile/asset diagnostics, and exit code is 1 if anything failed.
 Set SOURCEIO_PERF_TRACE=1 before starting Blender to print bounded aggregate import timings and include
 them in the JSON report's optional ``performance`` object.
 """
@@ -55,6 +57,20 @@ TF2_MODELS = [
     "models/dog.mdl",  # HL2 content, v44 with v48 include models and .ani blocks
 ]
 TF2_MAPS = ["ctf_2fort", "cp_badlands", "koth_harvest_final", "pl_upward"]
+SOURCE_SDK_2013_MODELS = [
+    "models/dog.mdl",  # include models, external ANI blocks, flexes
+    "models/alyx.mdl",  # skinned character and facial flexes
+    "models/props_c17/oildrum001.mdl",  # static prop, physics, materials
+]
+SOURCE_SDK_2013_MAPS = ["background01", "test_hardware"]
+SOURCE_SDK_2013_KNOWN_ERRORS = {
+    map_name: (
+        r"Image format conversion not supported",
+        r"Failed to load Skybox",
+        r"SkyboxException: Failed to load texture skybox/sky_lostcoast_hdrbk",
+    )
+    for map_name in SOURCE_SDK_2013_MAPS
+}
 CS2_MODELS = [
     "agents/models/ctm_sas/ctm_sas.vmdl_c",  # characters/models/ holds placeholder stubs
     "agents/models/tm_phoenix/tm_phoenix.vmdl_c",
@@ -97,6 +113,7 @@ class GameProfile:
     textures: tuple[str, ...] = ()
     default_animations: bool = False
     fingerprint_files: tuple[str, ...] = ()
+    install_fingerprint_files: tuple[str, ...] = ()
 
 
 GAME_PROFILES = {
@@ -108,6 +125,39 @@ GAME_PROFILES = {
         tuple(TF2_MODELS),
         tuple(TF2_MAPS),
         fingerprint_files=("tf2_misc_dir.vpk", "tf2_textures_dir.vpk"),
+    ),
+    243730: GameProfile(
+        "sdk2013_sp",
+        "Source SDK Base 2013 Singleplayer",
+        243730,
+        False,
+        tuple(SOURCE_SDK_2013_MODELS),
+        tuple(SOURCE_SDK_2013_MAPS),
+        default_animations=True,
+        fingerprint_files=("sourcetest_pak_dir.vpk",),
+        install_fingerprint_files=(
+            "bin/vtex.exe",
+            "bin/studiomdl.exe",
+            "hl2/hl2_misc_dir.vpk",
+            "hl2/hl2_textures_dir.vpk",
+        ),
+    ),
+    243750: GameProfile(
+        "sdk2013_mp",
+        "Source SDK Base 2013 Multiplayer",
+        243750,
+        False,
+        tuple(SOURCE_SDK_2013_MODELS),
+        tuple(SOURCE_SDK_2013_MAPS),
+        default_animations=True,
+        fingerprint_files=("sourcetest_pak_dir.vpk",),
+        install_fingerprint_files=(
+            "bin/vtex.exe",
+            "bin/studiomdl.exe",
+            "hl2mp/hl2mp_pak_dir.vpk",
+            "hl2/hl2_misc_dir.vpk",
+            "hl2/hl2_textures_dir.vpk",
+        ),
     ),
     730: GameProfile(
         "cs2",
@@ -152,6 +202,17 @@ def detect_profile(game: Path) -> tuple[GameProfile | None, int]:
         app_id = int(content_manager.steam_id)
     finally:
         content_manager.clean()
+    if app_id <= 0 and not is_source2(game):
+        from SourceIO.library.utils import kv1
+        from SourceIO.library.utils.kv1 import KV1Block
+        _, game_info = kv1.load(game / "gameinfo.txt").top()
+        if isinstance(game_info, KV1Block):
+            file_system = game_info.get("filesystem")
+            if isinstance(file_system, KV1Block):
+                try:
+                    app_id = int(file_system.get("steamappid", 0))
+                except (TypeError, ValueError):
+                    app_id = 0
     return GAME_PROFILES.get(app_id), app_id
 
 
@@ -169,6 +230,16 @@ def extract_resource(game: Path, resource: str, out_dir: Path) -> Path | None:
         return target
     finally:
         content_manager.clean()
+
+
+def extract_map(game: Path, name: str, out_dir: Path) -> Path | None:
+    if is_source2(game):
+        path = game / "maps" / f"{name}.vpk"
+        return path if path.is_file() else None
+    loose_path = game / "maps" / f"{name}.bsp"
+    if loose_path.is_file():
+        return loose_path
+    return extract_resource(game, f"maps/{name}.bsp", out_dir)
 
 
 def extract_model(game: Path, model: str, out_dir: Path) -> Path | None:
@@ -360,6 +431,18 @@ def validate_result(profile: GameProfile | None, kind: str, asset: str, result: 
         return
     if kind == "model":
         fail_unless(result, {"objects": 1, "meshes": 1}, message="model acceptance failed")
+        if profile and profile.key.startswith("sdk2013_"):
+            fail_unless(
+                result,
+                {"materials": 1, "images": 1},
+                message="Source SDK 2013 model dependencies missing",
+            )
+            if asset == "models/dog.mdl":
+                fail_unless(
+                    result,
+                    {"armatures": 1, "actions": 1},
+                    message="Source SDK 2013 animation acceptance failed",
+                )
         if profile and profile.key == "dota":
             fail_unless(result, {"materials": 1, "images": 1}, message="Dota model dependencies missing")
             if expect_actions and ("/heroes/" in asset or "/creeps/" in asset):
@@ -396,6 +479,12 @@ def validate_result(profile: GameProfile | None, kind: str, asset: str, result: 
         fail_unless(result, {"images": 1}, message="texture acceptance failed")
     elif kind == "map":
         fail_unless(result, {"objects": 1, "collections": 1}, message="map acceptance failed")
+        if profile and profile.key.startswith("sdk2013_"):
+            fail_unless(
+                result,
+                {"objects": 10, "materials": 1},
+                message="Source SDK 2013 map acceptance failed",
+            )
         if profile and profile.key == "dota":
             fail_unless(result, {"objects": 1000, "collections": 5}, message="Dota world acceptance failed")
             reports = result["details"].get("entity_reports", ())
@@ -416,6 +505,33 @@ def validate_result(profile: GameProfile | None, kind: str, asset: str, result: 
                         "Dota world entity acceptance failed: "
                         f"entities={entity_count}, handled/represented={represented}, unsupported={unsupported}"
                     )
+
+
+def classify_known_result(
+        profile: GameProfile | None,
+        kind: str,
+        asset: str,
+        result: dict,
+):
+    if (
+            result["status"] != "WARN"
+            or profile is None
+            or not profile.key.startswith("sdk2013_")
+            or kind != "map"
+    ):
+        return
+    patterns = SOURCE_SDK_2013_KNOWN_ERRORS.get(asset)
+    errors = result.get("errors", ())
+    if not patterns or not errors:
+        return
+    if all(
+            any(re.search(pattern, error, re.IGNORECASE | re.DOTALL) for pattern in patterns)
+            for error in errors
+    ):
+        result["status"] = "KNOWN"
+        result["message"] = (
+            "known Source SDK 2013 sourcetest texture/skybox limitations"
+        )
 
 
 def file_fingerprint(path: Path) -> dict:
@@ -448,17 +564,34 @@ def installation_report(game: Path, profile: GameProfile | None, app_id: int) ->
     manifest = common.parent / f"appmanifest_{app_id}.acf" if common is not None else None
     manifest_fingerprint = file_fingerprint(manifest) if manifest is not None else {"exists": False}
     build_id = None
+    install_root = None
     if manifest is not None and manifest.is_file():
-        match = re.search(r'"buildid"\s+"(\d+)"', manifest.read_text(encoding="utf-8", errors="replace"))
+        manifest_text = manifest.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r'"buildid"\s+"(\d+)"', manifest_text)
         build_id = match.group(1) if match else None
+        install_match = re.search(r'"installdir"\s+"([^"]+)"', manifest_text)
+        if common is not None and install_match:
+            install_root = common / install_match.group(1)
     manifest_fingerprint["build_id"] = build_id
+    install_files = {}
+    if profile and install_root is not None:
+        for relative_path in profile.install_fingerprint_files:
+            install_files[relative_path] = file_fingerprint(
+                install_root.joinpath(*relative_path.split("/"))
+            )
 
     return {
         "game_path": str(game.resolve()),
         "app_id": app_id,
         "profile": profile.key if profile else None,
         "steam_manifest": manifest_fingerprint,
+        "install_path": (
+            str(install_root.resolve(strict=False))
+            if install_root is not None
+            else None
+        ),
         "files": files,
+        "install_files": install_files,
     }
 
 
@@ -499,7 +632,9 @@ def main() -> int:
     parser.add_argument("--material", action="append", default=[], help="game-relative .vmat_c path")
     parser.add_argument("--texture", action="append", default=[], help="game-relative .vtex_c path")
     parser.add_argument("--map", action="append", default=[], help="map name in <game>/maps")
-    parser.add_argument("--expect-profile", choices=("tf2", "cs2", "dota"),
+    parser.add_argument("--expect-profile", choices=tuple(
+        profile.key for profile in GAME_PROFILES.values()
+    ),
                         help="fail if installed-game detection selects a different profile")
     parser.add_argument("--include-animations", action="store_true",
                         help="also import the animations of each model's include models (Source 1), "
@@ -564,6 +699,7 @@ def main() -> int:
             expect_actions = (import_animations and path is not None and path.suffix == ".vmdl_c"
                               and source2_model_has_animations(path))
             validate_result(profile, "model", model, result, expect_actions=expect_actions)
+            classify_known_result(profile, "model", model, result)
             if path is not None:
                 save_review_copy(args.save_dir, "model", model, result)
             results.append(result)
@@ -585,30 +721,44 @@ def main() -> int:
                     if kind == "material":
                         result["details"].update(summarize_materials())
                 validate_result(profile, kind, asset, result)
+                classify_known_result(profile, kind, asset, result)
                 if path is not None:
                     save_review_copy(args.save_dir, kind, asset, result)
                 results.append(result)
                 report(result, asset)
 
         for name in maps:
-            path = args.game / "maps" / (f"{name}.vpk" if source2 else f"{name}.bsp")
-            if not path.is_file():
-                result = {"file": str(path), "status": "FAIL", "seconds": 0, "created": {}, "details": {},
+            path = extract_map(args.game, name, Path(tmp))
+            expected_path = args.game / "maps" / (
+                f"{name}.vpk" if source2 else f"{name}.bsp"
+            )
+            if path is None:
+                result = {"file": str(expected_path), "status": "FAIL", "seconds": 0, "created": {}, "details": {},
                           "errors": [], "error_count": 0, "message": "map not found"}
             else:
-                result = samples.run_one(path, "vmap_vpk" if source2 else "bsp", "filepath")
+                before_import = None if source2 else (lambda: mount(args.game))
+                result = samples.run_one(
+                    path,
+                    "vmap_vpk" if source2 else "bsp",
+                    "filepath",
+                    before_import=before_import,
+                )
                 if args.load_placeholders and result["status"] != "FAIL":
                     load_placeholders(result)
                 entity_reports = summarize_entity_reports()
                 if entity_reports:
                     result["details"]["entity_reports"] = entity_reports
             validate_result(profile, "map", name, result)
-            if path.is_file():
+            classify_known_result(profile, "map", name, result)
+            if path is not None and path.is_file():
                 save_review_copy(args.save_dir, "map", name, result)
             results.append(result)
-            report(result, f"maps/{path.name}")
+            report(result, f"maps/{name}{'.vpk' if source2 else '.bsp'}")
 
-    summary = {status: sum(1 for r in results if r["status"] == status) for status in ("PASS", "WARN", "FAIL")}
+    summary = {
+        status: sum(1 for result in results if result["status"] == status)
+        for status in ("PASS", "KNOWN", "WARN", "FAIL")
+    }
     print(f"GAME SUMMARY {summary}")
     performance = perf_sampler.snapshot_stats()
     if performance["enabled"]:
@@ -617,7 +767,7 @@ def main() -> int:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         report_data = {
             "schema": "sourceio.game-import-report",
-            "schema_version": 1,
+            "schema_version": 2,
             "installation": installation_report(args.game, profile, app_id),
             "selection": {
                 "models": models,

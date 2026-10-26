@@ -173,8 +173,11 @@ required by Valve's VTEX, and verifies VTF, MDL, VVD, and DX90 VTX outputs.
 Compiler failures leave editable files and write
 `sourceio/logs/<asset>.compile.log` below the SDK content root.
 
-The installed TF2 gate verifies positions, UVs, winding, normals, material
-identity, and texture data after official compilation and SourceIO re-import.
+The installed TF2 gate and both Source SDK Base 2013 profiles verify positions,
+UVs, winding, normals, material identity, and texture data after official
+compilation and SourceIO re-import. The SDK 2013 gate compiles into disposable
+mod/content roots; it never writes generated files into Valve's shipped game
+directories.
 
 This is a static-prop workflow. Skeletal models, animations, physics, LODs,
 bodygroups, skins, flexes, and map authoring are outside the current slice.

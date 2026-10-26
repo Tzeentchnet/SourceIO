@@ -8,7 +8,7 @@ Commands and developer setup belong in
 Target: **Blender 5.2.2 LTS only.** Blender 4.x compatibility is intentionally
 not maintained.
 
-Last reconciled: **2026-10-24**.
+Last reconciled: **2026-10-25**.
 
 ## Automated baseline
 
@@ -16,7 +16,7 @@ Last reconciled: **2026-10-24**.
 |---|---|
 | Renamed-module smoke | 635/635 modules; register/unregister/register passed |
 | Public sample imports | 87 pass, 6 known, 0 warn, 0 fail |
-| Non-Blender tests | 567 passed, 5 skipped |
+| Non-Blender tests | 574 passed, 7 skipped |
 | Blender tests excluding skins | 276 passed, 2 skipped, 17 warnings, 51 subtests |
 | Blender skin tests | 8 passed |
 | Windows extension package | Built successfully |
@@ -38,6 +38,7 @@ formats without representative public samples.
 | Profile | Current gate |
 |---|---|
 | Team Fortress 2 | 13 representative model/map assets pass; all placeholders load on `ctf_2fort` (2,320), `cp_badlands` (1,308), `koth_harvest_final` (673), and `pl_upward` (1,332) |
+| Source SDK Base 2013 | Singleplayer and Multiplayer each import three representative HL2 models; both bundled `sourcetest` maps complete with only their two explicitly classified texture/skybox limitations; combined result is 6 pass, 4 known, 0 warn, 0 fail |
 | Counter-Strike 2 | 12 representative model/map assets pass; `de_dust2` loads 698/698 placeholders and `de_nuke` loads 1,108/1,108; nine default models import all requested graph clips |
 | Dota 2 | 7 representative assets pass with app ID 570; the main world loads 5,311/5,311 placeholders with expected excluded destruction layers |
 
@@ -51,11 +52,28 @@ each game.
 | Dota 2 Workshop Tools | Generated static model/material/texture fixture compiles and re-imports |
 | CS2 Workshop Tools | Three format/contract tests plus one Blender-authored base-color/normal/roughness/metalness/alpha-test round trip pass |
 | TF2 VTEX and StudioMDL | Source 1 toolchain contract and Blender-authored compile/recompile round trip pass; MDL/VVD/VTX/VTF outputs re-import |
+| Source SDK Base 2013 VTEX and StudioMDL | Singleplayer and Multiplayer compile, re-import, and manifest-recompile the same disposable generated fixture; each produces verified MDL v48, VVD, DX90 VTX, and two VTF outputs |
 | TF2 `mksheet` and VTEX | All 273 shipped sprite-sheet VTFs preserve sequences, timing, frame pixels, and original-sheet bytes through the supported rebuild paths |
 
 Generated fixtures and reports may be committed only when redistributable.
 Proprietary game files, tool binaries, compiled outputs, and disposable addons
 remain local.
+
+### Source SDK Base 2013 reproducibility evidence
+
+| Profile | App ID | Build ID | `vtex.exe` SHA-256 | `studiomdl.exe` SHA-256 |
+|---|---:|---:|---|---|
+| Singleplayer | 243730 | 267858 | `301930cc821ede0cf0e9fa167a42e877b1f08af509536fcf744acd2c1c662e89` | `cbd54cbea25f122369626dc781461929b20a8a6a63de804716dd6ca2e1fd917b` |
+| Multiplayer | 243750 | 17413218 | `b90b97bc105048ee6d8dd3dda08d87e22665589c533d18eb7756dab68c091c0d` | `85463cd4dc40530a8bd49f0a68b82848f0df639137397df2f79ffda2aaed1e5c` |
+
+The consolidated `sourceio.source-sdk-2013-gate` report passed both profiles,
+six compiler steps, six recompile steps, two Blender geometry/material
+re-imports, and ten installed-game imports, then verified temporary-workspace
+removal. The local report was 62,628 bytes with SHA-256
+`13e74d5c97bcfaa498a9be0be25ef055b1c3580f4cfde6d78ad97231246c46a3`.
+Its four `KNOWN` map results are limited to the bundled `sourcetest` maps'
+missing Lost Coast HDR skybox and unsupported image conversion; no unexpected
+warnings or failures were accepted.
 
 ## Import performance evidence
 

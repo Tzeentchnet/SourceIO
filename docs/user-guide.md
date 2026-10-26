@@ -127,7 +127,8 @@ Important options:
 Source VTF particle textures can contain multiple frames plus a sprite-sheet
 resource describing animation sequences, frame timing, and atlas rectangles.
 SourceIO preserves this metadata and can export everything needed to edit and
-rebuild the texture with Valve's `mksheet` and `vtex`.
+rebuild the texture with Valve's `mksheet` and `vtex`. Material imports backed
+by a `.tth`/`.ttz` pair preserve the same metadata after reconstructing the VTF.
 
 ### Preserved metadata
 

@@ -30,6 +30,7 @@ from ...library.shared.content_manager import ContentManager
 from ...library.source2 import CompiledModelResource
 from ...library.utils import Buffer
 from ...library.utils.tiny_path import TinyPath
+from .flex_resolver import flex_controller_objects
 
 
 def get_parent(collection):
@@ -569,7 +570,7 @@ class SOURCEIO_PT_Utils(UITools, Panel):
     def poll(cls, context):
         obj: bpy.types.Object = context.active_object
         return obj and (obj.get("entity_data", None) or obj.get("skin_groups", None)
-                        or len(getattr(obj, "flex_controllers", ())) > 0)
+                        or bool(flex_controller_objects(obj)))
 
 
 # noinspection PyPep8Naming

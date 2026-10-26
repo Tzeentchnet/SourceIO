@@ -16,9 +16,16 @@ from SourceIO.blender_bindings.operators.flex_operators import (
     _FlexDragSession,
     _flex_drag_terminal_action,
     balance_multipliers,
+    SOURCEIO_OT_KeyAllFlexControllers,
     SOURCEIO_OT_FlexSliderHandler,
+    SOURCEIO_PT_FlexControlPanel,
     stereo_delta_values,
 )
+from SourceIO.blender_bindings.operators.flex_resolver import (
+    flex_controller_objects,
+    resolve_flex_object,
+)
+from SourceIO.blender_bindings.operators.shared_operators import SOURCEIO_PT_Utils
 from SourceIO.library.models.mdl.flex_expressions import FetchController, Mul
 
 _registered_here = False
@@ -156,6 +163,58 @@ class FlexControllerTests(unittest.TestCase):
         self.assertFalse(session.matches_context(SimpleNamespace(object=other)))
         self.assertFalse(session.matches_context(SimpleNamespace(object=None)))
         bpy.data.objects.remove(other, do_unlink=True)
+
+    def test_armature_resolves_its_unique_flex_child(self):
+        armature = bpy.data.objects.new('rig', bpy.data.armatures.new('rig'))
+        bpy.context.scene.collection.objects.link(armature)
+        self.obj.parent = armature
+
+        self.assertEqual([obj.as_pointer() for obj in flex_controller_objects(armature)],
+                         [self.obj.as_pointer()])
+        self.assertEqual(resolve_flex_object(armature).as_pointer(), self.obj.as_pointer())
+        self.assertTrue(SOURCEIO_PT_Utils.poll(SimpleNamespace(active_object=armature)))
+        self.assertTrue(SOURCEIO_PT_FlexControlPanel.poll(SimpleNamespace(object=armature)))
+
+        session = _FlexDragSession(self.obj, self.obj.flex_controllers['cs'], bpy.context.scene)
+        self.assertTrue(session.matches_context(SimpleNamespace(object=armature)))
+
+    def test_ambiguous_armature_requires_direct_mesh_selection(self):
+        armature = bpy.data.objects.new('rig', bpy.data.armatures.new('rig'))
+        bpy.context.scene.collection.objects.link(armature)
+        self.obj.parent = armature
+
+        mesh = bpy.data.meshes.new('other_face')
+        mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+        other = bpy.data.objects.new('other_face', mesh)
+        bpy.context.scene.collection.objects.link(other)
+        other.parent = armature
+        other.shape_key_add(name='Basis')
+        other.shape_key_add(name='a_b')
+        create_flex_drivers(other, fake_mdl())
+
+        self.assertEqual(len(flex_controller_objects(armature)), 2)
+        self.assertIsNone(resolve_flex_object(armature))
+        self.assertTrue(SOURCEIO_PT_Utils.poll(SimpleNamespace(active_object=armature)))
+        self.assertTrue(SOURCEIO_PT_FlexControlPanel.poll(SimpleNamespace(object=armature)))
+        self.assertFalse(SOURCEIO_OT_KeyAllFlexControllers.poll(SimpleNamespace(object=armature)))
+
+    def test_armature_active_operators_target_the_flex_child(self):
+        armature = bpy.data.objects.new('rig', bpy.data.armatures.new('rig'))
+        bpy.context.scene.collection.objects.link(armature)
+        self.obj.parent = armature
+        bpy.context.view_layer.objects.active = armature
+
+        data = self.obj.data
+        data[self.flexmap['ca']] = 0.5
+        with bpy.context.temp_override(object=armature):
+            self.assertEqual(bpy.ops.sourceio.key_all_flex_controllers(), {'FINISHED'})
+            self.assertEqual(bpy.ops.sourceio.reset_flex_controllers(), {'FINISHED'})
+
+        curves = data.animation_data.action.layers[0].strips[0].channelbags[0].fcurves
+        expected = {f'["{prop_name}"]'
+                    for slider in self.obj.flex_controllers for prop_name in slider.prop_names()}
+        self.assertEqual({curve.data_path for curve in curves}, expected)
+        self.assertEqual(data[self.flexmap['ca']], 0.0)
 
     def test_stereo_commit_keys_only_changed_side(self):
         data, scene = self.obj.data, bpy.context.scene

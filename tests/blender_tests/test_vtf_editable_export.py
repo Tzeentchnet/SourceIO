@@ -10,11 +10,11 @@ from types import SimpleNamespace
 import bpy
 
 from SourceIO.blender_bindings.operators.source1_operators import SOURCEIO_OT_VTFExportEditable
-from SourceIO.blender_bindings.source1.vtf import import_texture
+from SourceIO.blender_bindings.source1.vtf import import_texture, import_texture_tth
 from SourceIO.library.source1.vtf.editable_export import export_vtf_for_editing
 from SourceIO.library.source1.vtf.metadata import RESOURCE_SHEET
 from SourceIO.library.utils import MemoryBuffer, TinyPath
-from SourceIO.tests.texture_tests.vtf_fixtures import build_vtf, cell, checker, sheet_blob
+from SourceIO.tests.texture_tests.vtf_fixtures import build_tth_pair, build_vtf, cell, checker, sheet_blob
 
 
 class VTFEditableExportTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class VTFEditableExportTests(unittest.TestCase):
 
     def tearDown(self):
         for image in list(bpy.data.images):
-            if image.get("full_path") == "puff.vtf":
+            if image.get("full_path") in {"puff.vtf", "puff_tth.vtf"}:
                 bpy.data.images.remove(image)
         self.temp.cleanup()
 
@@ -44,6 +44,23 @@ class VTFEditableExportTests(unittest.TestCase):
         stored = json.loads(image["sourceio_vtf_metadata"])
         self.assertEqual(stored["sprite_sheet_version"], 1)
         self.assertEqual([sequence["clamp"] for sequence in stored["sprite_sheet"]["sequences"]], [False, True])
+
+    def test_tth_import_records_the_reconstructed_vtf_metadata(self):
+        direct = self.import_puff()
+        tth, ttz = build_tth_pair(self.vtf)
+        image = import_texture_tth(
+            TinyPath("puff_tth.vtf"),
+            MemoryBuffer(tth),
+            MemoryBuffer(ttz),
+        )
+
+        self.assertEqual(image["sourceio_vtf_version"], direct["sourceio_vtf_version"])
+        self.assertEqual(image["sourceio_vtf_flags"], direct["sourceio_vtf_flags"])
+        self.assertEqual(image["sourceio_vtf_frames"], direct["sourceio_vtf_frames"])
+        self.assertEqual(
+            json.loads(image["sourceio_vtf_metadata"]),
+            json.loads(direct["sourceio_vtf_metadata"]),
+        )
 
     def test_operator_matches_the_direct_vtf_export(self):
         image = self.import_puff()

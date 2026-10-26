@@ -6,6 +6,7 @@ from bpy.types import Operator
 from bpy_extras import anim_utils
 
 from ...logger import SourceLogMan
+from .flex_resolver import flex_controller_objects, resolve_flex_object
 from .shared_operators import UITools
 
 # Adapted from REDxEYE/SourceIO#477 (hisprofile). Each entry of Object.flex_controllers drives one or two
@@ -21,6 +22,17 @@ _resetting_flex_delta = False
 
 def get_frame(context):
     return context.scene.frame_float if context.scene.show_subframe else context.scene.frame_current
+
+
+def _flex_object_or_report(operator, context):
+    candidates = flex_controller_objects(context.object)
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        operator.report({'ERROR'}, 'Multiple flex-enabled child meshes; select a mesh directly')
+    else:
+        operator.report({'ERROR'}, 'No active flex-enabled mesh')
+    return None
 
 
 def has_key(context, obj, prop_name) -> bool:
@@ -107,7 +119,7 @@ class _FlexDragSession:
             return False
 
     def matches_context(self, context):
-        obj = context.object
+        obj = resolve_flex_object(context.object)
         if obj is None:
             return False
         try:
@@ -427,10 +439,12 @@ class SOURCEIO_OT_KeyFlexController(Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object is not None and context.object.type == 'MESH'
+        return resolve_flex_object(context.object) is not None
 
     def execute(self, context):
-        obj = context.object
+        obj = _flex_object_or_report(self, context)
+        if obj is None:
+            return {'CANCELLED'}
         slider = obj.flex_controllers.get(self.flex_controller)
         if slider is None:
             self.report({'ERROR'}, f'No flex controller "{self.flex_controller}"')
@@ -454,10 +468,12 @@ class SOURCEIO_OT_KeyAllFlexControllers(Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object is not None and context.object.type == 'MESH'
+        return resolve_flex_object(context.object) is not None
 
     def execute(self, context):
-        obj = context.object
+        obj = _flex_object_or_report(self, context)
+        if obj is None:
+            return {'CANCELLED'}
         frame = get_frame(context)
         for slider in obj.flex_controllers:
             for prop_name in slider.prop_names():
@@ -473,10 +489,14 @@ class SOURCEIO_OT_ResetFlexControllers(Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object is not None and context.object.type == 'MESH' and 'flexmap' in context.object.data
+        obj = resolve_flex_object(context.object)
+        return obj is not None and 'flexmap' in obj.data
 
     def execute(self, context):
-        data = context.object.data
+        obj = _flex_object_or_report(self, context)
+        if obj is None:
+            return {'CANCELLED'}
+        data = obj.data
         flexmap = data['flexmap'].to_dict()
         flex_scale = flexmap.get('flex_scale')
         auto_key = context.scene.tool_settings.use_keyframe_insert_auto
@@ -498,12 +518,16 @@ class SOURCEIO_PT_FlexControlPanel(UITools, bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        obj = context.object
-        return obj is not None and obj.type == 'MESH' and len(obj.flex_controllers) > 0
+        return bool(flex_controller_objects(context.object))
 
     def draw(self, context):
         layout = self.layout
-        obj = context.object
+        candidates = flex_controller_objects(context.object)
+        if len(candidates) != 1:
+            layout.label(text='Multiple flex-enabled child meshes.', icon='ERROR')
+            layout.label(text='Select a mesh directly to edit its controllers.')
+            return
+        obj = candidates[0]
 
         if obj.data.library:
             layout.label(text='Object data is linked.')
@@ -534,7 +558,7 @@ class SOURCEIO_UL_FlexControllerList(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text='')
             return
-        obj = context.object
+        obj = data
         if item.split:
             keyed = has_key(context, obj, item.R) or has_key(context, obj, item.L)
         else:

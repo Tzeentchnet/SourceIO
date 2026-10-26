@@ -1,5 +1,6 @@
 """Synthetic VTF files for the VTF metadata and editable-export tests."""
 import struct
+import zlib
 
 import numpy as np
 
@@ -11,6 +12,13 @@ DXT5 = 15
 DXT1_ONEBITALPHA = 20
 ATI2N = 37
 NO_DATA = 0x02
+
+
+def build_tth_pair(vtf, split=80):
+    split = min(split, len(vtf))
+    header = vtf[:split]
+    tth = b"TTH" + b"\0" * 3 + b"\0\0" + len(header).to_bytes(4, "little") + b"\0" * 8 + header
+    return tth, zlib.compress(vtf[split:])
 
 
 def sheet_blob(version, sequences):

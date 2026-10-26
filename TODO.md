@@ -39,14 +39,9 @@ conversion remains unsupported.
 - [ ] Add evidence-backed handlers for the remaining CS2 entities currently
       reported as unsupported: `env_particle_glow`, `hostage_entity`,
       `point_perfcapture`, and the team-introduction entities.
-- [ ] Represent Source 2 animation-event durations and useful payload fields in
-      Blender instead of exposing only start-frame markers.
 - [ ] Discover weapon viewmodel clips reached through AnimGraph
       `m_externalGraphSlots`; first identify the authoritative item-schema or
       weapon-vdata relationship.
-- [ ] Make the flex-controller panel and operators resolve the flexed child mesh
-      when its armature is active.
-- [ ] Preserve VTF metadata on TTH/TTZ texture imports.
 
 ## Performance candidates
 

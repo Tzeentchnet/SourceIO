@@ -12,6 +12,7 @@ resource variation is understood.
 | `.md3` | Quake III model | Import | Uses the model importer. |
 | `.bsp` | Compiled GoldSrc or Source map | Import | GoldSrc and Source maps use separate importers. |
 | `.vtf` | Source texture | Import and direct export | Import preserves sprite sheets and metadata. External-edit export writes image data, `.sht`, `.mks`, and JSON. |
+| `.tth` / `.ttz` | Split compressed VTF texture | Material import | Reconstructs the VTF and preserves its metadata on the Blender image. |
 | `.vmt` | Source material or skybox | Import | Skybox import reads all six faces. |
 | `.smd`, `.qc`, `.vmt`, `.tga` | Editable Source 1 static asset | Authoring output | Optional compilation through official VTEX and StudioMDL tools. |
 

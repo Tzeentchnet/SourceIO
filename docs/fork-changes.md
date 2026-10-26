@@ -91,7 +91,8 @@ Current reproducible benchmark evidence is maintained in
   the default.
 - Added Source 1 overlays clipped to their target faces and displacements.
 - Added bone collections and role/side colors for common Source MDL versions.
-- Added a flex-controller panel with stereo controls, keying, and reset.
+- Added a flex-controller panel with stereo controls, keying, reset, and access
+  through the active armature when it has one flex-enabled child mesh.
 - Imports Source 1 include-model animations by default when animation import is
   enabled.
 - Supports one action per animation or compact actions grouped by include
@@ -101,7 +102,7 @@ Current reproducible benchmark evidence is maintained in
 ## VTF editing
 
 - Preserves VTF headers, flags, frames, sprite-sheet sequences, and resource
-  metadata on Blender images.
+  metadata on Blender images, including VTFs reconstructed from TTH/TTZ pairs.
 - Exports complete images, individual frames, `.sht`, `mksheet` `.mks`, and
   JSON metadata for external editing.
 - Handles animated and HDR VTF data.

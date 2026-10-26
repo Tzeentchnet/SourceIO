@@ -158,7 +158,7 @@ def check_texture_cache(
         return None
     image = None
     base_path = TinyPath(bpy.context.scene.TextureCachePath) / texture_path
-    for extension in ("png", "exr", "hdr", "tga", "jpg", "jpeg", "webp"):
+    for extension in ("dds", "png", "exr", "hdr", "tga", "jpg", "jpeg", "webp"):
         full_path = _variant_path(base_path, extension, cache_identity)
         if full_path.exists():
             image = bpy.data.images.load(full_path.as_posix(), check_existing=True)

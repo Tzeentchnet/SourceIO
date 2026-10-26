@@ -30,10 +30,11 @@ upstream project.
 
 Compared with the upstream baseline this fork started from, it adds:
 
-- **Faster imports:** indexed material/texture caches, byte-preserving texture
-  paths, faster PNG staging, and batched Source 2 aggregate models. Measured
-  warm-cache gates improved TF2 `ctf_2fort` by 49% and fully loaded CS2
-  `de_dust2` by 24%.
+- **Faster imports:** indexed material/texture caches, default-enabled direct
+  DDS staging for compatible Source 1 VTFs, faster PNG staging, and batched
+  Source 2 aggregate models. Measured warm-cache gates improved TF2
+  `ctf_2fort` by 49%, with DDS staging cutting a later controlled A/B by another
+  29%, and fully loaded CS2 `de_dust2` by 24%.
 - **Broader Source 2 coverage:** animation groups and graph clips, more texture
   formats and subresources, VSND audio, CS2 map lighting/skyboxes, and extensive
   CS2 and Dota 2 shader support.

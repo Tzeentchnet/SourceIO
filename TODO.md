@@ -54,9 +54,6 @@ Measure each candidate on a representative installed asset before changing
 behavior. Retain before/after JSON timing reports and verify identical imported
 output counts.
 
-- [ ] Evaluate wrapping compatible DXT1/DXT5 VTF payloads as DDS to avoid decode,
-      PNG encode, and PNG decode. Verify orientation and BC5/ATI2N normal handling
-      before enabling it.
 - [ ] Batch Source 1 BSP displacements by material and use bulk color-attribute
       writes.
 - [ ] Cache repeated VMT property evaluation per shader-handler instance after

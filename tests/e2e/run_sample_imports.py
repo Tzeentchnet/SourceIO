@@ -171,8 +171,12 @@ def run_one(path: Path, operator: str, mode: str, before_import=None, options=No
         except Exception as ex:
             pixel_error, message = float("inf"), f"pixel check failed: {ex}"
         details["pixel_error"] = pixel_error
-        # 8-bit rounding of LDR values, or half-float precision of HDR values.
-        if pixel_error is not None and pixel_error > 2.5 / 255:
+        # BC endpoint expansion differs slightly between Blender's DDS decoder and VTFLib: RGB may differ by
+        # 7/255 and interpolated DXT5 alpha by 1/255. Other LDR paths keep the tighter 8-bit rounding tolerance.
+        packed = created["images"][0].packed_file
+        is_dds = packed is not None and bytes(packed.data[:4]) == b"DDS "
+        tolerance = (7.5 if is_dds else 2.5) / 255
+        if pixel_error is not None and pixel_error > tolerance:
             status, message = "FAIL", message or f"pixels differ from the decoded texture by {pixel_error:.4g}"
 
     errors = list(dict.fromkeys(captured_errors))

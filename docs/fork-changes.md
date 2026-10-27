@@ -22,8 +22,8 @@ individual changes.
   scans.
 - 8-bit texture data remains byte-based through decode and PNG staging.
 - Normal-map and SSBump conversion happens before image creation.
-- Temporary import PNGs use Blender's bundled Pillow at a measured fast
-  compression level.
+- Still-image PNG staging and cached animation frames use Blender's bundled
+  Pillow at a measured fast compression level.
 - Single-frame 2D DXT1/DXT5 VTFs keep their compressed mip payloads through
   default-enabled direct DDS staging; the add-on preference can force decoded
   PNG, and transformed normals and unsupported layouts always retain that path.

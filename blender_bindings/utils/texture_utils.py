@@ -294,7 +294,7 @@ def create_and_cache_image_sequence(texture_path: TinyPath, frames: list[np.ndar
             first_frame_path = frame_path
         if frame_path.exists():
             continue
-        save_png((frame.ravel() * 255).astype(np.uint8).tobytes(), width, height, channels, frame_path)
+        _save_png_fast((frame.ravel() * 255).astype(np.uint8).tobytes(), width, height, channels, frame_path)
 
     image = bpy.data.images.load(first_frame_path.as_posix(), check_existing=True)
     image.source = 'SEQUENCE'

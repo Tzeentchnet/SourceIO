@@ -67,3 +67,11 @@ class Eyes(Source1ShaderBase):
         self.do_arrange = False
         bpy.data.materials.remove(old_material)
         return new_eye_material
+
+
+class Eyeball(Eyes):
+    SHADER = 'eyeball'
+
+
+class SDKEyeball(Eyes):
+    SHADER = 'sdk_eyeball'

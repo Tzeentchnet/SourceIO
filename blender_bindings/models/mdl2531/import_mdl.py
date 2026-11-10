@@ -9,6 +9,7 @@ from mathutils import Euler, Matrix, Quaternion, Vector
 from ....library.shared.content_manager import ContentManager
 from ....library.utils.path_utilities import path_stem
 from ....library.models.mdl.structs.header import StudioHDRFlags
+from ....library.models.mdl.materials import get_model_material_for_slot
 from ....library.models.mdl.structs.model import ModelV2531
 from ....library.models.mdl.v2531.mdl_file import MdlV2531
 from ....library.models.mdl.v36.mdl_file import MdlV36
@@ -119,7 +120,8 @@ def import_model(content_manager: ContentManager, mdl: MdlV2531, vtx: Vtx,
 
             material_remapper = np.zeros((material_indices_array.max() + 1,), dtype=np.uint32)
             for mat_id in np.unique(material_indices_array):
-                mat_name = mdl.materials[mat_id].name
+                model_material = get_model_material_for_slot(mdl, mat_id)
+                mat_name = model_material.name
                 material = get_or_create_source1_material(mat_name, full_material_names[mat_name], use_bvlg)
                 material_remapper[mat_id] = add_material(material, mesh_obj)
 

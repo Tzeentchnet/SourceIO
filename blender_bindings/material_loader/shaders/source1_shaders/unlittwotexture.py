@@ -147,3 +147,7 @@ class UnlitTwoTexture(Source1ShaderBase):
             surface_output = culling.outputs[0]
 
         self.connect_nodes(surface_output, material_output.inputs['Surface'])
+
+
+class SDKUnlitTwoTexture(UnlitTwoTexture):
+    SHADER = 'sdk_unlittwotexture'

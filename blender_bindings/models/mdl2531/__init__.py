@@ -8,6 +8,7 @@ from ...shared.exceptions import RequiredFileNotFound
 from ...shared.model_container import ModelContainer
 from ...source1.phy import import_physics
 from ....library.models.mdl.v2531 import MdlV2531
+from ....library.models.mdl.validation import validate_model_companions
 from ....library.models.phy.phy import Phy
 from ....library.models.vtx import open_vtx
 from ....library.models.vvd import Vvd
@@ -30,6 +31,7 @@ def import_mdl2531(model_path: TinyPath, buffer: Buffer,
         logger.error(f"Could not find VTX file for {model_path}")
         raise RequiredFileNotFound(f"Could not find VTX file for {model_path}")
     vtx = open_vtx(vtx_buffer)
+    validate_model_companions(mdl, vtx, model_path=model_path)
     if options.import_textures:
         try:
             import_materials(content_manager, mdl, use_bvlg=options.use_bvlg)

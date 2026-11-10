@@ -16,6 +16,7 @@ from ...operators.import_settings_base import ModelOptions
 from ...utils.bpy_utils import add_material, ActionCurveFactory
 from ...utils.fast_mesh import FastMesh, set_vertex_weights
 from ....library.models.mdl.structs.header import StudioHDRFlags
+from ....library.models.mdl.materials import get_model_material_for_slot
 from ....library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
 from ....library.models.mdl.flex_expressions import *
 from ....library.models.mdl.v49.mdl_file import MdlV49
@@ -93,13 +94,14 @@ def import_model(content_manager: ContentManager, mdl: MdlV49, vtx: Vtx, vvd: Vv
 
             material_remapper = np.zeros((material_indices_array.max() + 1,), dtype=np.uint32)
             for mat_id in np.unique(material_indices_array):
-                mat_name = mdl.materials[mat_id].name
+                model_material = get_model_material_for_slot(mdl, mat_id)
+                mat_name = model_material.name
                 material = get_or_create_source1_material(
                     mat_name,
                     full_material_names[mat_name],
                     options.use_bvlg,
                 )
-                mdl.materials[mat_id].bpy_material = material
+                model_material.bpy_material = material
                 material_remapper[mat_id] = add_material(material, mesh_obj)
 
             try:

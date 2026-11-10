@@ -5,6 +5,8 @@ from ...utils import Buffer, MemoryBuffer
 from ...shared.content_manager import ContentManager
 from ..vmt import VMT
 from ...utils import TinyPath
+from .dds import _image_offset
+from .metadata import read_vtf_metadata
 from ...utils.pylib.vtf import load_vtf_texture
 from ....logger import SourceLogMan
 from ...utils.thirdparty.equilib.cube2equi_numpy import run as convert_to_eq
@@ -12,6 +14,66 @@ from ...utils.pylib.vtf import load_vtf_texture_frames
 
 log_manager = SourceLogMan()
 logger = log_manager.get_logger('Source1::VTF')
+
+_RGBA16161616F = 24
+_TEXTUREFLAGS_ENVMAP = 0x00004000
+
+
+def _decode_rgba16161616f(data: bytes) -> tuple[list[np.ndarray], int, int] | None:
+    metadata = read_vtf_metadata(data)
+    header = metadata.header
+    if header.image_format != _RGBA16161616F:
+        return None
+    if header.width <= 0 or header.height <= 0 or header.depth <= 0:
+        raise ValueError(
+            f"VTF dimensions must be positive, got {header.width}x{header.height}x{header.depth}"
+        )
+    if header.frame_count <= 0:
+        raise ValueError(f"VTF frame count must be positive, got {header.frame_count}")
+    if not 1 <= header.mipmap_count <= max(header.width, header.height, header.depth).bit_length():
+        raise ValueError(
+            f"VTF declares {header.mipmap_count} mip levels for "
+            f"{header.width}x{header.height}x{header.depth}"
+        )
+
+    image_offset = _image_offset(metadata, len(data))
+    if image_offset is None:
+        raise ValueError("VTF high-resolution image offset is unavailable")
+
+    face_count = 1
+    if header.flags & _TEXTUREFLAGS_ENVMAP:
+        face_count = 7 if header.version < (7, 5) and header.first_frame != 0xFFFF else 6
+
+    cursor = image_offset
+    top_level_offset = None
+    top_level_size = None
+    top_level_depth = None
+    for mip in range(header.mipmap_count - 1, -1, -1):
+        width = max(1, header.width >> mip)
+        height = max(1, header.height >> mip)
+        depth = max(1, header.depth >> mip)
+        image_size = width * height * 4 * np.dtype("<f2").itemsize
+        level_size = image_size * header.frame_count * face_count * depth
+        end = cursor + level_size
+        if end > len(data):
+            raise ValueError(
+                f"VTF image data is truncated at mip {mip}: needs {level_size} bytes, "
+                f"has {max(0, len(data) - cursor)}"
+            )
+        if mip == 0:
+            top_level_offset = cursor
+            top_level_size = image_size
+            top_level_depth = depth
+        cursor = end
+
+    frames = []
+    frame_stride = top_level_size * face_count * top_level_depth
+    pixel_count = header.width * header.height * 4
+    for frame in range(header.frame_count):
+        offset = top_level_offset + frame * frame_stride
+        pixels = np.frombuffer(data, dtype="<f2", count=pixel_count, offset=offset)
+        frames.append(pixels.astype(np.float32).reshape(header.height, header.width, 4))
+    return frames, header.height, header.width
 
 
 def load_texture(file_object, normalized: bool = True):
@@ -31,7 +93,15 @@ def load_texture(file_object, normalized: bool = True):
             rgba_data = np.frombuffer(pixel_data, dtype=np.uint8).reshape(height, width, 4).astype(np.float32) / 255
         return rgba_data, height, width
     except Exception as ex:
-        logger.error('Caught exception "{}" '.format(ex))
+        try:
+            fallback = _decode_rgba16161616f(data)
+        except Exception as fallback_ex:
+            logger.error(f'Caught exception "{ex}"; RGBA16161616F fallback failed: {fallback_ex}')
+        else:
+            if fallback is not None:
+                frames, height, width = fallback
+                return frames[0], height, width
+            logger.error('Caught exception "{}" '.format(ex))
 
     return None, 0, 0
 
@@ -56,6 +126,13 @@ def load_texture_frames(file_object) -> tuple[list[np.ndarray], int, int]:
     try:
         frames, width, height, is_float = load_vtf_texture_frames(data)
     except Exception as ex:
+        try:
+            fallback = _decode_rgba16161616f(data)
+        except Exception as fallback_ex:
+            logger.error(f'Caught exception "{ex}"; RGBA16161616F fallback failed: {fallback_ex}')
+            return [], 0, 0
+        if fallback is not None:
+            return fallback
         logger.error('Caught exception "{}" '.format(ex))
         return [], 0, 0
 

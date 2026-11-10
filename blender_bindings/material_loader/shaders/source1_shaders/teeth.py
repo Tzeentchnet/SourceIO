@@ -24,3 +24,7 @@ class Teeth(Source1ShaderBase):
         basetexture = self.basetexture
         if basetexture:
             self.create_and_connect_texture_node(basetexture, shader.inputs['Color'], name='$basetexture')
+
+
+class SDKTeeth(Teeth):
+    SHADER = 'sdk_teeth'

@@ -16,6 +16,7 @@ from ...utils.bpy_utils import add_material, edit_armature
 from ...utils.fast_mesh import FastMesh, set_vertex_weights
 from ....library.models.mdl.structs.header import StudioHDRFlags
 from ....library.models.mdl.structs.local_animation import AnimDescFlags
+from ....library.models.mdl.materials import get_model_material_for_slot
 from ....library.models.mdl.v44.mdl_file import MdlV44
 from ....library.models.mdl.v44.vertex_animation_cache import preprocess_vertex_animation
 from ....library.models.mdl.flex_expressions import *
@@ -120,7 +121,8 @@ def import_model(content_manager: ContentManager, mdl: MdlV44, vtx: Vtx, vvd: Vv
 
             material_remapper = np.zeros((material_indices_array.max() + 1,), dtype=np.uint32)
             for mat_id in np.unique(material_indices_array):
-                mat_name = mdl.materials[mat_id].name
+                model_material = get_model_material_for_slot(mdl, mat_id)
+                mat_name = model_material.name
                 material = get_or_create_source1_material(
                     mat_name,
                     full_material_names[mat_name],

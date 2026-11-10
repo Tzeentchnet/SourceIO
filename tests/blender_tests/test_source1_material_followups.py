@@ -88,6 +88,32 @@ class MaterialIndexTests(_CleanFile):
         self.assertEqual(bvlg.name, "wall [BVLG]")
 
 
+class BetaShaderAliasTests(unittest.TestCase):
+    def test_beta_shader_aliases_reuse_supported_handlers(self):
+        aliases = {
+            'eyeball': 'eyes',
+            'sdk_cable': 'cable',
+            'sdk_eyeball': 'eyes',
+            'sdk_eyerefract': 'eyerefract',
+            'sdk_sprite': 'unlitgeneric',
+            'sdk_spritecard': 'unlitgeneric',
+            'sdk_teeth': 'teeth',
+            'sdk_unlittwotexture': 'unlittwotexture',
+            'sdk_water': 'water',
+            'sprite': 'unlitgeneric',
+            'spritecard': 'unlitgeneric',
+        }
+
+        for alias, base in aliases.items():
+            with self.subTest(alias=alias):
+                self.assertTrue(
+                    issubclass(
+                        ShaderRegistry._handlers[alias],
+                        ShaderRegistry._handlers[base],
+                    )
+                )
+
+
 class TextureIndexTests(_CleanFile):
     def _image(self, name, path, identity=""):
         image = bpy.data.images.new(name, 1, 1)

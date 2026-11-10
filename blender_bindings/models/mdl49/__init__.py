@@ -7,6 +7,7 @@ from ...shared.exceptions import RequiredFileNotFound
 from ...shared.model_container import ModelContainer
 from ...source1.phy import import_physics
 from ....library.models.mdl.v49 import MdlV49
+from ....library.models.mdl.validation import validate_model_companions
 from ....library.models.phy.phy import Phy
 from ....library.models.vtx import open_vtx
 from ....library.models.vvd import Vvd
@@ -62,6 +63,7 @@ def import_mdl49(model_path: TinyPath, buffer: Buffer,
     
     vtx = open_vtx(vtx_buffer)
     vvd = Vvd.from_buffer(vvd_buffer)
+    validate_model_companions(mdl, vtx, vvd, model_path=model_path)
 
     if options.import_textures:
         try:

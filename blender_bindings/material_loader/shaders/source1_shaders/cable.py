@@ -51,3 +51,7 @@ class Cable(Source1ShaderBase):
 
 class SplineRope(Cable):
     SHADER = 'splinerope'
+
+
+class SDKCable(Cable):
+    SHADER = 'sdk_cable'

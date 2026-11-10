@@ -43,6 +43,10 @@ targets. The authoring and reconstruction workflows are described in
 - Source 2 textures support common BC/DXT formats, BC6H HDR, wrapped
   PNG/JPEG/WEBP payloads, ETC2/EAC, integer formats, float formats, cubemaps,
   arrays, volume slices, and explicit mip selection.
+- Source 1 VTF import supports half-float `RGBA16161616F` HDR textures,
+  including legacy cubemap layouts.
+- Source 1 model import resolves mesh material slots through skin families and
+  recognizes legacy `SDK_*`, sprite, and eyeball shader aliases.
 - VCS metadata is used for packed-channel interpretation only when its meaning
   is unambiguous.
 - Source 1 model animation support covers common MDL versions and include

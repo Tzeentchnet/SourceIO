@@ -4,6 +4,7 @@ import numpy as np
 from ..shared.model_container import ModelContainer
 from ..utils.bpy_utils import get_new_unique_collection
 from ...library.models.mdl.structs.model import Model
+from ...library.models.mdl.materials import get_model_material_for_slot
 from ...library.models.vtx.v7.structs.lod import ModelLod as VtxModel
 from ...library.models.vtx.v7.structs.mesh import Mesh as VtxMesh
 from ...library.models.mdl import Mdl
@@ -153,7 +154,7 @@ def create_eyeballs(mdl: Mdl, armature: bpy.types.Object, mesh_obj: bpy.types.Ob
         con.target = armature
         con.subtarget = mdl.bones[eyeball.bone_index].name
         con.inverse_matrix.identity()
-        eye_material = mdl.materials[mesh.material_index].bpy_material
+        eye_material = get_model_material_for_slot(mdl, mesh.material_index).bpy_material
         eye_material['eye_source'] = eyeball_obj
         eyeball_obj['eye_material'] = eye_material
 

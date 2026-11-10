@@ -609,3 +609,7 @@ class Water(Source1ShaderBase):
             scaled = self._math_node('MULTIPLY', f'scroll speed {index}', speed)
             self.connect_nodes(scaled.outputs[0], offset.inputs[index])
         self.connect_nodes(offset.outputs[0], mapping_node.inputs['Location'])
+
+
+class SDKWater(Water):
+    SHADER = 'sdk_water'

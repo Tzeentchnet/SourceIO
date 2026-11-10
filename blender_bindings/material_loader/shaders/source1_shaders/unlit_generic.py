@@ -162,3 +162,19 @@ class SDKUnlitGeneric(UnlitGeneric):
     ``NotImplementedError`` from the abstract base and failed to import.
     """
     SHADER: str = 'sdk_unlitgeneric'
+
+
+class Sprite(UnlitGeneric):
+    SHADER = 'sprite'
+
+
+class SDKSprite(UnlitGeneric):
+    SHADER = 'sdk_sprite'
+
+
+class SpriteCard(UnlitGeneric):
+    SHADER = 'spritecard'
+
+
+class SDKSpriteCard(UnlitGeneric):
+    SHADER = 'sdk_spritecard'

@@ -77,6 +77,11 @@ shows meaningful cost.
       Source Filmmaker model.
 - [ ] Validate legacy ANIM `MorphChannel` segments and clip float curves against
       real Source 2 assets; synthetic coverage already exists.
+- [ ] Validate the implemented exact Source 1 `game_write` mount from upstream
+      [#484](https://github.com/REDxEYE/SourceIO/pull/484) against an installed
+      Half-Life 2: Episode Two corpus. Confirm an asset available only through
+      the writable root resolves and that real `gameinfo.txt` declaration
+      precedence is preserved.
 
 ## Authoring workflow decisions
 

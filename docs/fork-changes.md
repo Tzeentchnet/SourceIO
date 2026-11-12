@@ -1,4 +1,4 @@
-# Changes in this Blender 5.2 fork
+# Changes in SourceIO Forge
 
 This document summarizes the major differences from upstream
 [REDxEYE/SourceIO](https://github.com/REDxEYE/SourceIO). It is background, not a
@@ -84,9 +84,14 @@ Current reproducible benchmark evidence is maintained in
 
 - Added a Blender 5.2 Principled VertexLitGeneric path alongside the existing
   BlenderVertexLitGeneric option.
+- Preserved the legacy BlenderVertexLitGeneric node asset on Blender 5.2 and
+  added the Blender 5.3+ closure-based NPR graph, including light warp,
+  `$phongwarptexture`, and renderer-specific EEVEE/Cycles outputs.
 - Corrected phong masks, exponent mapping, Fresnel ranges, envmaps, tinting,
   additive materials, `$alpha`, `$selfillumtint`, detail colorspaces, and
   `$basealphaenvmapmask`.
+- Mounts exact Source 1 `game_write` search-path entries case-insensitively and
+  in `gameinfo.txt` declaration order.
 - Added opt-in Principled backface culling while keeping two-sided behavior as
   the default.
 - Added Source 1 overlays clipped to their target faces and displacements.

@@ -47,6 +47,12 @@ targets. The authoring and reconstruction workflows are described in
   including legacy cubemap layouts.
 - Source 1 model import resolves mesh material slots through skin families and
   recognizes legacy `SDK_*`, sprite, and eyeball shader aliases.
+- Source 1 `gameinfo.txt` loading mounts exact `game_write` entries
+  case-insensitively and preserves declared search-path precedence.
+- Source 1 `VertexLitGeneric` uses the Principled path by default. The opt-in
+  BlenderVertexLitGeneric/NPR path keeps the legacy `SIO-Diffuse` graph on
+  Blender 5.2 and uses Blender 5.3+ closure nodes for light warp,
+  `$phongwarptexture`, and renderer-specific EEVEE/Cycles outputs.
 - VCS metadata is used for packed-channel interpretation only when its meaning
   is unambiguous.
 - Source 1 model animation support covers common MDL versions and include

@@ -5,21 +5,24 @@ roadmap: all open planned or desired work belongs in [TODO.md](TODO.md).
 Commands and developer setup belong in
 [Development and testing](docs/development.md).
 
-Target: **Blender 5.2.2 LTS only.** Blender 4.x compatibility is intentionally
-not maintained.
+Targets: **Blender 5.2.2 LTS** as the minimum/baseline and **Blender 5.3.0**
+as an additional compatibility gate. Blender 4.x compatibility is
+intentionally not maintained.
 
-Last reconciled: **2026-10-25**.
+Last reconciled: **2026-11-11**.
 
 ## Automated baseline
 
 | Gate | Current result |
 |---|---|
-| Renamed-module smoke | 636/636 modules; register/unregister/register passed |
+| Renamed-module smoke | 639/639 modules; register/unregister/register passed on Blender 5.2.2 and 5.3.0 |
 | Public sample imports | 87 pass, 6 known, 0 warn, 0 fail |
-| Non-Blender tests | 591 passed, 7 skipped |
-| Blender tests excluding skins | 287 passed, 2 skipped, 17 warnings, 54 subtests |
-| Blender skin tests | 8 passed |
-| Windows extension package | Built successfully |
+| Non-Blender tests | 607 passed, 7 skipped |
+| Blender tests excluding skins | 301 passed, 2 skipped, 17 warnings, 67 subtests on each of Blender 5.2.2 and 5.3.0 |
+| Blender skin tests | 8 passed on each of Blender 5.2.2 and 5.3.0 |
+| Source 1 material/NPR focus | 44 passed, 30 subtests on each of Blender 5.2.2 and 5.3.0 |
+| Source 1 `game_write` focus | 1 passed |
+| Windows extension package | Built successfully with both versioned NPR node assets; ID `sourceio`, minimum Blender 5.2.0 |
 
 The end-to-end runners are the primary import gate:
 
@@ -32,6 +35,36 @@ The end-to-end runners are the primary import gate:
 
 Unit and Blender suites cover exact values, node wiring, safety boundaries, and
 formats without representative public samples.
+
+### Source 1 `game_write` and NPR compatibility
+
+Exact case-insensitive `game_write` search-path keys now mount in declared
+order. A synthetic provider fixture verifies mount ownership, precedence, and
+lookup of an asset available only through the writable root. An installed
+Half-Life 2: Episode Two corpus was unavailable, so that real-game gate remains
+open in [TODO.md](TODO.md).
+
+The Principled `VertexLitGeneric` path remains the default. The opt-in
+BlenderVertexLitGeneric/NPR path uses the unchanged legacy node asset on
+Blender 5.2 and the closure-based asset on Blender 5.3+, including
+`$phongwarptexture` and split EEVEE/Cycles material outputs. The persistent
+64x64 EXR regression test asserts finite, non-empty output and a greater than
+0.01 light-warp delta on both versions plus a greater than 0.01 phong-warp
+delta on Blender 5.3.
+
+Controlled 96x96 renders with generated textures produced:
+
+| Comparison | Blender 5.2.2 EEVEE | Blender 5.3.0 EEVEE | Cycles |
+|---|---:|---:|---:|
+| Dark versus bright light warp | 43/255 maximum delta; 8,191 changed channel values | 46/255 maximum delta; 8,282 changed channel values | No pixel delta on either version |
+| Light warp versus light + phong warp | No pixel delta | 105/255 maximum delta; 358 changed channel values | No pixel delta on either version |
+
+All render buffers were finite. The Blender 5.2 asset remains
+`e90765d52aef9847d9645366b20a41fce8af77bf5f7f954926d44e7e1a1f30da`;
+the Blender 5.3 asset is
+`d904803e57c5c5b0f4e1f252704e783cdb6269378664cac3b9eb2e8efc8183f9`.
+The Windows package contains both assets while retaining extension ID
+`sourceio` and minimum Blender version 5.2.0.
 
 ## Installed-game evidence
 

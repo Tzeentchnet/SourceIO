@@ -1,10 +1,13 @@
 """Material/texture lookup indexes, decode-time normal map conversion and the Principled VertexLitGeneric path."""
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import bpy
 import numpy as np
+from mathutils import Vector
 
 from SourceIO.blender_bindings.material_loader.material_loader import (
     ShaderRegistry,
@@ -261,6 +264,18 @@ class PrincipledVertexLitGenericTests(_CleanFile):
         image = bpy.data.images.new(name, 4, 4, alpha=True)
         image["sourceio_vtf_flags"] = f"0x{flags:08x}"
         self._textures[name] = image
+        return image
+
+    def _generated_texture(self, name, width, height, pixels):
+        image = bpy.data.images.new(name, width, height, alpha=True)
+        self._set_generated_pixels(image, pixels)
+        self._textures[name] = image
+        return image
+
+    @staticmethod
+    def _set_generated_pixels(image, pixels):
+        image.pixels.foreach_set(np.asarray(pixels, dtype=np.float32).reshape(-1))
+        image.update()
 
     def _material(self, text, use_bvlg=None, principled_culling=None):
         material = bpy.data.materials.new("test")
@@ -271,7 +286,12 @@ class PrincipledVertexLitGenericTests(_CleanFile):
             parameters[ExtraMaterialParameters.PRINCIPLED_BACKFACE_CULLING] = principled_culling
 
         def load_texture(shader, texture_name, texture_path=None, **kwargs):
-            return self._textures.get(str(texture_name))
+            key = (
+                f'{texture_path}/{texture_name}'
+                if texture_path is not None
+                else str(texture_name)
+            )
+            return self._textures.get(key, self._textures.get(str(texture_name)))
 
         with patch.object(source1_shader_base.Source1ShaderBase, "load_texture", load_texture):
             ShaderRegistry.source1_create_nodes(_NoFiles(), material, _vmt(text), parameters)
@@ -308,6 +328,226 @@ class PrincipledVertexLitGenericTests(_CleanFile):
         two_sided, _ = self._material('"VertexLitGeneric" { "$nocull" "1" }', use_bvlg=True)
         self.assertTrue(culled.use_backface_culling)
         self.assertFalse(two_sided.use_backface_culling)
+
+    def test_bvlg_uses_the_node_contract_for_this_blender_generation(self):
+        material, shader = self._material('"VertexLitGeneric" {}', use_bvlg=True)
+        self.assertIsNone(shader)
+        group = next(
+            node for node in material.node_tree.nodes
+            if node.bl_idname == 'ShaderNodeGroup' and node.node_tree.name == 'VertexLitGeneric'
+        )
+        output_names = {socket.name for socket in group.outputs}
+        material_outputs = {
+            node.target for node in material.node_tree.nodes
+            if node.bl_idname == 'ShaderNodeOutputMaterial'
+        }
+
+        if bpy.app.version >= (5, 3, 0):
+            self.assertTrue({'EEVEE', 'Cycles'}.issubset(output_names))
+            self.assertIn('warps', group.inputs)
+            self.assertEqual(material_outputs, {'EEVEE', 'CYCLES'})
+            self.assertNotIn('SIO-Diffuse', bpy.data.node_groups)
+        else:
+            self.assertIn('BSDF', output_names)
+            self.assertNotIn('warps', group.inputs)
+            self.assertEqual(material_outputs, {'ALL'})
+            self.assertIn('SIO-Diffuse', bpy.data.node_groups)
+
+    def test_bvlg_warp_textures_use_the_generation_specific_path(self):
+        for texture in ('t/base', 't/lightwarp', 't/phongwarp'):
+            self._fake_texture(texture)
+        material, _ = self._material(
+            '"VertexLitGeneric" { "$basetexture" "t/base" "$phong" "1" '
+            '"$lightwarptexture" "t/lightwarp" "$phongwarptexture" "t/phongwarp" }',
+            use_bvlg=True,
+        )
+        nodes = material.node_tree.nodes
+        group = next(
+            node for node in nodes
+            if node.bl_idname == 'ShaderNodeGroup' and node.node_tree.name == 'VertexLitGeneric'
+        )
+
+        if bpy.app.version >= (5, 3, 0):
+            closure_input = next(node for node in nodes if node.bl_idname == 'NodeClosureInput')
+            closure_output = next(node for node in nodes if node.bl_idname == 'NodeClosureOutput')
+            self.assertEqual(group.inputs['warps'].links[0].from_node, closure_output)
+            for prefix in ('light', 'phong'):
+                texture = nodes[f'${prefix}warptexture']
+                self.assertEqual(texture.extension, 'EXTEND')
+                self.assertEqual(texture.inputs['Vector'].links[0].from_node, closure_input)
+                self.assertEqual(
+                    closure_output.inputs[f'${prefix}warptexture'].links[0].from_node,
+                    texture,
+                )
+                self.assertTrue(closure_output.inputs[f'b_do{prefix.title()}Warp'].default_value)
+        else:
+            diffuse = next(
+                node for node in nodes
+                if node.bl_idname == 'ShaderNodeGroup' and node.node_tree.name == 'SIO-Diffuse'
+            )
+            self.assertEqual(diffuse.name, 'Diffuse')
+            self.assertNotIn('$phongwarptexture', nodes)
+
+    def test_bvlg_split_outputs_survive_additive_alpha(self):
+        for texture in ('t/base', 't/lightwarp', 't/phongwarp'):
+            self._fake_texture(texture)
+        material, _ = self._material(
+            '"VertexLitGeneric" { "$basetexture" "t/base" "$phong" "1" '
+            '"$lightwarptexture" "t/lightwarp" "$phongwarptexture" "t/phongwarp" '
+            '"$additive" "1" "$alphatest" "1" }',
+            use_bvlg=True,
+        )
+        outputs = {
+            node.target: node for node in material.node_tree.nodes
+            if node.bl_idname == 'ShaderNodeOutputMaterial'
+        }
+        self.assertEqual(set(outputs), {'EEVEE', 'CYCLES'})
+        self.assertTrue(outputs['EEVEE'].inputs['Surface'].is_linked)
+        self.assertTrue(outputs['CYCLES'].inputs['Surface'].is_linked)
+        self.assertEqual(
+            outputs['EEVEE'].inputs['Surface'].links[0].from_node.node_tree.name,
+            '$alphatest',
+        )
+        self.assertEqual(
+            outputs['CYCLES'].inputs['Surface'].links[0].from_node.node_tree.name,
+            '$alphatest',
+        )
+
+    def test_modern_bvlg_uses_phong_exponent_factor(self):
+        self._fake_texture('t/exponent')
+        material, _ = self._material(
+            '"VertexLitGeneric" { "$phong" "1" "$phongexponenttexture" "t/exponent" '
+            '"$phongexponentfactor" "42" }',
+            use_bvlg=True,
+        )
+        splitter = next(
+            node for node in material.node_tree.nodes
+            if node.bl_idname == 'ShaderNodeGroup'
+            and node.node_tree.name == '$phongexponenttexture splitter'
+        )
+        if bpy.app.version >= (5, 3, 0):
+            self.assertEqual(splitter.inputs['$phongexponentfactor'].default_value, 42.0)
+        else:
+            self.assertNotIn('$phongexponentfactor', splitter.inputs)
+
+    def test_phongwarp_does_not_change_the_principled_default(self):
+        self._fake_texture('t/phongwarp')
+        material, shader = self._material(
+            '"VertexLitGeneric" { "$phong" "1" "$phongwarptexture" "t/phongwarp" }'
+        )
+        self.assertIsNotNone(shader)
+        self.assertFalse(any(
+            node.bl_idname in {'NodeClosureInput', 'NodeClosureOutput'}
+            for node in material.node_tree.nodes
+        ))
+
+    def test_bvlg_warps_produce_finite_distinct_eevee_renders(self):
+        texture_pixels = {
+            't/base': [(0.22, 0.48, 0.82, 1.0)] * 16,
+            't/lightwarp_dark': [(0.02, 0.02, 0.02, 1.0)] * 32,
+            't/lightwarp_bright': [(1.0, 0.25, 0.05, 1.0)] * 32,
+            't/phongwarp': [
+                (1.0 - value, value * value, 0.15 + value * 0.4, 1.0)
+                for _row in range(2)
+                for value in (index / 15 for index in range(16))
+            ],
+        }
+        self._generated_texture('t/base', 4, 4, texture_pixels['t/base'])
+        for name in ('t/lightwarp_dark', 't/lightwarp_bright', 't/phongwarp'):
+            self._generated_texture(name, 16, 2, texture_pixels[name])
+        common = (
+            '"$basetexture" "t/base" "$phong" "1" '
+            '"$phongexponent" "32" "$phongboost" "2"'
+        )
+        dark_lightwarp, _ = self._material(
+            f'"VertexLitGeneric" {{ {common} "$lightwarptexture" "t/lightwarp_dark" }}',
+            use_bvlg=True,
+        )
+        bright_lightwarp, _ = self._material(
+            f'"VertexLitGeneric" {{ {common} "$lightwarptexture" "t/lightwarp_bright" }}',
+            use_bvlg=True,
+        )
+        phongwarp, _ = self._material(
+            f'"VertexLitGeneric" {{ {common} "$lightwarptexture" "t/lightwarp_bright" '
+            '"$phongwarptexture" "t/phongwarp" }',
+            use_bvlg=True,
+        )
+        # Applying Non-Color to generated images clears their pixels in Blender.
+        for name, pixels in texture_pixels.items():
+            self._set_generated_pixels(self._textures[name], pixels)
+
+        materials = (
+            (dark_lightwarp, (-1.3, 0.0, 1.3)),
+            (bright_lightwarp, (1.3, 0.0, 1.3)),
+            (bright_lightwarp, (-1.3, 0.0, -1.3)),
+            (phongwarp, (1.3, 0.0, -1.3)),
+        )
+        for material, location in materials:
+            bpy.ops.mesh.primitive_uv_sphere_add(
+                segments=24,
+                ring_count=12,
+                radius=0.8,
+                location=location,
+            )
+            sphere = bpy.context.object
+            sphere.data.materials.append(material)
+            for polygon in sphere.data.polygons:
+                polygon.use_smooth = True
+
+        def point_at(obj, target):
+            obj.rotation_euler = (
+                Vector(target) - obj.location
+            ).to_track_quat('-Z', 'Y').to_euler()
+
+        bpy.ops.object.light_add(type='AREA', location=(0.0, -4.0, 0.0))
+        light = bpy.context.object
+        light.data.energy = 1000
+        light.data.shape = 'DISK'
+        light.data.size = 4.0
+        point_at(light, (0.0, 0.0, 0.0))
+
+        bpy.ops.object.camera_add(location=(0.0, -8.0, 0.0))
+        camera = bpy.context.object
+        camera.data.type = 'ORTHO'
+        camera.data.ortho_scale = 5.2
+        point_at(camera, (0.0, 0.0, 0.0))
+
+        scene = bpy.context.scene
+        scene.camera = camera
+        scene.render.engine = 'BLENDER_EEVEE'
+        scene.render.resolution_x = scene.render.resolution_y = 64
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = 'OPEN_EXR'
+        scene.render.image_settings.color_mode = 'RGBA'
+        scene.render.film_transparent = False
+        scene.view_settings.view_transform = 'Standard'
+        scene.view_settings.look = 'None'
+        scene.world = bpy.data.worlds.new('warp test world')
+        scene.world.color = (0.02, 0.02, 0.02)
+
+        with tempfile.TemporaryDirectory() as directory:
+            scene.render.filepath = str(Path(directory) / 'warps.exr')
+            bpy.ops.render.render(write_still=True)
+            image = bpy.data.images.load(scene.render.filepath, check_existing=False)
+            try:
+                pixels = np.asarray(image.pixels[:], dtype=np.float32).reshape(64, 64, 4)
+            finally:
+                bpy.data.images.remove(image)
+
+        rgb = pixels[:, :, :3]
+        self.assertTrue(np.isfinite(rgb).all())
+        self.assertGreater(np.count_nonzero(rgb), 0)
+        self.assertGreater(float(np.ptp(rgb)), 0.01)
+
+        paired_deltas = []
+        for row_start, row_end in ((10, 22), (42, 54)):
+            left = rgb[row_start:row_end, 10:22]
+            right = rgb[row_start:row_end, 42:54][:, ::-1]
+            paired_deltas.append(float(np.max(np.abs(right - left))))
+
+        self.assertGreater(max(paired_deltas), 0.01, paired_deltas)
+        if bpy.app.version >= (5, 3, 0):
+            self.assertGreater(min(paired_deltas), 0.01, paired_deltas)
 
     def test_basealphaenvmapmask_defaults_off(self):
         for body, expected in (("", False), ('"$basealphaenvmapmask" "0"', False),

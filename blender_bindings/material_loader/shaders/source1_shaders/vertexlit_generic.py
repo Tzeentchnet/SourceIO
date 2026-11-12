@@ -71,6 +71,10 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         return self._texture_property('$lightwarptexture', (0.3, 0, 0.3, 1.0), is_data=True)
 
     @property
+    def phongwarptexture(self):
+        return self._texture_property('$phongwarptexture', (0.0, 0.0, 0.0, 1.0), is_data=True)
+
+    @property
     def basetexturetransform(self):
         return self._vmt.get_transform_matrix('$basetexturetransform',
                                               {'center': (0.5, 0.5, 0), 'scale': (1.0, 1.0, 1), 'rotate': (0, 0, 0),
@@ -178,6 +182,10 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
         return value
 
     @property
+    def phongexponentfactor(self):
+        return self._vmt.get_float('$phongexponentfactor', 149.0)
+
+    @property
     def phongboost(self):
         value = self._vmt.get_float('$phongboost', 1)
         return value
@@ -224,6 +232,11 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
     def create_nodes(self, material: bpy.types.Material, extra_parameters: dict[ExtraMaterialParameters, Any]):
         sio_diffuse = None
         tension = None
+        split_render_engine = False
+        cycles_output = None
+        final_cycles = None
+        closure_input = None
+        closure_output = None
         use_bvlg = bool(extra_parameters.get(ExtraMaterialParameters.USE_BVLG, False))
 
         if 'proxies' in self._vmt:
@@ -255,13 +268,13 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
 
         compress = self.compress
         if compress:
-            basetexture_node = self.create_node(Nodes.ShaderNodeTexImage, '$compress')
-            basetexture_node.image = compress
+            compress_node = self.create_node(Nodes.ShaderNodeTexImage, '$compress')
+            compress_node.image = compress
 
         stretch = self.stretch
         if stretch:
-            basetexture_node = self.create_node(Nodes.ShaderNodeTexImage, '$stretch')
-            basetexture_node.image = stretch
+            stretch_node = self.create_node(Nodes.ShaderNodeTexImage, '$stretch')
+            stretch_node.image = stretch
 
         basetexture = self.basetexture
         if use_bvlg:
@@ -280,7 +293,15 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             var.targets[0].id = self.bpy_material
             var.targets[0].data_path = 'use_backface_culling'
 
-            final = group_node.outputs[0]
+            split_render_engine = bpy.app.version >= (5, 3, 0)
+            if split_render_engine:
+                material_output.target = 'EEVEE'
+                cycles_output = self.create_node(Nodes.ShaderNodeOutputMaterial, name='Cycles Output')
+                cycles_output.target = 'CYCLES'
+                final = group_node.outputs['EEVEE']
+                final_cycles = group_node.outputs['Cycles']
+            else:
+                final = group_node.outputs[0]
 
             if basetexture:
                 basetexture_node = self.create_and_connect_texture_node(basetexture,
@@ -339,7 +360,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                 if self.normalmapalphaenvmapmask:
                     self.connect_nodes(bumpmap_node.outputs['Alpha'],
                                        group_node.inputs['envmapmask [basemap texture alpha]'])
-                elif self.normalmapalphaphongmask and not self.basemapalphaphongmask:
+                if self.normalmapalphaphongmask and not self.basemapalphaphongmask:
                     self.connect_nodes(bumpmap_node.outputs['Alpha'],
                                        group_node.inputs['phongmask [bumpmap texture alpha]'])
                     
@@ -399,6 +420,9 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                                                                                      # `.output`.
                                                                                      uv_out=uv.outputs[0] if uv else None)
                     phongexponenttexture_node.location = [-800, -470]
+                    if split_render_engine:
+                        phongexponent_group_node.inputs['$phongexponentfactor'].default_value = \
+                            self.phongexponentfactor
 
                     if self.phongalbedotint is not None and not self.phongtint:
                         phongexponent_group_node.location = [-550, -300]
@@ -434,39 +458,77 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                 if self.selfillumtint:
                     group_node.inputs['$selfillumtint'].default_value = self.selfillumtint
 
-            if self.lightwarptexture:
-                material_output.target = 'EEVEE'
-                cycles_output = self.create_node(Nodes.ShaderNodeOutputMaterial, name='Cycles Output')
-                cycles_output.target = 'CYCLES'
+            def ensure_warp_closure():
+                nonlocal closure_input, closure_output
+                if closure_output is None:
+                    closure_input = self.create_node(Nodes.NodeClosureInput)
+                    closure_output = self.create_node(Nodes.NodeClosureOutput)
+                    closure_input.pair_with_output(closure_output)
+                    self.connect_nodes(closure_output.outputs[0], group_node.inputs['warps'])
+                return closure_input, closure_output
 
-                lightwarp = self.create_texture_node(self.lightwarptexture, 'lightwarptexture')
-                lightwarp.extension = 'EXTEND'
-                self.connect_nodes(group_node.outputs['lightwarpvector'], lightwarp.inputs[0])
-                sio_diffuse = self.create_node_group('SIO-Diffuse', name='Diffuse')
-                self.connect_nodes(lightwarp.outputs[0], sio_diffuse.inputs['Lightwarp'])
-                self.connect_nodes(group_node.outputs['$bumpmap'], sio_diffuse.inputs['$bumpmap'])
-                self.connect_nodes(group_node.outputs['Final Albedo'], sio_diffuse.inputs['Albedo'])
-                self.connect_nodes(group_node.outputs['Lighting'], sio_diffuse.inputs['Light Pass'])
+            lightwarptexture = self.lightwarptexture
+            if lightwarptexture:
+                if bpy.app.version < (5, 3, 0):
+                    split_render_engine = True
+                    material_output.target = 'EEVEE'
+                    cycles_output = self.create_node(Nodes.ShaderNodeOutputMaterial, name='Cycles Output')
+                    cycles_output.target = 'CYCLES'
 
-                # so we can toggle backface culling across eevee and cycles with one boolean property
-                driv = sio_diffuse.inputs['$nocull'].driver_add('default_value')
-                driv.driver.expression = '1-var'
-                var = driv.driver.variables.new()
-                var.type = 'SINGLE_PROP'
-                var.targets[0].id_type = 'MATERIAL'
-                var.targets[0].id = self.bpy_material
-                var.targets[0].data_path = 'use_backface_culling'
+                    lightwarp = self.create_texture_node(lightwarptexture, 'lightwarptexture')
+                    lightwarp.extension = 'EXTEND'
+                    self.connect_nodes(group_node.outputs['lightwarpvector'], lightwarp.inputs[0])
+                    sio_diffuse = self.create_node_group('SIO-Diffuse', name='Diffuse')
+                    self.connect_nodes(lightwarp.outputs[0], sio_diffuse.inputs['Lightwarp'])
+                    self.connect_nodes(group_node.outputs['$bumpmap'], sio_diffuse.inputs['$bumpmap'])
+                    self.connect_nodes(group_node.outputs['Final Albedo'], sio_diffuse.inputs['Albedo'])
+                    self.connect_nodes(group_node.outputs['Lighting'], sio_diffuse.inputs['Light Pass'])
 
-                final = sio_diffuse.outputs['EEVEE Pass']
-                final_cycles = sio_diffuse.outputs['Cycles Pass']
+                    driv = sio_diffuse.inputs['$nocull'].driver_add('default_value')
+                    driv.driver.expression = '1-var'
+                    var = driv.driver.variables.new()
+                    var.type = 'SINGLE_PROP'
+                    var.targets[0].id_type = 'MATERIAL'
+                    var.targets[0].id = self.bpy_material
+                    var.targets[0].data_path = 'use_backface_culling'
+
+                    final = sio_diffuse.outputs['EEVEE Pass']
+                    final_cycles = sio_diffuse.outputs['Cycles Pass']
+                else:
+                    closure_input, closure_output = ensure_warp_closure()
+                    closure_output.input_items.new('VECTOR', 'lightwarpUV')
+                    closure_output.output_items.new('RGBA', '$lightwarptexture')
+                    closure_output.output_items.new('BOOLEAN', 'b_doLightWarp')
+
+                    lightwarp = self.create_texture_node(lightwarptexture, '$lightwarptexture')
+                    lightwarp.hide = True
+                    lightwarp.extension = 'EXTEND'
+                    self.connect_nodes(closure_input.outputs['lightwarpUV'], lightwarp.inputs[0])
+                    self.connect_nodes(lightwarp.outputs[0], closure_output.inputs['$lightwarptexture'])
+                    closure_output.inputs['b_doLightWarp'].default_value = True
+
+            if bpy.app.version >= (5, 3, 0):
+                phongwarptexture = self.phongwarptexture
+                if phongwarptexture:
+                    closure_input, closure_output = ensure_warp_closure()
+                    closure_output.input_items.new('VECTOR', 'phongwarpUV')
+                    closure_output.output_items.new('RGBA', '$phongwarptexture')
+                    closure_output.output_items.new('BOOLEAN', 'b_doPhongWarp')
+
+                    phongwarp = self.create_texture_node(phongwarptexture, '$phongwarptexture')
+                    phongwarp.hide = True
+                    phongwarp.extension = 'EXTEND'
+                    self.connect_nodes(closure_input.outputs['phongwarpUV'], phongwarp.inputs[0])
+                    self.connect_nodes(phongwarp.outputs[0], closure_output.inputs['$phongwarptexture'])
+                    closure_output.inputs['b_doPhongWarp'].default_value = True
 
             if self.additive:
-                if sio_diffuse:
+                if split_render_engine:
                     add_eevee = self.create_node(Nodes.ShaderNodeAddShader)
                     add_cycles = self.create_node(Nodes.ShaderNodeAddShader)
                     transparent = self.create_node(Nodes.ShaderNodeBsdfTransparent)
-                    self.connect_nodes(sio_diffuse.outputs['EEVEE Pass'], add_eevee.inputs[1])
-                    self.connect_nodes(sio_diffuse.outputs['Cycles Pass'], add_cycles.inputs[1])
+                    self.connect_nodes(final, add_eevee.inputs[1])
+                    self.connect_nodes(final_cycles, add_cycles.inputs[1])
                     self.connect_nodes(transparent.outputs[0], add_eevee.inputs[0])
                     self.connect_nodes(transparent.outputs[0], add_cycles.inputs[0])
                     final = add_eevee.outputs[0]
@@ -489,21 +551,25 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
                                        alphatest_node.inputs['Alpha [basemap texture alpha]'])
                 self.connect_nodes(final, alphatest_node.inputs[0])
                 final = alphatest_node.outputs[0]
-                if sio_diffuse:
-                    alphatest_node = self.create_node_group("$alphatest", [250, 0])
+                if split_render_engine:
+                    cycles_alphatest_node = self.create_node_group("$alphatest", [250, 0])
                     material_output.location = [450, 0]
-                    alphatest_node.inputs['$alphatestreference [value]'].default_value = self.alphatestreference
-                    alphatest_node.inputs['$allowalphatocoverage [boolean]'].default_value = self.allowalphatocoverage
-                    alphatest_node.inputs['$translucent'].default_value = self.translucent
+                    cycles_alphatest_node.inputs[
+                        '$alphatestreference [value]'
+                    ].default_value = self.alphatestreference
+                    cycles_alphatest_node.inputs[
+                        '$allowalphatocoverage [boolean]'
+                    ].default_value = self.allowalphatocoverage
+                    cycles_alphatest_node.inputs['$translucent'].default_value = self.translucent
                     if basetexture:
                         self.connect_nodes(basetexture_node.outputs[1],
-                                           alphatest_node.inputs['Alpha [basemap texture alpha]'])
-                    self.connect_nodes(final_cycles, alphatest_node.inputs[0])
-                    final_cycles = alphatest_node.outputs[0]
+                                           cycles_alphatest_node.inputs['Alpha [basemap texture alpha]'])
+                    self.connect_nodes(final_cycles, cycles_alphatest_node.inputs[0])
+                    final_cycles = cycles_alphatest_node.outputs[0]
 
             # Finalize outputs
             self.connect_nodes(final, material_output.inputs[0])
-            if sio_diffuse:
+            if split_render_engine:
                 self.connect_nodes(final_cycles, cycles_output.inputs[0])
 
             '''
@@ -774,9 +840,7 @@ class VertexLitGeneric(DetailSupportMixin, Source1ShaderBase):
             self.connect_nodes(exponent_node.outputs['Color'], split_node.inputs[0])
 
             # exponent = 1 + factor*r, then roughness = sqrt(2/(exponent+2)).
-            exponent_factor = self._vmt.get_float('$phongexponentfactor', None)
-            if exponent_factor is None:
-                exponent_factor = 149.0
+            exponent_factor = self.phongexponentfactor
             denominator = self.create_node(Nodes.ShaderNodeMath, 'phongexponent denominator')
             denominator.operation = 'MULTIPLY_ADD'
             denominator.inputs[1].default_value = exponent_factor

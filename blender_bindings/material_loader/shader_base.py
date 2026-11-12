@@ -287,6 +287,8 @@ class Nodes:
     ShaderNodeVolumeScatter = 'ShaderNodeVolumeScatter'
     ShaderNodeWavelength = 'ShaderNodeWavelength'
     ShaderNodeWireframe = 'ShaderNodeWireframe'
+    NodeClosureInput = 'NodeClosureInput'
+    NodeClosureOutput = 'NodeClosureOutput'
 
 
 # Socket indices of ShaderNodeMix with data_type='RGBA'
@@ -313,7 +315,12 @@ class ShaderBase:
     def load_bvlg_nodes():
         if "VertexLitGeneric" not in bpy.data.node_groups:
             current_path = TinyPath(__file__).parent.parent
-            asset_path = current_path / 'assets' / "sycreation-s-default.blend"
+            asset_name = (
+                "sycreation-s-default_5_3.blend"
+                if bpy.app.version >= (5, 3, 0)
+                else "sycreation-s-default.blend"
+            )
+            asset_path = current_path / 'assets' / asset_name
             append_blend(str(asset_path), "node_groups")
 
     @staticmethod

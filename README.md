@@ -1,17 +1,22 @@
 [![Blender](https://img.shields.io/badge/Blender->=_5.2-orange?logo=blender&logoColor=white)](https://www.blender.org/download)
 [![Upstream Discord](https://img.shields.io/discord/554001378532655104?label=Upstream%20Discord&logo=discord&logoColor=white)](https://discord.gg/SF82W6aZ67)
 
-# SourceIO for Blender 5.2
+# SourceIO Forge for Blender 5.2+
 
-SourceIO is a Blender extension for importing assets from GoldSrc, Source, and
-Source 2 games. It handles models, maps, materials, textures, animations,
+SourceIO Forge is a Blender extension for importing assets from GoldSrc, Source,
+and Source 2 games. It handles models, maps, materials, textures, animations,
 physics, and Source 2 sounds, with game-specific support for titles including
 Team Fortress 2, Counter-Strike 2, and Dota 2.
 
-This repository is a Blender 5.2-only fork of
+This repository is the Blender 5.2+ SourceIO Forge fork of
 [REDxEYE/SourceIO](https://github.com/REDxEYE/SourceIO). For Blender 4.x, use
 the upstream add-on. The linked Discord server is also maintained by the
 upstream project.
+
+> [!NOTE]
+> **Source 1 beta assets are supported.** This includes legacy model and
+> material layouts, beta shader aliases, and half-float `RGBA16161616F` VTF
+> textures.
 
 ## Highlights
 
@@ -53,10 +58,10 @@ See [Changes in this fork](docs/fork-changes.md) and the
 
 ## Installation
 
-SourceIO requires **Blender 5.2 or newer**.
+SourceIO Forge requires **Blender 5.2 or newer**.
 
 1. Download the package for your platform from
-   [Releases](https://github.com/Tzeentchnet/SourceIO/releases).
+   [Releases](https://github.com/Tzeentchnet/SourceIO-Forge/releases).
 2. In Blender, open *Edit > Preferences > Get Extensions*.
 3. Choose *Install from Disk...* and select the downloaded zip.
 
@@ -81,16 +86,17 @@ them.
 ### Export
 
 Use *File > Export* for the supported CS2 Workshop and Source 1 static-asset
-workflows. SourceIO writes editable source files and can optionally invoke the
-official compilers; it does not silently replace those tools with custom binary
-writers.
+workflows. SourceIO Forge writes editable source files and can optionally invoke
+the official compilers; it does not silently replace those tools with custom
+binary writers.
 
 See [Static asset authoring](docs/authoring.md) for supported material graphs,
 target setup, compilation, and recompile behavior.
 
 ### Command line
 
-With the extension enabled, Blender can run SourceIO without opening the UI:
+With the extension enabled, Blender can run SourceIO Forge without opening the
+UI:
 
 ```text
 blender -c sourceio import --output scene.blend ASSET
@@ -114,15 +120,15 @@ Import, extraction, authoring, and recompile commands are documented in the
 
 ## Scope
 
-SourceIO aims to produce useful, editable Blender scenes rather than emulate an
-entire game engine. Shader behavior, map entities, and compiled formats vary
-between games, so unrecognized games and uncommon assets may receive generic or
-partial handling.
+SourceIO Forge aims to produce useful, editable Blender scenes rather than
+emulate an entire game engine. Shader behavior, map entities, and compiled
+formats vary between games, so unrecognized games and uncommon assets may
+receive generic or partial handling.
 
 Static reconstruction from compiled Source 2 resources is intentionally lossy,
-and current authoring workflows target static assets. SourceIO does not execute
-AnimGraphs, simulate a Source 2 particle renderer, or claim one-to-one runtime
-renderer parity.
+and current authoring workflows target static assets. SourceIO Forge does not
+execute AnimGraphs, simulate a Source 2 particle renderer, or claim one-to-one
+runtime renderer parity.
 
 ## Credits
 

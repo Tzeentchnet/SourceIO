@@ -3,12 +3,12 @@ from .library import loaded_as_addon, running_in_blender
 try:
     import bpy
     if bpy.app.version < (5, 2, 0):
-        raise Exception("SourceIO only supports Blender 5.2.0 and above")
+        raise Exception("SourceIO Forge only supports Blender 5.2.0 and above")
 except ImportError:
     bpy = ...
 
 bl_info = {
-    "name": "SourceIO",
+    "name": "SourceIO Forge",
     "author": "RED_EYE, ShadelessFox, Syborg64",
     "version": (5, 15, 1),
     "blender": (5, 2, 0),

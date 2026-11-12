@@ -2,12 +2,12 @@ schema_version = "1.0.0"
 
 id = "sourceio"
 version = "5.15.1"
-name = "SourceIO"
+name = "SourceIO Forge"
 tagline = "Import GoldSrc, Source and Source 2 models, maps and textures"
 maintainer = "Tzeentchnet"
 type = "add-on"
 
-website = "https://github.com/Tzeentchnet/SourceIO"
+website = "https://github.com/Tzeentchnet/SourceIO-Forge"
 
 tags = ["Import-Export"]
 
